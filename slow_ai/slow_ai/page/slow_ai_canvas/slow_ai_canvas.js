@@ -25,6 +25,7 @@ class SlowAiCanvasPlaceholder {
 		this.pollTimer = null;
 		this.nodes = this.defaultNodes();
 		this.edges = this.defaultEdges();
+		this.selectedNodeId = null;
 		this.layout = { nodes: this.nodes.map((node) => ({ id: node.id, ...node.position })) };
 		this.makeControls();
 		this.makeBody();
@@ -72,11 +73,40 @@ class SlowAiCanvasPlaceholder {
 		this.$nodes = this.$root.find("[data-role='nodes']");
 		this.$queue = this.$root.find("[data-role='queue-summary']");
 		this.$summary = this.$root.find("[data-role='run-summary']");
+		this.$providerJobs = this.$root.find("[data-role='provider-jobs']");
+		this.$ledgerSummary = this.$root.find("[data-role='ledger-summary']");
+		this.$runErrors = this.$root.find("[data-role='run-errors']");
+		this.$runTimeline = this.$root.find("[data-role='run-timeline']");
 		this.$history = this.$root.find("[data-role='history']");
 		this.$assets = this.$root.find("[data-role='asset-output']");
+		this.$draftWarnings = this.$root.find("[data-role='draft-warnings']");
+		this.$nodeEditor = this.$root.find("[data-role='node-editor']");
+		this.$edgeEditor = this.$root.find("[data-role='edge-editor']");
+		this.$edgeList = this.$root.find("[data-role='edge-list']");
 		this.$palette.on("click", "[data-action='add-node']", (event) => {
 			const nodeType = $(event.currentTarget).attr("data-node-type");
 			this.addNodeFromMetadata(nodeType);
+		});
+		this.$nodes.on("click", "[data-node-id]", (event) => {
+			this.selectNode($(event.currentTarget).attr("data-node-id"));
+		});
+		this.$nodeEditor.on("input change", "[data-config-field]", (event) => {
+			this.updateSelectedNodeConfig(event.currentTarget);
+		});
+		this.$nodeEditor.on("input change", "[data-position-field]", (event) => {
+			this.updateSelectedNodePosition(event.currentTarget);
+		});
+		this.$nodeEditor.on("click", "[data-action='delete-selected-node']", () => {
+			this.deleteSelectedNode();
+		});
+		this.$edgeEditor.on("change", "[data-edge-source], [data-edge-target]", () => {
+			this.renderEdgeEditor();
+		});
+		this.$edgeEditor.on("click", "[data-action='add-edge']", () => {
+			this.addEdgeFromEditor();
+		});
+		this.$edgeList.on("click", "[data-action='delete-edge']", (event) => {
+			this.deleteEdge($(event.currentTarget).attr("data-edge-id"));
 		});
 	}
 
@@ -108,10 +138,12 @@ class SlowAiCanvasPlaceholder {
 			this.nodes = this.withPositions(draft.nodes || [], draft.layout || {});
 			this.edges = draft.edges || [];
 			this.layout = draft.layout || {};
+			this.selectedNodeId = this.nodes.length ? this.nodes[0].id : null;
 			this.workflowRun = null;
 			this.nodeRunsByNodeId = {};
 			this.setStatus(__("Loaded {0}", [draft.name]));
 			this.render();
+			this.clearRunMonitor();
 			this.renderAssetOutputs([]);
 		});
 	}
@@ -212,6 +244,7 @@ class SlowAiCanvasPlaceholder {
 	refreshRun() {
 		if (!this.workflowRun) {
 			this.$summary.html(`<div class="slow-ai-canvas__empty">${__("No run selected")}</div>`);
+			this.clearHistoryPanels();
 			return Promise.resolve();
 		}
 		return frappe.call("slow_ai.api.runs.get_run_status", { workflow_run: this.workflowRun }).then((response) => {
@@ -296,9 +329,11 @@ class SlowAiCanvasPlaceholder {
 		this.titleField.set_value("Untitled AI Workflow");
 		this.nodes = this.defaultNodes();
 		this.edges = this.defaultEdges();
+		this.selectedNodeId = null;
 		this.layout = { nodes: this.nodes.map((node) => ({ id: node.id, ...node.position })) };
 		this.nodeRunsByNodeId = {};
 		this.setStatus(__("New draft"));
+		this.clearRunMonitor();
 		this.renderAssetOutputs([]);
 		this.render();
 	}
@@ -381,6 +416,10 @@ class SlowAiCanvasPlaceholder {
 		this.renderPalette();
 		this.renderNodes();
 		this.renderEdges();
+		this.renderNodeEditor();
+		this.renderEdgeEditor();
+		this.renderEdgeList();
+		this.renderDraftWarnings();
 	}
 
 	renderPalette() {
@@ -470,6 +509,7 @@ class SlowAiCanvasPlaceholder {
 			config: this.defaultConfigFromSchema(metadata.config_schema || {}),
 		};
 		this.nodes.push(node);
+		this.selectedNodeId = node.id;
 		this.captureLayout();
 		this.setStatus(__("Added {0}", [metadata.label || metadata.type]));
 		this.render();
@@ -502,13 +542,170 @@ class SlowAiCanvasPlaceholder {
 		return String(value || "").replace(/\b\w/g, (char) => char.toUpperCase());
 	}
 
+	findNode(nodeId) {
+		return this.nodes.find((node) => node.id === nodeId) || null;
+	}
+
+	nodeMetadata(node) {
+		return node && this.objectInfo ? this.objectInfo[node.type] || null : null;
+	}
+
+	portEntries(node, schemaName) {
+		const metadata = this.nodeMetadata(node);
+		return Object.entries((metadata && metadata[schemaName]) || {});
+	}
+
+	inputPorts(node) {
+		return this.portEntries(node, "input_schema");
+	}
+
+	outputPorts(node) {
+		return this.portEntries(node, "output_schema");
+	}
+
+	portType(node, schemaName, portName) {
+		const metadata = this.nodeMetadata(node);
+		const schema = (metadata && metadata[schemaName]) || {};
+		const spec = schema[portName] || {};
+		return spec.type || "JSON";
+	}
+
+	portsCompatible(sourceNode, sourcePort, targetNode, targetPort) {
+		if (!sourceNode || !targetNode || !sourcePort || !targetPort) {
+			return false;
+		}
+		return (
+			this.portType(sourceNode, "output_schema", sourcePort) ===
+			this.portType(targetNode, "input_schema", targetPort)
+		);
+	}
+
+	selectNode(nodeId) {
+		this.selectedNodeId = nodeId;
+		this.render();
+	}
+
+	deleteSelectedNode() {
+		if (!this.selectedNodeId) {
+			return;
+		}
+		const nodeId = this.selectedNodeId;
+		this.nodes = this.nodes.filter((node) => node.id !== nodeId);
+		this.edges = this.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+		this.selectedNodeId = this.nodes.length ? this.nodes[0].id : null;
+		this.captureLayout();
+		this.setStatus(__("Deleted node {0}", [nodeId]));
+		this.render();
+	}
+
+	updateSelectedNodePosition(input) {
+		const node = this.findNode(this.selectedNodeId);
+		if (!node) {
+			return;
+		}
+		const fieldname = $(input).attr("data-position-field");
+		const value = Number(input.value);
+		node.position = node.position || { x: 0, y: 0 };
+		node.position[fieldname] = Number.isFinite(value) ? value : 0;
+		this.captureLayout();
+		this.renderNodes();
+		this.renderEdges();
+		this.renderDraftWarnings();
+	}
+
+	updateSelectedNodeConfig(input) {
+		const node = this.findNode(this.selectedNodeId);
+		if (!node) {
+			return;
+		}
+		const fieldname = $(input).attr("data-config-field");
+		const metadata = this.nodeMetadata(node) || {};
+		const spec = (metadata.config_schema || {})[fieldname] || {};
+		node.config = node.config || {};
+		node.config[fieldname] = this.valueFromControl(input, spec);
+		this.renderDraftWarnings();
+	}
+
+	valueFromControl(input, spec) {
+		const valueType = spec.value_type || spec.type || "string";
+		if (input.type === "checkbox") {
+			return Boolean(input.checked);
+		}
+		if (["number", "integer", "float"].includes(valueType)) {
+			const value = Number(input.value);
+			return Number.isFinite(value) ? value : null;
+		}
+		if (valueType === "object" || valueType === "array" || spec.type === "JSON") {
+			if (!input.value) {
+				return valueType === "array" ? [] : {};
+			}
+			try {
+				return JSON.parse(input.value);
+			} catch (error) {
+				return input.value;
+			}
+		}
+		return input.value;
+	}
+
+	nextEdgeId() {
+		let index = this.edges.length + 1;
+		let candidate = `edge_${index}`;
+		const existing = new Set(this.edges.map((edge) => edge.id));
+		while (existing.has(candidate)) {
+			index += 1;
+			candidate = `edge_${index}`;
+		}
+		return candidate;
+	}
+
+	addEdgeFromEditor() {
+		const source = this.$edgeEditor.find("[data-edge-source]").val();
+		const sourcePort = this.$edgeEditor.find("[data-edge-source-port]").val();
+		const target = this.$edgeEditor.find("[data-edge-target]").val();
+		const targetPort = this.$edgeEditor.find("[data-edge-target-port]").val();
+		const sourceNode = this.findNode(source);
+		const targetNode = this.findNode(target);
+		if (!this.portsCompatible(sourceNode, sourcePort, targetNode, targetPort)) {
+			this.setStatus(__("Ports are not compatible"));
+			return;
+		}
+		const duplicate = this.edges.some(
+			(edge) =>
+				edge.source === source &&
+				edge.source_port === sourcePort &&
+				edge.target === target &&
+				edge.target_port === targetPort
+		);
+		if (duplicate) {
+			this.setStatus(__("Edge already exists"));
+			return;
+		}
+		this.edges.push({
+			id: this.nextEdgeId(),
+			source,
+			source_port: sourcePort,
+			target,
+			target_port: targetPort,
+		});
+		this.setStatus(__("Added edge"));
+		this.render();
+	}
+
+	deleteEdge(edgeId) {
+		this.edges = this.edges.filter((edge) => edge.id !== edgeId);
+		this.setStatus(__("Deleted edge {0}", [edgeId]));
+		this.render();
+	}
+
 	renderNodes() {
 		const html = this.nodes
 			.map((node) => {
 				const nodeRun = this.nodeRunsByNodeId[node.id] || {};
 				const status = nodeRun.status || "DRAFT";
 				const position = node.position || { x: 0, y: 0 };
-				return `<div class="slow-ai-canvas__node" data-node-id="${this.escape(node.id)}" data-node-status="${this.escape(status)}" style="left: ${position.x}px; top: ${position.y}px;">
+				const selected = this.selectedNodeId === node.id ? "1" : "0";
+				return `<div class="slow-ai-canvas__node" data-node-id="${this.escape(node.id)}" data-node-status="${this.escape(status)}" data-selected="${selected}" style="left: ${position.x}px; top: ${position.y}px;">
 					<div class="slow-ai-canvas__node-name">${this.escape(node.label || node.id)}</div>
 					<div class="slow-ai-canvas__node-type">${this.escape(node.type)}</div>
 					<div class="slow-ai-canvas__node-status">${this.escape(status)}</div>
@@ -541,32 +738,488 @@ class SlowAiCanvasPlaceholder {
 		this.$edges.html(lines);
 	}
 
+	renderNodeEditor() {
+		if (!this.$nodeEditor) {
+			return;
+		}
+		const node = this.findNode(this.selectedNodeId);
+		if (!node) {
+			this.$nodeEditor.html(`<div class="slow-ai-canvas__empty">${__("Select a node")}</div>`);
+			return;
+		}
+		const metadata = this.nodeMetadata(node);
+		const configRows = Object.entries((metadata && metadata.config_schema) || {});
+		const configControls = configRows.length
+			? configRows.map(([fieldname, spec]) => this.renderConfigControl(node, fieldname, spec)).join("")
+			: `<div class="slow-ai-canvas__empty">${__("No config fields")}</div>`;
+		const position = node.position || { x: 0, y: 0 };
+		this.$nodeEditor.html(`
+			<div class="slow-ai-canvas__editor-title">${this.escape(node.label || node.id)}</div>
+			<div class="slow-ai-canvas__editor-meta">${this.escape(node.id)} · ${this.escape(node.type)}</div>
+			<div class="slow-ai-canvas__field-grid">
+				<label class="slow-ai-canvas__field">
+					<span>${__("X")}</span>
+					<input class="form-control input-xs" type="number" data-position-field="x" value="${this.escape(position.x)}">
+				</label>
+				<label class="slow-ai-canvas__field">
+					<span>${__("Y")}</span>
+					<input class="form-control input-xs" type="number" data-position-field="y" value="${this.escape(position.y)}">
+				</label>
+			</div>
+			<div class="slow-ai-canvas__editor-subhead">${__("Config")}</div>
+			${configControls}
+			<button class="btn btn-xs btn-danger slow-ai-canvas__delete-node" type="button" data-action="delete-selected-node">${__("Delete Node")}</button>
+		`);
+	}
+
+	renderConfigControl(node, fieldname, spec) {
+		const value = node.config && Object.prototype.hasOwnProperty.call(node.config, fieldname) ? node.config[fieldname] : "";
+		const label = spec.label || fieldname;
+		const required = spec.required ? " *" : "";
+		const typeSummary = spec.type || spec.value_type || "TEXT";
+		const common = `data-config-field="${this.escape(fieldname)}"`;
+		let control = "";
+		if (Array.isArray(spec.options) && spec.options.length) {
+			const options = spec.options
+				.map((option) => {
+					const selected = String(option) === String(value) ? "selected" : "";
+					return `<option value="${this.escape(option)}" ${selected}>${this.escape(option)}</option>`;
+				})
+				.join("");
+			control = `<select class="form-control input-xs" ${common}>${options}</select>`;
+		} else if (spec.value_type === "boolean") {
+			const checked = value ? "checked" : "";
+			control = `<input type="checkbox" ${common} ${checked}>`;
+		} else if (spec.value_type === "object" || spec.value_type === "array" || spec.type === "JSON") {
+			control = `<textarea class="form-control input-xs slow-ai-canvas__json-field" ${common}>${this.escape(this.formatJsonValue(value))}</textarea>`;
+		} else if (["number", "integer", "float"].includes(spec.value_type)) {
+			control = `<input class="form-control input-xs" type="number" ${common} value="${this.escape(value)}">`;
+		} else {
+			control = `<input class="form-control input-xs" type="text" ${common} value="${this.escape(value)}">`;
+		}
+		return `<label class="slow-ai-canvas__field">
+			<span>${this.escape(label)}${required}</span>
+			${control}
+			<small>${this.escape(typeSummary)}</small>
+		</label>`;
+	}
+
+	formatJsonValue(value) {
+		if (value === "" || value === null || value === undefined) {
+			return "";
+		}
+		if (typeof value === "string") {
+			return value;
+		}
+		return JSON.stringify(value, null, 2);
+	}
+
+	renderEdgeEditor() {
+		if (!this.$edgeEditor) {
+			return;
+		}
+		const sourceNode = this.findNode(this.$edgeEditor.find("[data-edge-source]").val()) || this.firstNodeWithPorts("output");
+		const targetNode = this.findNode(this.$edgeEditor.find("[data-edge-target]").val()) || this.firstNodeWithPorts("input");
+		const sourcePorts = this.outputPorts(sourceNode);
+		const targetPorts = this.inputPorts(targetNode);
+		this.$edgeEditor.html(`
+			<div class="slow-ai-canvas__editor-subhead">${__("Add Edge")}</div>
+			<label class="slow-ai-canvas__field">
+				<span>${__("Source")}</span>
+				${this.renderNodeSelect("data-edge-source", sourceNode && sourceNode.id, "output")}
+			</label>
+			<label class="slow-ai-canvas__field">
+				<span>${__("Output Port")}</span>
+				${this.renderPortSelect("data-edge-source-port", sourcePorts)}
+			</label>
+			<label class="slow-ai-canvas__field">
+				<span>${__("Target")}</span>
+				${this.renderNodeSelect("data-edge-target", targetNode && targetNode.id, "input")}
+			</label>
+			<label class="slow-ai-canvas__field">
+				<span>${__("Input Port")}</span>
+				${this.renderPortSelect("data-edge-target-port", targetPorts)}
+			</label>
+			<button class="btn btn-xs btn-default" type="button" data-action="add-edge">${__("Add Edge")}</button>
+		`);
+	}
+
+	firstNodeWithPorts(direction) {
+		return (
+			this.nodes.find((node) =>
+				direction === "output" ? this.outputPorts(node).length : this.inputPorts(node).length
+			) || null
+		);
+	}
+
+	renderNodeSelect(attribute, selectedNodeId, direction) {
+		const rows = this.nodes
+			.filter((node) => (direction === "output" ? this.outputPorts(node).length : this.inputPorts(node).length))
+			.map((node) => {
+				const selected = node.id === selectedNodeId ? "selected" : "";
+				return `<option value="${this.escape(node.id)}" ${selected}>${this.escape(node.label || node.id)}</option>`;
+			})
+			.join("");
+		return `<select class="form-control input-xs" ${attribute}>${rows}</select>`;
+	}
+
+	renderPortSelect(attribute, ports) {
+		const rows = ports
+			.map(([portName, spec]) => {
+				return `<option value="${this.escape(portName)}">${this.escape(portName)} · ${this.escape(spec.type || "JSON")}</option>`;
+			})
+			.join("");
+		return `<select class="form-control input-xs" ${attribute}>${rows}</select>`;
+	}
+
+	renderEdgeList() {
+		if (!this.$edgeList) {
+			return;
+		}
+		if (!this.edges.length) {
+			this.$edgeList.html(`<div class="slow-ai-canvas__empty">${__("No edges")}</div>`);
+			return;
+		}
+		const rows = this.edges
+			.map((edge) => {
+				return `<div class="slow-ai-canvas__edge-row">
+					<div>${this.escape(edge.source)}.${this.escape(edge.source_port)} → ${this.escape(edge.target)}.${this.escape(edge.target_port)}</div>
+					<button class="btn btn-xs btn-default" type="button" data-action="delete-edge" data-edge-id="${this.escape(edge.id)}">${__("Delete")}</button>
+				</div>`;
+			})
+			.join("");
+		this.$edgeList.html(`<div class="slow-ai-canvas__editor-subhead">${__("Edges")}</div>${rows}`);
+	}
+
+	renderDraftWarnings() {
+		if (!this.$draftWarnings) {
+			return;
+		}
+		const warnings = this.draftWarnings();
+		if (!warnings.length) {
+			this.$draftWarnings.html(`<div class="slow-ai-canvas__draft-ok">${__("Draft checks passed")}</div>`);
+			return;
+		}
+		this.$draftWarnings.html(
+			warnings
+				.map((warning) => `<div class="slow-ai-canvas__draft-warning">${this.escape(warning)}</div>`)
+				.join("")
+		);
+	}
+
+	draftWarnings() {
+		const warnings = [];
+		const seenNodeIds = new Set();
+		const nodeById = {};
+		this.nodes.forEach((node) => {
+			if (seenNodeIds.has(node.id)) {
+				warnings.push(__("Duplicate node id: {0}", [node.id]));
+			}
+			seenNodeIds.add(node.id);
+			nodeById[node.id] = node;
+			const metadata = this.nodeMetadata(node);
+			if (!metadata) {
+				warnings.push(__("Unknown node type: {0}", [node.type]));
+				return;
+			}
+			Object.entries(metadata.config_schema || {}).forEach(([fieldname, spec]) => {
+				if (spec.required && this.isMissing(node.config && node.config[fieldname])) {
+					warnings.push(__("Missing required config: {0}.{1}", [node.id, fieldname]));
+				}
+			});
+			Object.entries(metadata.input_schema || {}).forEach(([portName, spec]) => {
+				const connected = this.edges.some((edge) => edge.target === node.id && edge.target_port === portName);
+				if (spec.required && !connected) {
+					warnings.push(__("Missing required input: {0}.{1}", [node.id, portName]));
+				}
+			});
+			if (metadata.is_output_node) {
+				const connected = this.edges.some((edge) => edge.target === node.id);
+				if (!connected) {
+					warnings.push(__("Output node requires an input: {0}", [node.id]));
+				}
+			}
+		});
+		this.edges.forEach((edge) => {
+			const sourceNode = nodeById[edge.source];
+			const targetNode = nodeById[edge.target];
+			if (!sourceNode) {
+				warnings.push(__("Edge source does not exist: {0}", [edge.source]));
+				return;
+			}
+			if (!targetNode) {
+				warnings.push(__("Edge target does not exist: {0}", [edge.target]));
+				return;
+			}
+			if (!this.outputPorts(sourceNode).some(([portName]) => portName === edge.source_port)) {
+				warnings.push(__("Source port does not exist: {0}.{1}", [edge.source, edge.source_port]));
+			}
+			if (!this.inputPorts(targetNode).some(([portName]) => portName === edge.target_port)) {
+				warnings.push(__("Target port does not exist: {0}.{1}", [edge.target, edge.target_port]));
+			}
+			if (
+				this.outputPorts(sourceNode).some(([portName]) => portName === edge.source_port) &&
+				this.inputPorts(targetNode).some(([portName]) => portName === edge.target_port) &&
+				!this.portsCompatible(sourceNode, edge.source_port, targetNode, edge.target_port)
+			) {
+				warnings.push(__("Port types do not match: {0}.{1} to {2}.{3}", [
+					edge.source,
+					edge.source_port,
+					edge.target,
+					edge.target_port,
+				]));
+			}
+		});
+		if (!this.nodes.some((node) => this.nodeMetadata(node) && this.nodeMetadata(node).is_output_node)) {
+			warnings.push(__("At least one output node is required."));
+		}
+		return warnings;
+	}
+
+	isMissing(value) {
+		return value === null || value === undefined || value === "";
+	}
+
+	clearRunMonitor() {
+		if (this.$summary) {
+			this.$summary.html(`<div class="slow-ai-canvas__empty">${__("No run selected")}</div>`);
+		}
+		this.clearHistoryPanels();
+	}
+
+	clearHistoryPanels() {
+		if (this.$history) {
+			this.$history.html(`<div class="slow-ai-canvas__empty">${__("No run history")}</div>`);
+		}
+		if (this.$providerJobs) {
+			this.$providerJobs.html(`<div class="slow-ai-canvas__empty">${__("No provider jobs")}</div>`);
+		}
+		if (this.$ledgerSummary) {
+			this.$ledgerSummary.html(`<div class="slow-ai-canvas__empty">${__("No ledger entries")}</div>`);
+		}
+		if (this.$runErrors) {
+			this.$runErrors.html(`<div class="slow-ai-canvas__empty">${__("No errors")}</div>`);
+		}
+		if (this.$runTimeline) {
+			this.$runTimeline.html(`<div class="slow-ai-canvas__empty">${__("No timeline events")}</div>`);
+		}
+	}
+
 	renderRunSummary(status) {
+		const nodeStatusOrder = ["PENDING", "READY", "RUNNING", "WAITING_PROVIDER", "SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED"];
 		const nodeCounts = (status.node_runs || []).reduce((counts, nodeRun) => {
 			counts[nodeRun.status] = (counts[nodeRun.status] || 0) + 1;
 			return counts;
 		}, {});
-		const counts = Object.keys(nodeCounts)
-			.sort()
-			.map((key) => `${this.escape(key)}: ${nodeCounts[key]}`)
-			.join("<br>");
+		const counts = nodeStatusOrder
+			.filter((key) => nodeCounts[key])
+			.map((key) => `<span class="slow-ai-canvas__status-count">${this.escape(key)} ${nodeCounts[key]}</span>`)
+			.join("");
+		const nodeRows = (status.node_runs || [])
+			.map((nodeRun) => this.renderNodeRunRow(nodeRun))
+			.join("");
 		this.$summary.html(`
-			<div class="slow-ai-canvas__metric">${__("Workflow")}: ${this.escape(status.workflow)}</div>
-			<div class="slow-ai-canvas__metric">${__("Status")}: ${this.escape(status.status)}</div>
-			<div class="slow-ai-canvas__metric">${counts}</div>
+			<div class="slow-ai-canvas__run-card">
+				<div class="slow-ai-canvas__monitor-title">${__("Workflow Status")}</div>
+				<div class="slow-ai-canvas__metric">${__("Workflow")}: ${this.escape(status.workflow)}</div>
+				<div class="slow-ai-canvas__metric">${__("Run")}: ${this.escape(status.workflow_run)}</div>
+				<div class="slow-ai-canvas__metric">${__("Status")}: ${this.statusBadge(status.status)}</div>
+				<div class="slow-ai-canvas__metric">${__("Queued")}: ${this.escape(this.formatTime(status.queued_at))}</div>
+				<div class="slow-ai-canvas__metric">${__("Started")}: ${this.escape(this.formatTime(status.started_at))}</div>
+				<div class="slow-ai-canvas__metric">${__("Completed")}: ${this.escape(this.formatTime(status.completed_at))}</div>
+				<div class="slow-ai-canvas__status-counts">${counts || `<span class="slow-ai-canvas__status-count">${__("No node status")}</span>`}</div>
+			</div>
+			<div class="slow-ai-canvas__monitor-title">${__("Node Status")}</div>
+			${nodeRows || `<div class="slow-ai-canvas__empty">${__("No node runs")}</div>`}
 		`);
+	}
+
+	renderNodeRunRow(nodeRun) {
+		const cost = this.money(nodeRun.cost_usd);
+		return `<div class="slow-ai-canvas__monitor-row" data-node-run-status="${this.escape(nodeRun.status)}">
+			<div>
+				<div class="slow-ai-canvas__monitor-row-title">${this.escape(nodeRun.node_id)}</div>
+				<div class="slow-ai-canvas__monitor-row-meta">${this.escape(nodeRun.node_type || "")}</div>
+				${nodeRun.provider_job ? `<div class="slow-ai-canvas__monitor-row-meta">${__("Provider Job")}: ${this.escape(nodeRun.provider_job)}</div>` : ""}
+			</div>
+			<div class="slow-ai-canvas__monitor-row-side">
+				${this.statusBadge(nodeRun.status)}
+				<div>${this.escape(cost)}</div>
+			</div>
+		</div>`;
 	}
 
 	renderHistory(history) {
 		const assets = history.assets || [];
 		const ledger = history.ledger || [];
 		const jobs = history.provider_jobs || [];
+		const nodeRuns = history.node_runs || [];
+		const run = history.run || {};
 		this.$history.html(`
-			<div class="slow-ai-canvas__history-item">${__("Assets")}: ${assets.length}</div>
+			<div class="slow-ai-canvas__history-item">${__("Workflow")}: ${this.escape(run.workflow || "")}</div>
+			<div class="slow-ai-canvas__history-item">${__("Run")}: ${this.escape(run.workflow_run || this.workflowRun || "")}</div>
+			<div class="slow-ai-canvas__history-item">${__("Nodes")}: ${nodeRuns.length}</div>
 			<div class="slow-ai-canvas__history-item">${__("Provider Jobs")}: ${jobs.length}</div>
+			<div class="slow-ai-canvas__history-item">${__("Assets")}: ${assets.length}</div>
 			<div class="slow-ai-canvas__history-item">${__("Ledger Entries")}: ${ledger.length}</div>
 		`);
+		this.renderProviderJobs(jobs);
+		this.renderLedgerSummary(ledger);
+		this.renderRunErrors(run, nodeRuns, jobs);
+		this.renderRunTimeline(run, nodeRuns, jobs, assets);
 		this.renderAssetOutputs(assets);
+	}
+
+	renderProviderJobs(jobs) {
+		if (!this.$providerJobs) {
+			return;
+		}
+		if (!jobs.length) {
+			this.$providerJobs.html(`<div class="slow-ai-canvas__empty">${__("No provider jobs")}</div>`);
+			return;
+		}
+		this.$providerJobs.html(
+			jobs
+				.map((job) => {
+					return `<div class="slow-ai-canvas__monitor-row" data-provider-job-status="${this.escape(job.status)}">
+						<div>
+							<div class="slow-ai-canvas__monitor-row-title">${this.escape(job.name)}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(job.provider || "")} / ${this.escape(job.model || "")}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${__("Node Run")}: ${this.escape(job.node_run || "")}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${__("Submitted")}: ${this.escape(this.formatTime(job.submitted_at))}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${__("Completed")}: ${this.escape(this.formatTime(job.completed_at))}</div>
+							${this.safeErrorMessage(job.error) ? `<div class="slow-ai-canvas__safe-error">${this.escape(this.safeErrorMessage(job.error))}</div>` : ""}
+						</div>
+						<div class="slow-ai-canvas__monitor-row-side">
+							${this.statusBadge(job.status)}
+							<div>${this.escape(this.money(job.cost_usd))}</div>
+						</div>
+					</div>`;
+				})
+				.join("")
+		);
+	}
+
+	renderLedgerSummary(ledger) {
+		if (!this.$ledgerSummary) {
+			return;
+		}
+		if (!ledger.length) {
+			this.$ledgerSummary.html(`<div class="slow-ai-canvas__empty">${__("No ledger entries")}</div>`);
+			return;
+		}
+		const totals = ledger.reduce(
+			(summary, row) => {
+				const amount = Number(row.amount_usd || 0);
+				if (row.ledger_type === "CREDIT") {
+					summary.credit += amount;
+				} else if (row.ledger_type === "DEBIT") {
+					summary.debit += amount;
+				} else {
+					summary.adjustment += amount;
+				}
+				summary.currency = row.currency || summary.currency;
+				return summary;
+			},
+			{ credit: 0, debit: 0, adjustment: 0, currency: "USD" }
+		);
+		const net = totals.credit - totals.debit + totals.adjustment;
+		const rows = ledger
+			.map((row) => {
+				return `<div class="slow-ai-canvas__ledger-row">
+					<span>${this.escape(row.ledger_type)} · ${this.escape(row.name)}</span>
+					<strong>${this.escape(this.money(row.amount_usd, row.currency))}</strong>
+				</div>`;
+			})
+			.join("");
+		this.$ledgerSummary.html(`
+			<div class="slow-ai-canvas__metric">${__("Debit")}: ${this.escape(this.money(totals.debit, totals.currency))}</div>
+			<div class="slow-ai-canvas__metric">${__("Credit")}: ${this.escape(this.money(totals.credit, totals.currency))}</div>
+			<div class="slow-ai-canvas__metric">${__("Adjustment")}: ${this.escape(this.money(totals.adjustment, totals.currency))}</div>
+			<div class="slow-ai-canvas__metric">${__("Net")}: ${this.escape(this.money(net, totals.currency))}</div>
+			${rows}
+		`);
+	}
+
+	renderRunErrors(run, nodeRuns, jobs) {
+		if (!this.$runErrors) {
+			return;
+		}
+		const errors = [];
+		const runError = this.safeErrorMessage(run && run.error);
+		if (runError) {
+			errors.push(`${__("Workflow")}: ${runError}`);
+		}
+		nodeRuns.forEach((nodeRun) => {
+			const message = this.safeErrorMessage(nodeRun.error);
+			if (message) {
+				errors.push(`${nodeRun.node_id || nodeRun.name}: ${message}`);
+			}
+		});
+		jobs.forEach((job) => {
+			const message = this.safeErrorMessage(job.error);
+			if (message) {
+				errors.push(`${job.name}: ${message}`);
+			}
+		});
+		if (!errors.length) {
+			this.$runErrors.html(`<div class="slow-ai-canvas__empty">${__("No errors")}</div>`);
+			return;
+		}
+		this.$runErrors.html(
+			errors
+				.map((message) => `<div class="slow-ai-canvas__safe-error">${this.escape(message)}</div>`)
+				.join("")
+		);
+	}
+
+	renderRunTimeline(run, nodeRuns, jobs, assets) {
+		if (!this.$runTimeline) {
+			return;
+		}
+		const events = [];
+		if (run && run.queued_at) {
+			events.push({ label: __("Workflow queued"), at: run.queued_at, detail: run.workflow_run });
+		} else if (run && run.workflow_run) {
+			events.push({ label: __("Workflow queued"), at: "", detail: run.workflow_run });
+		}
+		nodeRuns.forEach((nodeRun) => {
+			if (nodeRun.started_at) {
+				events.push({ label: __("Node started"), at: nodeRun.started_at, detail: `${nodeRun.node_id} · ${nodeRun.status}` });
+			}
+		});
+		jobs.forEach((job) => {
+			if (job.submitted_at || ["SUBMITTED", "WAITING_PROVIDER", "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"].includes(job.status)) {
+				events.push({ label: __("Provider submitted"), at: job.submitted_at, detail: `${job.name} · ${job.status}` });
+			}
+			if (job.completed_at || ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"].includes(job.status)) {
+				events.push({ label: __("Provider completed"), at: job.completed_at, detail: `${job.name} · ${job.status}` });
+			}
+		});
+		assets.forEach((asset) => {
+			events.push({ label: __("Asset created"), at: "", detail: `${asset.asset_type} · ${asset.name}` });
+		});
+		if (run && (run.completed_at || this.isTerminalStatus(run.status))) {
+			events.push({ label: run.status === "SUCCEEDED" ? __("Run completed") : __("Run failed"), at: run.completed_at, detail: run.status });
+		}
+		if (!events.length) {
+			this.$runTimeline.html(`<div class="slow-ai-canvas__empty">${__("No timeline events")}</div>`);
+			return;
+		}
+		this.$runTimeline.html(
+			events
+				.map((event) => {
+					return `<div class="slow-ai-canvas__timeline-row">
+						<div class="slow-ai-canvas__timeline-dot"></div>
+						<div>
+							<div class="slow-ai-canvas__monitor-row-title">${this.escape(event.label)}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(this.formatTime(event.at))}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(event.detail || "")}</div>
+						</div>
+					</div>`;
+				})
+				.join("")
+		);
 	}
 
 	renderAssetOutputs(assets) {
@@ -591,6 +1244,9 @@ class SlowAiCanvasPlaceholder {
 						: this.escape(asset.name);
 					return `<div class="slow-ai-canvas__asset-item">
 						<div>${this.escape(asset.asset_type)} · ${this.escape(asset.name)}</div>
+						<div>${this.escape(asset.mime_type || "")}</div>
+						<div>${__("Node Run")}: ${this.escape(asset.source_node_run || "")}</div>
+						<div>${__("Provider Job")}: ${this.escape(asset.source_provider_job || "")}</div>
 						<div>${link}</div>
 					</div>`;
 				})
@@ -601,6 +1257,52 @@ class SlowAiCanvasPlaceholder {
 
 	setStatus(message) {
 		this.$status.text(message);
+	}
+
+	statusBadge(status) {
+		const value = status || __("UNKNOWN");
+		return `<span class="slow-ai-canvas__status-badge" data-status="${this.escape(value)}">${this.escape(value)}</span>`;
+	}
+
+	formatTime(value) {
+		if (!value) {
+			return "-";
+		}
+		return String(value);
+	}
+
+	money(value, currency) {
+		const amount = Number(value || 0);
+		const code = currency || "USD";
+		return `${code} ${amount.toFixed(4)}`;
+	}
+
+	safeErrorMessage(error) {
+		if (!error) {
+			return "";
+		}
+		if (typeof error === "string") {
+			return this.sanitizeErrorText(error);
+		}
+		if (typeof error !== "object") {
+			return __("Error details captured on server.");
+		}
+		const parts = [];
+		["message", "error", "status", "code", "type"].forEach((key) => {
+			const value = error[key];
+			if (value === null || value === undefined || typeof value === "object") {
+				return;
+			}
+			parts.push(`${key}: ${this.sanitizeErrorText(value)}`);
+		});
+		return parts.length ? parts.join(" · ") : __("Error details captured on server.");
+	}
+
+	sanitizeErrorText(value) {
+		return String(value)
+			.replace(/https?:\/\/\S+/gi, "[link hidden]")
+			.replace(/(api[_-]?key|authorization|bearer|secret|token)\s*[:=]\s*[^,\s]+/gi, "$1: [redacted]")
+			.slice(0, 240);
 	}
 
 	escape(value) {

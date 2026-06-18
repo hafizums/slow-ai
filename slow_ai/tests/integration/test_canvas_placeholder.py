@@ -4,7 +4,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from slow_ai.domain.exceptions import RunPreflightError
+from slow_ai.domain.exceptions import GraphValidationError, RunPreflightError
 
 
 ALLOWED_CANVAS_METHODS = {
@@ -154,6 +154,37 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("output_schema", page.script)
         self.assertIn("Add Node", page.script)
         self.assertIn("addNodeFromMetadata", page.script)
+        self.assertIn("selectNode", page.script)
+        self.assertIn("renderNodeEditor", page.script)
+        self.assertIn("data-config-field", page.script)
+        self.assertIn("updateSelectedNodeConfig", page.script)
+        self.assertIn("data-position-field", page.script)
+        self.assertIn("captureLayout", page.script)
+        self.assertIn("addEdgeFromEditor", page.script)
+        self.assertIn("deleteEdge", page.script)
+        self.assertIn("deleteSelectedNode", page.script)
+        self.assertIn("portsCompatible", page.script)
+        self.assertIn("draftWarnings", page.script)
+        self.assertIn("renderRunSummary", page.script)
+        self.assertIn("renderProviderJobs", page.script)
+        self.assertIn("renderLedgerSummary", page.script)
+        self.assertIn("renderRunErrors", page.script)
+        self.assertIn("renderRunTimeline", page.script)
+        self.assertIn("safeErrorMessage", page.script)
+        self.assertIn("sanitizeErrorText", page.script)
+        self.assertIn("slow_ai_workflow_run_update", page.script)
+        self.assertIn("slow_ai_node_run_update", page.script)
+        self.assertIn("slow_ai_provider_job_update", page.script)
+        self.assertIn('"PENDING", "READY", "RUNNING", "WAITING_PROVIDER", "SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED"', page.script)
+        self.assertIn("slow-ai-canvas__draft-warning", page.style)
+        self.assertIn("slow-ai-canvas__edge-row", page.style)
+        self.assertIn("slow-ai-canvas__node-editor", page.style)
+        self.assertIn("slow-ai-canvas__provider-jobs", page.style)
+        self.assertIn("slow-ai-canvas__ledger-summary", page.style)
+        self.assertIn("slow-ai-canvas__run-errors", page.style)
+        self.assertIn("slow-ai-canvas__run-timeline", page.style)
+        self.assertIn("slow-ai-canvas__safe-error", page.style)
+        self.assertIn("Refresh Run", page.script)
         self.assertIn("This workflow may call an external provider and spend credits.", page.script)
         self.assertIn("cost unknown", page.script)
         self.assertIn("frappe.confirm", page.script)
@@ -197,6 +228,40 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertEqual(len(status["node_runs"]), 3)
         self.assertEqual(history["run"]["workflow_run"], run["workflow_run"])
         self.assertIn(run["workflow_run"], {row["name"] for row in queue["queued"]})
+
+    def test_canvas_graph_editor_assets_are_draft_only_and_backend_rejects_invalid_graph(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        self.assertIn("this.nodes.push(node)", page.script)
+        self.assertIn("this.edges.push({", page.script)
+        self.assertIn("this.nodes = this.nodes.filter", page.script)
+        self.assertIn("this.edges = this.edges.filter", page.script)
+        self.assertIn('frappe.call("slow_ai.api.workflows.save_workflow"', page.script)
+        self.assertIn('frappe.call("slow_ai.api.runs.start_run"', page.script)
+        for forbidden in ("frappe.db", "providers/wavespeed", "api.wavespeed.ai", "WAVESPEED_API_KEY"):
+            self.assertNotIn(forbidden, page.script)
+
+        project = create_project()
+        invalid_edges = [
+            {
+                "id": "edge_1",
+                "source": "prompt_1",
+                "source_port": "text",
+                "target": "output_1",
+                "target_port": "image",
+            }
+        ]
+        with self.assertRaises(GraphValidationError):
+            frappe.call(
+                "slow_ai.api.workflows.save_workflow",
+                project=project.name,
+                title="Canvas Invalid Graph",
+                nodes=json.dumps([canvas_nodes()[0], canvas_nodes()[2]]),
+                edges=json.dumps(invalid_edges),
+                layout=json.dumps({"nodes": [{"id": "output_1", "x": 656, "y": 128}]}),
+            )
 
     def test_added_provider_node_still_uses_backend_preflight_on_start(self):
         project = create_project()
@@ -294,6 +359,94 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertEqual(viewed["name"], asset.name)
         self.assertEqual(viewed["source_workflow_run"], run["workflow_run"])
         self.assertEqual(viewed["metadata"]["origin"], "canvas-placeholder-test")
+
+    def test_canvas_run_monitor_history_uses_real_provider_asset_ledger_and_error_records(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+        self.assertIn('frappe.call("slow_ai.api.runs.get_run_status"', page.script)
+        self.assertIn('frappe.call("slow_ai.api.runs.get_history"', page.script)
+        self.assertIn('frappe.call("slow_ai.api.assets.view"', page.script)
+        self.assertIn("Provider submitted", page.script)
+        self.assertIn("Provider completed", page.script)
+        self.assertIn("Asset created", page.script)
+        self.assertIn("Run completed", page.script)
+        self.assertIn("Run failed", page.script)
+
+        ensure_canvas_provider_catalog()
+        project = create_project()
+        workflow = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            project=project.name,
+            title="Canvas Monitor Workflow",
+            nodes=json.dumps(canvas_nodes()),
+            edges=json.dumps(canvas_edges()),
+            layout=json.dumps({"nodes": [{"id": "image_1", "x": 376, "y": 128}]}),
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=workflow["name"])
+        image_node_run = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": run["workflow_run"], "node_id": "image_1"},
+            "name",
+        )
+        provider_job = frappe.get_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": image_node_run,
+                "provider": "wavespeed",
+                "model": "wavespeed-ai/flux-dev",
+                "external_job_id": unique("external"),
+                "status": "FAILED",
+                "idempotency_key": unique("canvas-monitor-job"),
+                "cost_usd": 0.012,
+                "request_json": json.dumps({"prompt": "Canvas prompt"}),
+                "raw_error_json": json.dumps(
+                    {
+                        "message": "Provider request failed at https://provider.example.invalid",
+                        "code": "provider_error",
+                        "api_key": "should-not-render",
+                    }
+                ),
+            }
+        ).insert(ignore_permissions=True)
+        asset = frappe.get_doc(
+            {
+                "doctype": "AI Asset",
+                "project": project.name,
+                "asset_type": "IMAGE",
+                "url": "https://example.invalid/canvas-monitor-output.png",
+                "mime_type": "image/png",
+                "source_workflow_run": run["workflow_run"],
+                "source_node_run": image_node_run,
+                "source_provider_job": provider_job.name,
+                "metadata_json": json.dumps({"origin": "canvas-monitor-test"}),
+            }
+        ).insert(ignore_permissions=True)
+        ledger = frappe.get_doc(
+            {
+                "doctype": "AI Credit Ledger",
+                "project": project.name,
+                "workflow_run": run["workflow_run"],
+                "node_run": image_node_run,
+                "provider_job": provider_job.name,
+                "ledger_type": "DEBIT",
+                "amount_usd": 0.012,
+                "currency": "USD",
+                "description": "Canvas monitor cost",
+            }
+        ).insert(ignore_permissions=True)
+
+        status = frappe.call("slow_ai.api.runs.get_run_status", workflow_run=run["workflow_run"])
+        history = frappe.call("slow_ai.api.runs.get_history", workflow_run=run["workflow_run"])
+        viewed = frappe.call("slow_ai.api.assets.view", asset=asset.name)
+
+        self.assertEqual(status["workflow_run"], run["workflow_run"])
+        self.assertIn(image_node_run, {row["name"] for row in history["node_runs"]})
+        self.assertIn(provider_job.name, {row["name"] for row in history["provider_jobs"]})
+        self.assertIn(asset.name, {row["name"] for row in history["assets"]})
+        self.assertIn(ledger.name, {row["name"] for row in history["ledger"]})
+        self.assertEqual(history["provider_jobs"][0]["error"]["code"], "provider_error")
+        self.assertEqual(viewed["url"], "https://example.invalid/canvas-monitor-output.png")
 
     def test_canvas_model_metadata_api_returns_safe_pricing_only(self):
         model = frappe.get_doc(

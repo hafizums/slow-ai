@@ -13,6 +13,7 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.runs.get_run_status",
     "slow_ai.api.runs.get_history",
     "slow_ai.api.queue.get_queue_status",
+    "slow_ai.api.assets.view",
 }
 
 FORBIDDEN_CANVAS_FRAGMENTS = (
@@ -21,6 +22,8 @@ FORBIDDEN_CANVAS_FRAGMENTS = (
     "WAVESPEED_API_KEY",
     "api_key_secret",
     "Authorization: Bearer",
+    "api.wavespeed.ai",
+    "wavespeed.ai/api",
     "WorkflowExecutor",
     "run_workflow",
     "checkpoint",
@@ -54,10 +57,25 @@ def canvas_nodes():
             "config": {"text": "Canvas placeholder prompt"},
         },
         {
+            "id": "image_1",
+            "type": "provider_text_to_image",
+            "label": "Provider Text to Image",
+            "position": {"x": 376, "y": 128},
+            "config": {
+                "provider": "wavespeed",
+                "model": "wavespeed-ai/flux-dev",
+                "parameters": {
+                    "size": "1024*1024",
+                    "num_images": 1,
+                    "enable_base64_output": False,
+                },
+            },
+        },
+        {
             "id": "output_1",
             "type": "export_output",
             "label": "Output",
-            "position": {"x": 416, "y": 128},
+            "position": {"x": 656, "y": 128},
             "config": {},
         },
     ]
@@ -69,9 +87,16 @@ def canvas_edges():
             "id": "edge_1",
             "source": "prompt_1",
             "source_port": "text",
+            "target": "image_1",
+            "target_port": "prompt",
+        },
+        {
+            "id": "edge_2",
+            "source": "image_1",
+            "source_port": "image",
             "target": "output_1",
-            "target_port": "text",
-        }
+            "target_port": "image",
+        },
     ]
 
 
@@ -85,6 +110,8 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("frappe.pages[\"slow-ai-canvas\"]", page.script)
         self.assertIn("frappe.templates[\"slow_ai_canvas\"]", page.script)
         self.assertIn("slow-ai-canvas__stage", page.style)
+        self.assertIn("slow-ai-canvas__asset-output", page.style)
+        self.assertIn("Provider Text to Image", page.script)
         for method in ALLOWED_CANVAS_METHODS:
             self.assertIn(method, page.script)
         for fragment in FORBIDDEN_CANVAS_FRAGMENTS:
@@ -111,9 +138,47 @@ class TestCanvasPlaceholder(FrappeTestCase):
 
         self.assertEqual(loaded["name"], saved["name"])
         self.assertEqual(loaded["nodes"][0]["type"], "text_prompt")
+        self.assertEqual(loaded["nodes"][1]["type"], "provider_text_to_image")
         self.assertTrue(frappe.db.exists("AI Workflow Version", run["workflow_version"]))
         self.assertTrue(frappe.db.exists("AI Workflow Run", run["workflow_run"]))
         self.assertEqual(status["status"], "QUEUED")
-        self.assertEqual(len(status["node_runs"]), 2)
+        self.assertEqual(len(status["node_runs"]), 3)
         self.assertEqual(history["run"]["workflow_run"], run["workflow_run"])
         self.assertIn(run["workflow_run"], {row["name"] for row in queue["queued"]})
+
+    def test_canvas_asset_view_api_flow_uses_real_asset_documents(self):
+        project = create_project()
+        workflow = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            project=project.name,
+            title="Canvas Asset Workflow",
+            nodes=json.dumps(canvas_nodes()),
+            edges=json.dumps(canvas_edges()),
+            layout=json.dumps({"nodes": [{"id": "image_1", "x": 376, "y": 128}]}),
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=workflow["name"])
+        image_node_run = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": run["workflow_run"], "node_id": "image_1"},
+            "name",
+        )
+        asset = frappe.get_doc(
+            {
+                "doctype": "AI Asset",
+                "project": project.name,
+                "asset_type": "IMAGE",
+                "url": "https://example.invalid/canvas-output.png",
+                "mime_type": "image/png",
+                "source_workflow_run": run["workflow_run"],
+                "source_node_run": image_node_run,
+                "metadata_json": json.dumps({"origin": "canvas-placeholder-test"}),
+            }
+        ).insert(ignore_permissions=True)
+
+        history = frappe.call("slow_ai.api.runs.get_history", workflow_run=run["workflow_run"])
+        viewed = frappe.call("slow_ai.api.assets.view", asset=asset.name)
+
+        self.assertIn(asset.name, {row["name"] for row in history["assets"]})
+        self.assertEqual(viewed["name"], asset.name)
+        self.assertEqual(viewed["source_workflow_run"], run["workflow_run"])
+        self.assertEqual(viewed["metadata"]["origin"], "canvas-placeholder-test")

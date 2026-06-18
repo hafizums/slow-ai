@@ -22,6 +22,7 @@ class SlowAiCanvasPlaceholder {
 		this.workflowRun = null;
 		this.objectInfo = {};
 		this.nodeRunsByNodeId = {};
+		this.pollTimer = null;
 		this.nodes = this.defaultNodes();
 		this.edges = this.defaultEdges();
 		this.layout = { nodes: this.nodes.map((node) => ({ id: node.id, ...node.position })) };
@@ -72,6 +73,7 @@ class SlowAiCanvasPlaceholder {
 		this.$queue = this.$root.find("[data-role='queue-summary']");
 		this.$summary = this.$root.find("[data-role='run-summary']");
 		this.$history = this.$root.find("[data-role='history']");
+		this.$assets = this.$root.find("[data-role='asset-output']");
 	}
 
 	show() {
@@ -106,6 +108,7 @@ class SlowAiCanvasPlaceholder {
 			this.nodeRunsByNodeId = {};
 			this.setStatus(__("Loaded {0}", [draft.name]));
 			this.render();
+			this.renderAssetOutputs([]);
 		});
 	}
 
@@ -143,6 +146,7 @@ class SlowAiCanvasPlaceholder {
 			const result = response.message;
 			this.workflowRun = result.workflow_run;
 			this.setStatus(__("Queued {0}", [result.workflow_run]));
+			this.startPolling();
 			this.refreshRun();
 			this.refreshQueue();
 		});
@@ -162,6 +166,11 @@ class SlowAiCanvasPlaceholder {
 			this.$run.text(`${status.workflow_run} · ${status.status}`);
 			this.renderRunSummary(status);
 			this.render();
+			if (this.isTerminalStatus(status.status)) {
+				this.stopPolling();
+			} else {
+				this.startPolling();
+			}
 			return this.refreshHistory();
 		});
 	}
@@ -185,6 +194,28 @@ class SlowAiCanvasPlaceholder {
 		});
 	}
 
+	startPolling() {
+		if (this.pollTimer || !this.workflowRun) {
+			return;
+		}
+		this.pollTimer = window.setInterval(() => {
+			this.refreshRun();
+			this.refreshQueue();
+		}, 5000);
+	}
+
+	stopPolling() {
+		if (!this.pollTimer) {
+			return;
+		}
+		window.clearInterval(this.pollTimer);
+		this.pollTimer = null;
+	}
+
+	isTerminalStatus(status) {
+		return ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"].includes(status);
+	}
+
 	bindRealtime() {
 		if (!frappe.realtime) {
 			return;
@@ -203,6 +234,7 @@ class SlowAiCanvasPlaceholder {
 	newDefaultDraft() {
 		this.workflow = null;
 		this.workflowRun = null;
+		this.stopPolling();
 		this.workflowField.set_value("");
 		this.titleField.set_value("Untitled AI Workflow");
 		this.nodes = this.defaultNodes();
@@ -210,6 +242,7 @@ class SlowAiCanvasPlaceholder {
 		this.layout = { nodes: this.nodes.map((node) => ({ id: node.id, ...node.position })) };
 		this.nodeRunsByNodeId = {};
 		this.setStatus(__("New draft"));
+		this.renderAssetOutputs([]);
 		this.render();
 	}
 
@@ -223,10 +256,25 @@ class SlowAiCanvasPlaceholder {
 				config: { text: "A concise product prompt" },
 			},
 			{
+				id: "image_1",
+				type: "provider_text_to_image",
+				label: "Provider Text to Image",
+				position: { x: 376, y: 128 },
+				config: {
+					provider: "wavespeed",
+					model: "wavespeed-ai/flux-dev",
+					parameters: {
+						size: "1024*1024",
+						num_images: 1,
+						enable_base64_output: false,
+					},
+				},
+			},
+			{
 				id: "output_1",
 				type: "export_output",
 				label: "Output",
-				position: { x: 416, y: 128 },
+				position: { x: 656, y: 128 },
 				config: {},
 			},
 		];
@@ -238,8 +286,15 @@ class SlowAiCanvasPlaceholder {
 				id: "edge_1",
 				source: "prompt_1",
 				source_port: "text",
+				target: "image_1",
+				target_port: "prompt",
+			},
+			{
+				id: "edge_2",
+				source: "image_1",
+				source_port: "image",
 				target: "output_1",
-				target_port: "text",
+				target_port: "image",
 			},
 		];
 	}
@@ -351,6 +406,37 @@ class SlowAiCanvasPlaceholder {
 			<div class="slow-ai-canvas__history-item">${__("Provider Jobs")}: ${jobs.length}</div>
 			<div class="slow-ai-canvas__history-item">${__("Ledger Entries")}: ${ledger.length}</div>
 		`);
+		this.renderAssetOutputs(assets);
+	}
+
+	renderAssetOutputs(assets) {
+		if (!this.$assets) {
+			return Promise.resolve();
+		}
+		if (!assets || !assets.length) {
+			this.$assets.html(`<div class="slow-ai-canvas__empty">${__("No assets yet")}</div>`);
+			return Promise.resolve();
+		}
+		this.$assets.html(`<div class="slow-ai-canvas__empty">${__("Loading assets")}</div>`);
+		return Promise.all(
+			assets.map((asset) =>
+				frappe.call("slow_ai.api.assets.view", { asset: asset.name }).then((response) => response.message)
+			)
+		).then((viewedAssets) => {
+			const html = viewedAssets
+				.map((asset) => {
+					const href = asset.file || asset.url || "";
+					const link = href
+						? `<a class="slow-ai-canvas__asset-link" href="${this.escape(href)}" target="_blank" rel="noopener">${this.escape(href)}</a>`
+						: this.escape(asset.name);
+					return `<div class="slow-ai-canvas__asset-item">
+						<div>${this.escape(asset.asset_type)} · ${this.escape(asset.name)}</div>
+						<div>${link}</div>
+					</div>`;
+				})
+				.join("");
+			this.$assets.html(html);
+		});
 	}
 
 	setStatus(message) {

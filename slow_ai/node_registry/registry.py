@@ -74,6 +74,7 @@ def create_default_registry() -> NodeRegistry:
         ProviderTextToSpeechNode,
     )
     from slow_ai.node_registry.nodes.text_prompt import TextPromptNode
+    from slow_ai.node_registry.nodes.tool_output import ToolOutputNode
     from slow_ai.node_registry.nodes.upload_asset import UploadAssetNode
 
     return NodeRegistry(
@@ -86,5 +87,6 @@ def create_default_registry() -> NodeRegistry:
             ProviderStartEndToVideoNode(),
             ProviderTextToSpeechNode(),
             ExportOutputNode(),
+            ToolOutputNode(),
         ]
     )

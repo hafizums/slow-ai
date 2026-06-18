@@ -9,7 +9,6 @@ from slow_ai.domain.exceptions import (
 )
 from slow_ai.domain.status import NodeRunStatus, ProviderJobStatus, WorkflowRunStatus
 from slow_ai.domain.workflow_graph import WorkflowEdge, WorkflowGraph, WorkflowNode
-from slow_ai.domain.workflow_json import parse_workflow_json, validate_workflow_json
 
 __all__ = [
     "GraphValidationError",
@@ -26,3 +25,14 @@ __all__ = [
     "parse_workflow_json",
     "validate_workflow_json",
 ]
+
+
+def __getattr__(name):
+    if name in {"parse_workflow_json", "validate_workflow_json"}:
+        from slow_ai.domain.workflow_json import parse_workflow_json, validate_workflow_json
+
+        return {
+            "parse_workflow_json": parse_workflow_json,
+            "validate_workflow_json": validate_workflow_json,
+        }[name]
+    raise AttributeError(name)

@@ -9,6 +9,7 @@ from slow_ai.node_registry.nodes.provider import (
     ProviderTextToSpeechNode,
 )
 from slow_ai.node_registry.nodes.text_prompt import TextPromptNode
+from slow_ai.node_registry.nodes.tool_output import ToolOutputNode
 from slow_ai.node_registry.nodes.upload_asset import UploadAssetNode
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "ProviderTextToImageNode",
     "ProviderTextToSpeechNode",
     "TextPromptNode",
+    "ToolOutputNode",
     "UploadAssetNode",
 ]

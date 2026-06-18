@@ -20,6 +20,7 @@ INITIAL_NODE_TYPES = {
     "provider_start_end_to_video",
     "provider_text_to_speech",
     "export_output",
+    "tool_output",
 }
 
 
@@ -68,6 +69,9 @@ class TestWorkflowJsonAndNodeRegistry(FrappeTestCase):
             "AUDIO_ASSET",
         )
         self.assertTrue(nodes["export_output"]["is_output_node"])
+        self.assertTrue(nodes["tool_output"]["is_output_node"])
+        self.assertEqual(nodes["tool_output"]["input_schema"]["text"]["type"], "TEXT")
+        self.assertTrue(nodes["tool_output"]["config_schema"]["output_name"]["required"])
 
     def test_workflow_json_validation_accepts_text_to_export(self):
         graph = validate_workflow(text_to_export_workflow())

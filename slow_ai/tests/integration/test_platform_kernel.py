@@ -37,6 +37,7 @@ INITIAL_NODE_TYPES = {
     "provider_start_end_to_video",
     "provider_text_to_speech",
     "export_output",
+    "tool_output",
 }
 
 

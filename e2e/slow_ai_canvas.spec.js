@@ -114,17 +114,50 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 		.first()
 		.getByRole("button", { name: "Add Node" })
 		.click();
-	await expect(page.locator("[data-role='nodes'] [data-node-id^='text_prompt_']")).toHaveCount(1);
-	await page.locator("[data-role='nodes'] [data-node-id^='text_prompt_']").click();
+	const addedNodes = page.locator("[data-role='nodes'] > .slow-ai-canvas__node[data-node-id^='text_prompt_']");
+	await expect(addedNodes.first()).toBeVisible();
+	const addedNode = addedNodes.last();
+	await expect(addedNode).toContainText("Text Prompt");
+	const addedNodeId = await addedNode.getAttribute("data-node-id");
+	const initialPosition = await page.evaluate((nodeId) => {
+		const instance = window.$(".page-container, .page-wrapper")
+			.toArray()
+			.map((wrapper) => {
+				const data = window.$(wrapper).data();
+				return data.slowAiCanvas || data["slow-ai-canvas"];
+			})
+			.find(Boolean);
+		const node = instance.nodes.find((row) => row.id === nodeId);
+		return node.position;
+	}, addedNodeId);
+	const handle = addedNode.locator("[data-node-drag-handle]");
+	const handleBox = await handle.boundingBox();
+	await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(handleBox.x + handleBox.width / 2 + 84, handleBox.y + handleBox.height / 2 + 42, { steps: 8 });
+	await page.mouse.up();
+	await expect(page.locator("[data-role='status']")).toContainText(`Moved node ${addedNodeId}`);
+	const movedPosition = await page.evaluate((nodeId) => {
+		const instance = window.$(".page-container, .page-wrapper")
+			.toArray()
+			.map((wrapper) => {
+				const data = window.$(wrapper).data();
+				return data.slowAiCanvas || data["slow-ai-canvas"];
+			})
+			.find(Boolean);
+		const node = instance.nodes.find((row) => row.id === nodeId);
+		return node.position;
+	}, addedNodeId);
+	expect(movedPosition.x).toBeGreaterThan(initialPosition.x);
+	expect(movedPosition.y).toBeGreaterThan(initialPosition.y);
+	await addedNode.click();
 	await page.locator("[data-role='node-editor'] [data-config-field='text']").fill("Browser edited prompt");
 
-	await page.locator("[data-role='edge-list'] .slow-ai-canvas__edge-row").first().getByRole("button", { name: "Delete" }).click();
+	await page.locator("[data-role='edges'] [data-action='delete-visual-edge'][data-edge-id='edge_1']").click({ force: true });
 	await expect(page.locator("[data-role='status']")).toContainText("Deleted edge");
-	await page.locator("[data-edge-source]").selectOption("prompt_1");
-	await page.locator("[data-edge-source-port]").selectOption("text");
-	await page.locator("[data-edge-target]").selectOption("image_1");
-	await page.locator("[data-edge-target-port]").selectOption("prompt");
-	await page.locator("[data-role='edge-editor']").getByRole("button", { name: "Add Edge" }).click();
+	await page.locator("[data-node-id='prompt_1'] [data-port-direction='output'][data-port-name='text']").click();
+	await expect(page.locator("[data-role='status']")).toContainText("Select a compatible input port");
+	await page.locator("[data-node-id='image_1'] [data-port-direction='input'][data-port-name='prompt']").click();
 	await expect(page.locator("[data-role='status']")).toContainText("Added edge");
 
 	const saveResponse = page.waitForResponse(apiPredicate(API.saveWorkflow));
@@ -132,6 +165,9 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	const saved = await apiJson(await saveResponse);
 	expect(saved.message.name).toMatch(/^AI-WORKFLOW-/);
 	expect(saved.message.layout.nodes.length).toBeGreaterThan(0);
+	const savedMovedNode = saved.message.layout.nodes.find((row) => row.id === addedNodeId);
+	expect(savedMovedNode.x).toBe(movedPosition.x);
+	expect(savedMovedNode.y).toBe(movedPosition.y);
 
 	const modelMetadataResponse = page.waitForResponse(apiPredicate(API.modelMetadata));
 	await clickCanvasButton(page, "Start Run");

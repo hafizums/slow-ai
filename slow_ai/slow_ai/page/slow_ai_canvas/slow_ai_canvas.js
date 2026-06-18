@@ -29,6 +29,9 @@ class SlowAiCanvasPlaceholder {
 		this.nodes = this.defaultNodes();
 		this.edges = this.defaultEdges();
 		this.selectedNodeId = null;
+		this.pendingEdge = null;
+		this.dragState = null;
+		this.eventNamespace = `.slowAiCanvas${Date.now()}`;
 		this.layout = { nodes: this.nodes.map((node) => ({ id: node.id, ...node.position })) };
 		this.makeBody();
 		this.makeControls();
@@ -131,6 +134,29 @@ class SlowAiCanvasPlaceholder {
 		this.$nodes.on("click", "[data-node-id]", (event) => {
 			this.selectNode($(event.currentTarget).attr("data-node-id"));
 		});
+		this.$nodes.on("mousedown", "[data-node-drag-handle]", (event) => {
+			this.startNodeDrag(event);
+		});
+		this.$nodes.on("click", "[data-port-direction='output']", (event) => {
+			event.stopPropagation();
+			this.startVisualEdge(event.currentTarget);
+		});
+		this.$nodes.on("click", "[data-port-direction='input']", (event) => {
+			event.stopPropagation();
+			this.completeVisualEdge(event.currentTarget);
+		});
+		this.$edges.on("click", "[data-action='delete-visual-edge']", (event) => {
+			event.stopPropagation();
+			this.deleteEdge($(event.currentTarget).attr("data-edge-id"));
+		});
+		this.$stage.on("click", (event) => {
+			if (event.target === this.$stage[0] || event.target === this.$edges[0]) {
+				this.clearPendingEdge();
+			}
+		});
+		$(document)
+			.on(`mousemove${this.eventNamespace}`, (event) => this.dragNode(event))
+			.on(`mouseup${this.eventNamespace}`, () => this.stopNodeDrag());
 		this.$nodeEditor.on("input change", "[data-config-field]", (event) => {
 			this.updateSelectedNodeConfig(event.currentTarget);
 		});
@@ -1145,6 +1171,105 @@ class SlowAiCanvasPlaceholder {
 		return input.value;
 	}
 
+	nodeWidth() {
+		return 220;
+	}
+
+	portSpacing() {
+		return 24;
+	}
+
+	portStartY() {
+		return 78;
+	}
+
+	startNodeDrag(event) {
+		if (event.button !== 0) {
+			return;
+		}
+		const nodeId = $(event.currentTarget).closest("[data-node-id]").attr("data-node-id");
+		const node = this.findNode(nodeId);
+		if (!node) {
+			return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		const position = node.position || { x: 0, y: 0 };
+		this.selectedNodeId = nodeId;
+		this.dragState = {
+			nodeId,
+			startClientX: event.clientX,
+			startClientY: event.clientY,
+			startX: Number(position.x || 0),
+			startY: Number(position.y || 0),
+		};
+		this.renderNodeEditor();
+		this.renderDraftWarnings();
+		this.$nodes.find(`[data-node-id="${this.escapeSelector(nodeId)}"]`).attr("data-dragging", "1");
+	}
+
+	dragNode(event) {
+		if (!this.dragState) {
+			return;
+		}
+		const node = this.findNode(this.dragState.nodeId);
+		if (!node) {
+			return;
+		}
+		const x = Math.max(12, Math.round(this.dragState.startX + event.clientX - this.dragState.startClientX));
+		const y = Math.max(12, Math.round(this.dragState.startY + event.clientY - this.dragState.startClientY));
+		node.position = { x, y };
+		this.captureLayout();
+		this.$nodes.find(`[data-node-id="${this.escapeSelector(node.id)}"]`).css({ left: `${x}px`, top: `${y}px` });
+		this.syncStageSize();
+		this.renderEdges();
+	}
+
+	stopNodeDrag() {
+		if (!this.dragState) {
+			return;
+		}
+		const nodeId = this.dragState.nodeId;
+		this.dragState = null;
+		this.$nodes.find(`[data-node-id="${this.escapeSelector(nodeId)}"]`).attr("data-dragging", "0");
+		this.setStatus(__("Moved node {0}", [nodeId]));
+		this.renderNodeEditor();
+		this.renderDraftWarnings();
+	}
+
+	startVisualEdge(portElement) {
+		const $port = $(portElement);
+		const nodeId = $port.attr("data-node-id");
+		const portName = $port.attr("data-port-name");
+		this.pendingEdge = { source: nodeId, source_port: portName };
+		this.setStatus(__("Select a compatible input port"));
+		this.renderNodes();
+	}
+
+	completeVisualEdge(portElement) {
+		const $port = $(portElement);
+		if (!this.pendingEdge) {
+			this.setStatus(__("Select an output port first"));
+			return;
+		}
+		this.addEdge(
+			this.pendingEdge.source,
+			this.pendingEdge.source_port,
+			$port.attr("data-node-id"),
+			$port.attr("data-port-name")
+		);
+		this.pendingEdge = null;
+	}
+
+	clearPendingEdge() {
+		if (!this.pendingEdge) {
+			return;
+		}
+		this.pendingEdge = null;
+		this.setStatus(__("Cancelled edge"));
+		this.renderNodes();
+	}
+
 	nextEdgeId() {
 		let index = this.edges.length + 1;
 		let candidate = `edge_${index}`;
@@ -1161,6 +1286,10 @@ class SlowAiCanvasPlaceholder {
 		const sourcePort = this.$edgeEditor.find("[data-edge-source-port]").val();
 		const target = this.$edgeEditor.find("[data-edge-target]").val();
 		const targetPort = this.$edgeEditor.find("[data-edge-target-port]").val();
+		this.addEdge(source, sourcePort, target, targetPort);
+	}
+
+	addEdge(source, sourcePort, target, targetPort) {
 		const sourceNode = this.findNode(source);
 		const targetNode = this.findNode(target);
 		if (!this.portsCompatible(sourceNode, sourcePort, targetNode, targetPort)) {
@@ -1196,20 +1325,72 @@ class SlowAiCanvasPlaceholder {
 	}
 
 	renderNodes() {
+		this.syncStageSize();
 		const html = this.nodes
 			.map((node) => {
 				const nodeRun = this.nodeRunsByNodeId[node.id] || {};
 				const status = nodeRun.status || "DRAFT";
 				const position = node.position || { x: 0, y: 0 };
 				const selected = this.selectedNodeId === node.id ? "1" : "0";
-				return `<div class="slow-ai-canvas__node" data-node-id="${this.escape(node.id)}" data-node-status="${this.escape(status)}" data-selected="${selected}" style="left: ${position.x}px; top: ${position.y}px;">
-					<div class="slow-ai-canvas__node-name">${this.escape(node.label || node.id)}</div>
+				const metadata = this.nodeMetadata(node) || {};
+				return `<div class="slow-ai-canvas__node" data-node-id="${this.escape(node.id)}" data-node-type="${this.escape(node.type)}" data-node-category="${this.escape(metadata.category || "utility")}" data-node-status="${this.escape(status)}" data-selected="${selected}" data-dragging="0" style="left: ${position.x}px; top: ${position.y}px;">
+					<div class="slow-ai-canvas__node-header" data-node-drag-handle>
+						<div class="slow-ai-canvas__node-name">${this.escape(node.label || node.id)}</div>
+						<div class="slow-ai-canvas__node-status">${this.escape(status)}</div>
+					</div>
 					<div class="slow-ai-canvas__node-type">${this.escape(node.type)}</div>
-					<div class="slow-ai-canvas__node-status">${this.escape(status)}</div>
+					<div class="slow-ai-canvas__node-port-grid">
+						<div class="slow-ai-canvas__node-ports slow-ai-canvas__node-ports--input">
+							${this.renderVisualPorts(node, "input", this.inputPorts(node))}
+						</div>
+						<div class="slow-ai-canvas__node-ports slow-ai-canvas__node-ports--output">
+							${this.renderVisualPorts(node, "output", this.outputPorts(node))}
+						</div>
+					</div>
 				</div>`;
 			})
 			.join("");
 		this.$nodes.html(html);
+	}
+
+	renderVisualPorts(node, direction, ports) {
+		if (!ports.length) {
+			return `<div class="slow-ai-canvas__port-row slow-ai-canvas__port-row--empty">${direction === "input" ? __("No inputs") : __("No outputs")}</div>`;
+		}
+		return ports
+			.map(([portName, spec]) => {
+				const compatible =
+					direction === "input" &&
+					this.pendingEdge &&
+					this.portsCompatible(this.findNode(this.pendingEdge.source), this.pendingEdge.source_port, node, portName)
+						? "1"
+						: "0";
+				const active =
+					direction === "output" &&
+					this.pendingEdge &&
+					this.pendingEdge.source === node.id &&
+					this.pendingEdge.source_port === portName
+						? "1"
+						: "0";
+				return `<button class="slow-ai-canvas__port slow-ai-canvas__port--${this.escape(direction)}" type="button" data-node-id="${this.escape(node.id)}" data-port-name="${this.escape(portName)}" data-port-direction="${this.escape(direction)}" data-compatible="${compatible}" data-active="${active}">
+					<span class="slow-ai-canvas__port-dot"></span>
+					<span class="slow-ai-canvas__port-name">${this.escape(portName)}</span>
+					<span class="slow-ai-canvas__port-type">${this.escape((spec && spec.type) || "JSON")}</span>
+				</button>`;
+			})
+			.join("");
+	}
+
+	syncStageSize() {
+		if (!this.$stage) {
+			return;
+		}
+		const maxX = Math.max(820, ...this.nodes.map((node) => ((node.position && node.position.x) || 0) + this.nodeWidth() + 160));
+		const maxY = Math.max(620, ...this.nodes.map((node) => ((node.position && node.position.y) || 0) + 180));
+		this.$stage.css({
+			"min-width": `${maxX}px`,
+			"min-height": `${maxY}px`,
+		});
 	}
 
 	renderEdges() {
@@ -1224,15 +1405,35 @@ class SlowAiCanvasPlaceholder {
 				if (!source || !target) {
 					return "";
 				}
-				const sx = (source.position ? source.position.x : 0) + 188;
-				const sy = (source.position ? source.position.y : 0) + 44;
-				const tx = target.position ? target.position.x : 0;
-				const ty = (target.position ? target.position.y : 0) + 44;
+				const sourceAnchor = this.portAnchor(source, "output", edge.source_port);
+				const targetAnchor = this.portAnchor(target, "input", edge.target_port);
+				const sx = sourceAnchor.x;
+				const sy = sourceAnchor.y;
+				const tx = targetAnchor.x;
+				const ty = targetAnchor.y;
 				const mid = Math.max(40, (tx - sx) / 2);
-				return `<path class="slow-ai-canvas__edge" d="M ${sx} ${sy} C ${sx + mid} ${sy}, ${tx - mid} ${ty}, ${tx} ${ty}"></path>`;
+				const controlX = sx + (tx - sx) / 2;
+				const controlY = sy + (ty - sy) / 2;
+				return `<g class="slow-ai-canvas__edge-group" data-edge-id="${this.escape(edge.id)}">
+					<path class="slow-ai-canvas__edge" data-edge-id="${this.escape(edge.id)}" d="M ${sx} ${sy} C ${sx + mid} ${sy}, ${tx - mid} ${ty}, ${tx} ${ty}"></path>
+					<circle class="slow-ai-canvas__edge-delete" data-action="delete-visual-edge" data-edge-id="${this.escape(edge.id)}" cx="${controlX}" cy="${controlY}" r="8">
+						<title>${__("Delete Edge")}</title>
+					</circle>
+					<text class="slow-ai-canvas__edge-delete-label" x="${controlX}" y="${controlY + 3}" text-anchor="middle">x</text>
+				</g>`;
 			})
 			.join("");
 		this.$edges.html(lines);
+	}
+
+	portAnchor(node, direction, portName) {
+		const ports = direction === "output" ? this.outputPorts(node) : this.inputPorts(node);
+		const index = Math.max(0, ports.findIndex(([name]) => name === portName));
+		const position = node.position || { x: 0, y: 0 };
+		return {
+			x: Number(position.x || 0) + (direction === "output" ? this.nodeWidth() : 0),
+			y: Number(position.y || 0) + this.portStartY() + index * this.portSpacing(),
+		};
 	}
 
 	renderNodeEditor() {

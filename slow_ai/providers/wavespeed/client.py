@@ -29,7 +29,7 @@ class WaveSpeedClient:
         )
 
     def get_result(self, api_key: str, external_job_id: str) -> Mapping[str, Any]:
-        return self._request("GET", f"/predictions/{external_job_id}", api_key=api_key)
+        return self._request("GET", f"/predictions/{external_job_id}/result", api_key=api_key)
 
     def cancel_task(self, api_key: str, external_job_id: str) -> Mapping[str, Any]:
         return self._request("DELETE", f"/predictions/{external_job_id}", api_key=api_key)

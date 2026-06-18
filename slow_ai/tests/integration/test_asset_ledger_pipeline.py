@@ -101,6 +101,20 @@ def create_model():
             "provider": "async_provider",
             "status": "ENABLED",
             "modality": "TEXT_TO_IMAGE",
+            "pricing_json": json.dumps({"unit": "run", "amount_usd": 0.11}),
+        }
+    )
+
+
+def create_provider_account():
+    return insert_doc(
+        {
+            "doctype": "AI Provider Account",
+            "provider": "async_provider",
+            "account_label": unique("Async Provider Account"),
+            "api_key_secret": "async-provider-test-key",
+            "is_default": 1,
+            "status": "ACTIVE",
         }
     )
 
@@ -163,6 +177,7 @@ class TestAssetLedgerPipeline(FrappeTestCase):
         node_registry = registry(adapter)
         project = create_project()
         model = create_model()
+        create_provider_account()
         workflow = create_workflow(project, model.name)
         start_result = RunService(node_registry=node_registry).start_run(workflow.name)
 

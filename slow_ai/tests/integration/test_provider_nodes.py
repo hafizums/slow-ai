@@ -117,6 +117,19 @@ def create_model(provider: str = "test_provider"):
     )
 
 
+def create_provider_account(provider: str = "test_provider"):
+    return insert_doc(
+        {
+            "doctype": "AI Provider Account",
+            "provider": provider,
+            "account_label": unique("Provider Node Account"),
+            "api_key_secret": "provider-node-test-key",
+            "is_default": 1,
+            "status": "ACTIVE",
+        }
+    )
+
+
 def create_workflow(project, model_name: str):
     return insert_doc(
         {
@@ -185,6 +198,7 @@ class TestProviderNodes(FrappeTestCase):
     def test_provider_text_to_image_node_persists_provider_job_asset_and_ledger(self):
         project = create_project()
         model = create_model()
+        create_provider_account()
         adapter = DeterministicProviderAdapter()
         registry = provider_node_registry(adapter)
         workflow = create_workflow(project, model.name)
@@ -236,6 +250,7 @@ class TestProviderNodes(FrappeTestCase):
     def test_provider_text_to_speech_node_accepts_configured_text_input(self):
         project = create_project()
         model = create_model()
+        create_provider_account()
         adapter = DeterministicProviderAdapter(
             asset_type="AUDIO",
             url="https://example.invalid/generated.mp3",

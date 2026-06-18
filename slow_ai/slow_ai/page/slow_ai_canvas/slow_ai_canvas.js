@@ -142,14 +142,67 @@ class SlowAiCanvasPlaceholder {
 			frappe.msgprint(__("Save or load a workflow before starting a run."));
 			return Promise.resolve();
 		}
-		return frappe.call("slow_ai.api.runs.start_run", { workflow }).then((response) => {
-			const result = response.message;
-			this.workflowRun = result.workflow_run;
-			this.setStatus(__("Queued {0}", [result.workflow_run]));
-			this.startPolling();
-			this.refreshRun();
-			this.refreshQueue();
+		return this.confirmProviderRun().then((confirmed) => {
+			if (!confirmed) {
+				this.setStatus(__("Run cancelled"));
+				return null;
+			}
+			return frappe.call("slow_ai.api.runs.start_run", { workflow }).then((response) => {
+				const result = response.message;
+				this.workflowRun = result.workflow_run;
+				this.setStatus(__("Queued {0}", [result.workflow_run]));
+				this.startPolling();
+				this.refreshRun();
+				this.refreshQueue();
+			});
 		});
+	}
+
+	confirmProviderRun() {
+		const providerNodes = this.providerNodes();
+		if (!providerNodes.length) {
+			return Promise.resolve(true);
+		}
+		return this.loadModelMetadata(providerNodes).then((modelMetadata) => {
+			const message = this.providerConfirmationMessage(providerNodes, modelMetadata);
+			return new Promise((resolve) => {
+				frappe.confirm(message, () => resolve(true), () => resolve(false));
+			});
+		});
+	}
+
+	providerNodes() {
+		return this.nodes.filter((node) => node.type && node.type.indexOf("provider_") === 0);
+	}
+
+	loadModelMetadata(providerNodes) {
+		const modelIds = providerNodes
+			.map((node) => node.config && node.config.model)
+			.filter((model) => model !== undefined && model !== null && model !== "");
+		if (!modelIds.length) {
+			return Promise.resolve({});
+		}
+		return frappe
+			.call("slow_ai.api.models.get_model_metadata", { model_ids: modelIds })
+			.then((response) => (response.message && response.message.models) || {});
+	}
+
+	providerConfirmationMessage(providerNodes, modelMetadata) {
+		const rows = providerNodes
+			.map((node) => {
+				const config = node.config || {};
+				const provider = config.provider || __("Unknown provider");
+				const model = config.model || __("Unknown model");
+				const metadata = modelMetadata[model] || {};
+				const cost = metadata.pricing_known
+					? `${metadata.currency || "USD"} ${metadata.estimated_cost_usd} / ${metadata.pricing_unit || "run"}`
+					: __("cost unknown");
+				return `<li><strong>${this.escape(node.label || node.id)}</strong>: ${this.escape(provider)} / ${this.escape(model)} · ${this.escape(cost)}</li>`;
+			})
+			.join("");
+		return `<p>${__("This workflow may call an external provider and spend credits.")}</p>
+			<ul>${rows}</ul>
+			<p>${__("Review provider and model settings before continuing.")}</p>`;
 	}
 
 	refreshRun() {

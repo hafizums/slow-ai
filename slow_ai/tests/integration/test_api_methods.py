@@ -184,3 +184,36 @@ class TestAPIMethods(FrappeTestCase):
             object_info["nodes"]["provider_text_to_image"]["input_schema"]["prompt"]["type"],
             "TEXT",
         )
+
+    def test_get_model_metadata_api_returns_public_pricing_metadata(self):
+        priced_model = insert_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique("api/priced-model"),
+                "model_name": "API Priced Model",
+                "provider": "wavespeed",
+                "status": "ENABLED",
+                "modality": "TEXT_TO_IMAGE",
+                "pricing_json": json.dumps({"unit": "run", "amount_usd": "0.25"}),
+            }
+        )
+        unpriced_model = insert_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique("api/unpriced-model"),
+                "model_name": "API Unpriced Model",
+                "provider": "wavespeed",
+                "status": "ENABLED",
+                "modality": "TEXT_TO_IMAGE",
+            }
+        )
+
+        metadata = frappe.call(
+            "slow_ai.api.models.get_model_metadata",
+            model_ids=json.dumps([priced_model.name, unpriced_model.name]),
+        )
+
+        self.assertEqual(metadata["models"][priced_model.name]["estimated_cost_usd"], "0.25")
+        self.assertTrue(metadata["models"][priced_model.name]["pricing_known"])
+        self.assertFalse(metadata["models"][unpriced_model.name]["pricing_known"])
+        self.assertNotIn("pricing_json", metadata["models"][priced_model.name])

@@ -19,3 +19,7 @@ class RegistryError(SlowAIError):
 
 class ProviderInvariantError(SlowAIError):
     """Raised when provider execution invariants are violated."""
+
+
+class RunPreflightError(SlowAIError):
+    """Raised when a workflow run fails server-side start policy checks."""

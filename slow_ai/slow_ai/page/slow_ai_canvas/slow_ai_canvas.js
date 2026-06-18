@@ -119,6 +119,15 @@ class SlowAiCanvasPlaceholder {
 		this.$toolMode.on("click", "[data-action='run-tool-mode']", () => {
 			this.runToolModeForm();
 		});
+		this.$toolMode.on("click", "[data-action='preview-tool-asset']", (event) => {
+			this.previewToolModeAsset($(event.currentTarget).attr("data-tool-node-id"));
+		});
+		this.$toolMode.on("click", "[data-action='upload-tool-asset']", (event) => {
+			this.uploadToolModeAsset($(event.currentTarget).attr("data-tool-node-id"));
+		});
+		this.$toolMode.on("click", "[data-action='upload-tool-file']", (event) => {
+			this.uploadToolModeFile($(event.currentTarget).attr("data-tool-node-id"));
+		});
 		this.$nodes.on("click", "[data-node-id]", (event) => {
 			this.selectNode($(event.currentTarget).attr("data-node-id"));
 		});
@@ -565,7 +574,7 @@ class SlowAiCanvasPlaceholder {
 			return `<div class="slow-ai-canvas__tool-section">
 				<div class="slow-ai-canvas__tool-title">${this.escape(label)}</div>
 				<label class="slow-ai-canvas__tool-field">
-					<span>${__("Asset")}</span>
+					<span>${__("Existing AI Asset")}</span>
 					<input class="form-control input-xs" type="text" placeholder="${__("AI Asset name")}" data-tool-node-id="${this.escape(node.id)}" data-tool-config-field="asset" value="${this.escape(config.asset || "")}">
 				</label>
 				<label class="slow-ai-canvas__tool-field">
@@ -577,7 +586,24 @@ class SlowAiCanvasPlaceholder {
 						${this.renderAssetTypeOption("MASK", config.asset_type)}
 					</select>
 				</label>
-				<div class="slow-ai-canvas__tool-meta">${__("Upload assets through AI Asset for now, then paste the asset name here.")}</div>
+				<label class="slow-ai-canvas__tool-field">
+					<span>${__("New Asset URL")}</span>
+					<input class="form-control input-xs" type="text" placeholder="https://example.invalid/input.png" data-tool-upload-url data-tool-node-id="${this.escape(node.id)}">
+				</label>
+				<label class="slow-ai-canvas__tool-field">
+					<span>${__("New Asset File Reference")}</span>
+					<input class="form-control input-xs" type="text" placeholder="/files/input.png" data-tool-upload-file data-tool-node-id="${this.escape(node.id)}">
+				</label>
+				<label class="slow-ai-canvas__tool-field">
+					<span>${__("MIME Type")}</span>
+					<input class="form-control input-xs" type="text" placeholder="image/png" data-tool-upload-mime data-tool-node-id="${this.escape(node.id)}" value="${this.escape(config.mime_type || "")}">
+				</label>
+				<div class="slow-ai-canvas__tool-actions">
+					<button class="btn btn-xs btn-default" type="button" data-action="preview-tool-asset" data-tool-node-id="${this.escape(node.id)}">${__("Preview Selected Asset")}</button>
+					<button class="btn btn-xs btn-default" type="button" data-action="upload-tool-file" data-tool-node-id="${this.escape(node.id)}">${__("Upload File")}</button>
+					<button class="btn btn-xs btn-default" type="button" data-action="upload-tool-asset" data-tool-node-id="${this.escape(node.id)}">${__("Create AI Asset")}</button>
+				</div>
+				<div class="slow-ai-canvas__tool-asset-preview" data-tool-asset-preview="${this.escape(node.id)}"></div>
 			</div>`;
 		}
 		return "";
@@ -636,6 +662,96 @@ class SlowAiCanvasPlaceholder {
 				return this.saveWorkflow();
 			})
 			.then(() => this.startRun());
+	}
+
+	previewToolModeAsset(nodeId) {
+		const assetName = this.toolModeAssetName(nodeId);
+		if (!assetName) {
+			frappe.msgprint(__("Select an AI Asset before previewing."));
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.assets.view", { asset: assetName }).then((response) => {
+			this.renderToolModeAssetPreview(nodeId, response.message);
+			this.setStatus(__("Loaded asset preview {0}", [assetName]));
+		});
+	}
+
+	uploadToolModeAsset(nodeId) {
+		const project = this.projectField.get_value();
+		if (!project) {
+			frappe.msgprint(__("Select an AI Project before creating an asset."));
+			return Promise.resolve();
+		}
+		const $section = this.toolModeAssetSection(nodeId);
+		const assetType = $section.find("[data-tool-config-field='asset_type']").val() || "IMAGE";
+		const url = $section.find("[data-tool-upload-url]").val() || "";
+		const file = $section.find("[data-tool-upload-file]").val() || "";
+		const mimeType = $section.find("[data-tool-upload-mime]").val() || "";
+		if (!url && !file) {
+			frappe.msgprint(__("Provide a URL or file reference before creating an asset."));
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.assets.upload", {
+				project,
+				asset_type: assetType,
+				url: url || null,
+				file: file || null,
+				mime_type: mimeType || null,
+				metadata: { source: "tool_mode" },
+			})
+			.then((response) => {
+				const asset = response.message;
+				$section.find("[data-tool-config-field='asset']").val(asset.name);
+				$section.find("[data-tool-config-field='asset_type']").val(asset.asset_type);
+				this.renderToolModeAssetPreview(nodeId, asset);
+				this.setStatus(__("Created asset {0}", [asset.name]));
+			});
+	}
+
+	uploadToolModeFile(nodeId) {
+		if (!frappe.ui || !frappe.ui.FileUploader) {
+			frappe.msgprint(__("File uploader is not available."));
+			return;
+		}
+		new frappe.ui.FileUploader({
+			allow_multiple: false,
+			on_success: (fileDoc) => {
+				const fileReference = fileDoc.file_url || fileDoc.file_name || fileDoc.name || "";
+				if (!fileReference) {
+					frappe.msgprint(__("Uploaded file did not return a file reference."));
+					return;
+				}
+				const $section = this.toolModeAssetSection(nodeId);
+				$section.find("[data-tool-upload-file]").val(fileReference);
+				this.uploadToolModeAsset(nodeId);
+			},
+		});
+	}
+
+	toolModeAssetName(nodeId) {
+		return this.toolModeAssetSection(nodeId).find("[data-tool-config-field='asset']").val() || "";
+	}
+
+	toolModeAssetSection(nodeId) {
+		return this.$toolMode.find(`[data-tool-node-id="${this.escapeSelector(nodeId)}"]`).first().closest(".slow-ai-canvas__tool-section");
+	}
+
+	renderToolModeAssetPreview(nodeId, asset) {
+		const url = this.assetUrl(asset);
+		const html = `<div class="slow-ai-canvas__tool-asset-card" data-tool-preview-asset="${this.escape(asset.name)}">
+			<div class="slow-ai-canvas__asset-preview">${this.renderAssetPreview(asset, url)}</div>
+			<div class="slow-ai-canvas__asset-body">
+				<div class="slow-ai-canvas__asset-title">${this.escape(asset.name)}</div>
+				<div class="slow-ai-canvas__asset-meta-grid">
+					${this.renderAssetMetaRow(__("Type"), asset.asset_type)}
+					${this.renderAssetMetaRow(__("MIME"), asset.mime_type)}
+					${this.renderAssetMetaRow(__("Created"), this.formatTime(asset.created))}
+				</div>
+				${url ? `<a class="btn btn-xs btn-default slow-ai-canvas__asset-link" href="${this.escape(url)}" target="_blank" rel="noopener">${__("Open Asset")}</a>` : ""}
+			</div>
+		</div>`;
+		this.$toolMode.find(`[data-tool-asset-preview="${this.escapeSelector(nodeId)}"]`).html(html);
 	}
 
 	collectToolModeValues() {

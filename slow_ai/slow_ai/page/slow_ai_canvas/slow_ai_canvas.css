@@ -361,6 +361,18 @@
 	margin-top: 8px;
 }
 
+.slow-ai-canvas__tool-asset-preview {
+	margin-top: 8px;
+}
+
+.slow-ai-canvas__tool-asset-card {
+	display: grid;
+	grid-template-columns: 80px minmax(0, 1fr);
+	gap: 8px;
+	padding: 8px 0;
+	border-top: 1px solid var(--slow-ai-border);
+}
+
 .slow-ai-canvas__stage-wrap {
 	min-width: 0;
 	overflow: auto;

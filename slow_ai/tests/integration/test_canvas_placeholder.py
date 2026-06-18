@@ -15,6 +15,7 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.runs.get_run_status",
     "slow_ai.api.runs.get_history",
     "slow_ai.api.queue.get_queue_status",
+    "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
     "slow_ai.api.models.get_model_metadata",
     "slow_ai.api.templates.list_templates",
@@ -174,6 +175,41 @@ def tool_mode_edges():
     ]
 
 
+def tool_mode_upload_nodes(asset_name: str):
+    return [
+        {
+            "id": "asset_1",
+            "type": "upload_asset",
+            "label": "Input Asset",
+            "position": {"x": 96, "y": 128},
+            "config": {"asset": asset_name, "asset_type": "IMAGE"},
+        },
+        {
+            "id": "tool_output_1",
+            "type": "tool_output",
+            "label": "Tool Output",
+            "position": {"x": 376, "y": 128},
+            "config": {
+                "output_name": "image",
+                "description": "Selected image asset",
+                "schema": {"type": "string"},
+            },
+        },
+    ]
+
+
+def tool_mode_upload_edges():
+    return [
+        {
+            "id": "edge_1",
+            "source": "asset_1",
+            "source_port": "image",
+            "target": "tool_output_1",
+            "target_port": "image",
+        }
+    ]
+
+
 class TestCanvasPlaceholder(FrappeTestCase):
     def test_canvas_page_loads_only_api_driven_assets(self):
         frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
@@ -257,10 +293,18 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("renderToolModePanel", page.script)
         self.assertIn("loadToolModeTemplate", page.script)
         self.assertIn("runToolModeForm", page.script)
+        self.assertIn("uploadToolModeAsset", page.script)
+        self.assertIn("uploadToolModeFile", page.script)
+        self.assertIn("previewToolModeAsset", page.script)
+        self.assertIn("slow_ai.api.assets.upload", page.script)
+        self.assertIn("slow_ai.api.assets.view", page.script)
         self.assertIn("collectToolModeValues", page.script)
         self.assertIn("applyToolModeValues", page.script)
         self.assertIn("Run Tool", page.script)
         self.assertIn("AI Asset name", page.script)
+        self.assertIn("Create AI Asset", page.script)
+        self.assertIn("Upload File", page.script)
+        self.assertIn("Preview Selected Asset", page.script)
         for method in ALLOWED_CANVAS_METHODS:
             self.assertIn(method, page.script)
         for fragment in FORBIDDEN_CANVAS_FRAGMENTS:
@@ -511,6 +555,81 @@ class TestCanvasPlaceholder(FrappeTestCase):
 
         self.assertEqual(frappe.db.count("AI Provider Job"), before_provider_jobs)
         self.assertFalse(frappe.db.exists("AI Workflow Run", {"workflow": draft["name"]}))
+
+    def test_canvas_tool_mode_upload_asset_uses_asset_api_and_persists_selected_asset(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        self.assertIn("slow_ai.api.assets.upload", page.script)
+        self.assertIn("slow_ai.api.assets.view", page.script)
+        self.assertIn("uploadToolModeAsset", page.script)
+        self.assertIn("uploadToolModeFile", page.script)
+        self.assertIn("previewToolModeAsset", page.script)
+        self.assertIn("renderToolModeAssetPreview", page.script)
+        self.assertIn("slow_ai.api.runs.start_run", page.script)
+        for forbidden in ("frappe.db", "providers/wavespeed", "api.wavespeed.ai", "WAVESPEED_API_KEY"):
+            self.assertNotIn(forbidden, page.script)
+
+        project = create_project()
+        placeholder = frappe.call(
+            "slow_ai.api.assets.upload",
+            project=project.name,
+            asset_type="IMAGE",
+            url="https://example.invalid/placeholder.png",
+            mime_type="image/png",
+            metadata=json.dumps({"origin": "tool-mode-placeholder"}),
+        )
+        before_provider_jobs = frappe.db.count("AI Provider Job")
+        before_runs = frappe.db.count("AI Workflow Run")
+        template = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template_name=unique("Canvas Tool Upload Template"),
+            status="PUBLISHED",
+            category="Tool",
+            description="Tool Mode upload asset template",
+            nodes=json.dumps(tool_mode_upload_nodes(placeholder["name"])),
+            edges=json.dumps(tool_mode_upload_edges()),
+            layout=json.dumps({"nodes": [{"id": "asset_1", "x": 96, "y": 128}]}),
+        )
+        loaded = frappe.call("slow_ai.api.templates.get_template", template=template["name"])
+        uploaded = frappe.call(
+            "slow_ai.api.assets.upload",
+            project=project.name,
+            asset_type="IMAGE",
+            url="https://example.invalid/tool-mode-selected.png",
+            mime_type="image/png",
+            metadata=json.dumps({"origin": "tool-mode-upload"}),
+        )
+        viewed = frappe.call("slow_ai.api.assets.view", asset=uploaded["name"])
+        draft = frappe.call(
+            "slow_ai.api.templates.create_workflow_from_template",
+            template=template["name"],
+            project=project.name,
+            title="Canvas Tool Upload Run",
+        )
+        draft["nodes"][0]["config"]["asset"] = uploaded["name"]
+        draft["nodes"][0]["config"]["asset_type"] = uploaded["asset_type"]
+        saved = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            workflow=draft["name"],
+            project=project.name,
+            title=draft["title"],
+            nodes=json.dumps(draft["nodes"]),
+            edges=json.dumps(draft["edges"]),
+            layout=json.dumps(draft["layout"]),
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
+
+        self.assertEqual(loaded["nodes"][0]["config"]["asset"], placeholder["name"])
+        self.assertTrue(frappe.db.exists("AI Asset", uploaded["name"]))
+        self.assertEqual(viewed["url"], "https://example.invalid/tool-mode-selected.png")
+        self.assertEqual(viewed["metadata"]["origin"], "tool-mode-upload")
+        self.assertEqual(saved["nodes"][0]["config"]["asset"], uploaded["name"])
+        self.assertEqual(saved["nodes"][0]["config"]["asset_type"], "IMAGE")
+        self.assertEqual(frappe.db.count("AI Provider Job"), before_provider_jobs)
+        self.assertEqual(frappe.db.count("AI Workflow Run"), before_runs + 1)
+        self.assertTrue(frappe.db.exists("AI Workflow Version", run["workflow_version"]))
 
     def test_added_provider_node_still_uses_backend_preflight_on_start(self):
         project = create_project()

@@ -62,7 +62,9 @@ app_license = "MIT"
 # ------------
 
 # before_install = "slow_ai.install.before_install"
-# after_install = "slow_ai.install.after_install"
+after_install = ["slow_ai.infrastructure.workspace.sync_private_workspaces"]
+after_migrate = ["slow_ai.infrastructure.workspace.sync_private_workspaces"]
+on_login = ["slow_ai.infrastructure.workspace.sync_private_workspace_on_login"]
 
 # Uninstallation
 # ------------

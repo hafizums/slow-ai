@@ -175,6 +175,8 @@ class TestAPIMethods(FrappeTestCase):
         self.assertEqual(viewed["asset_type"], "IMAGE")
         self.assertEqual(viewed["url"], "https://example.invalid/upload.png")
         self.assertEqual(viewed["metadata"]["origin"], "api-test")
+        self.assertIn("created", viewed)
+        self.assertIn("modified", viewed)
 
     def test_get_object_info_api_remains_metadata_only(self):
         object_info = frappe.call("slow_ai.api.nodes.get_object_info")

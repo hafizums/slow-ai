@@ -54,6 +54,8 @@ def view(asset: str) -> dict[str, Any]:
         "source_workflow_run": doc.source_workflow_run,
         "source_node_run": doc.source_node_run,
         "source_provider_job": doc.source_provider_job,
+        "created": doc.creation,
+        "modified": doc.modified,
         "metadata": _loads_json(doc.metadata_json, {}),
     }
 

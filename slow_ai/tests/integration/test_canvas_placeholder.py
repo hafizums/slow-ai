@@ -145,7 +145,12 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("frappe.pages[\"slow-ai-canvas\"]", page.script)
         self.assertIn("frappe.templates[\"slow_ai_canvas\"]", page.script)
         self.assertIn("slow-ai-canvas__stage", page.style)
+        self.assertIn("data-role=\"draft-controls\"", page.script)
+        self.assertIn("slow-ai-canvas__draft-controls", page.style)
         self.assertIn("slow-ai-canvas__asset-output", page.style)
+        self.assertIn("slow-ai-canvas__asset-card", page.style)
+        self.assertIn("slow-ai-canvas__asset-media", page.style)
+        self.assertIn("slow-ai-canvas__asset-text-preview", page.style)
         self.assertIn("Provider Text to Image", page.script)
         self.assertIn("paletteCategories", page.script)
         self.assertIn('"input", "provider", "image", "video", "audio", "utility", "output"', page.script)
@@ -185,6 +190,17 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("slow-ai-canvas__run-timeline", page.style)
         self.assertIn("slow-ai-canvas__safe-error", page.style)
         self.assertIn("Refresh Run", page.script)
+        self.assertIn("renderAssetCard", page.script)
+        self.assertIn("renderAssetPreview", page.script)
+        self.assertIn("copyAssetUrl", page.script)
+        self.assertIn("refreshAssetCard", page.script)
+        self.assertIn("Open Asset", page.script)
+        self.assertIn("Copy URL", page.script)
+        self.assertIn("Refresh Asset", page.script)
+        self.assertIn("<img", page.script)
+        self.assertIn("<video", page.script)
+        self.assertIn("<audio", page.script)
+        self.assertIn("assetTextSummary", page.script)
         self.assertIn("This workflow may call an external provider and spend credits.", page.script)
         self.assertIn("cost unknown", page.script)
         self.assertIn("frappe.confirm", page.script)
@@ -359,6 +375,87 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertEqual(viewed["name"], asset.name)
         self.assertEqual(viewed["source_workflow_run"], run["workflow_run"])
         self.assertEqual(viewed["metadata"]["origin"], "canvas-placeholder-test")
+        self.assertIn("created", viewed)
+        self.assertIn("modified", viewed)
+
+    def test_canvas_asset_preview_paths_use_asset_view_payloads(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        self.assertIn('frappe.call("slow_ai.api.assets.view"', page.script)
+        self.assertIn("renderAssetCard", page.script)
+        self.assertIn("renderAssetMetaRow", page.script)
+        self.assertIn("assetUrl(asset)", page.script)
+        self.assertIn("asset.source_workflow_run", page.script)
+        self.assertIn("asset.source_node_run", page.script)
+        self.assertIn("asset.source_provider_job", page.script)
+        self.assertIn("asset.duration_seconds", page.script)
+        self.assertIn("asset.width && asset.height", page.script)
+
+        project = create_project()
+        workflow = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            project=project.name,
+            title="Canvas Asset Preview Workflow",
+            nodes=json.dumps(canvas_nodes()),
+            edges=json.dumps(canvas_edges()),
+            layout=json.dumps({"nodes": [{"id": "image_1", "x": 376, "y": 128}]}),
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=workflow["name"])
+        image_node_run = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": run["workflow_run"], "node_id": "image_1"},
+            "name",
+        )
+        provider_job = frappe.get_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": image_node_run,
+                "provider": "preview_provider",
+                "status": "SUCCEEDED",
+                "idempotency_key": unique("canvas-preview-job"),
+            }
+        ).insert(ignore_permissions=True)
+        asset_specs = [
+            ("IMAGE", "https://example.invalid/preview.png", "image/png", {"width": 320, "height": 240}),
+            ("VIDEO", "https://example.invalid/preview.mp4", "video/mp4", {"duration_seconds": 2.5}),
+            ("AUDIO", "https://example.invalid/preview.mp3", "audio/mpeg", {"duration_seconds": 1.25}),
+            ("JSON", "", "application/json", {"metadata_json": json.dumps({"json": {"answer": 42}})}),
+            ("TEXT", "", "text/plain", {"metadata_json": json.dumps({"text": "Preview text"})}),
+        ]
+        assets = []
+        for asset_type, url, mime_type, extra in asset_specs:
+            values = {
+                "doctype": "AI Asset",
+                "project": project.name,
+                "asset_type": asset_type,
+                "url": url,
+                "mime_type": mime_type,
+                "source_workflow_run": run["workflow_run"],
+                "source_node_run": image_node_run,
+                "source_provider_job": provider_job.name,
+                "metadata_json": json.dumps({"origin": "canvas-preview-test"}),
+            }
+            values.update(extra)
+            assets.append(frappe.get_doc(values).insert(ignore_permissions=True))
+
+        viewed_assets = [frappe.call("slow_ai.api.assets.view", asset=asset.name) for asset in assets]
+
+        self.assertEqual({row["asset_type"] for row in viewed_assets}, {"IMAGE", "VIDEO", "AUDIO", "JSON", "TEXT"})
+        for viewed in viewed_assets:
+            self.assertEqual(viewed["source_workflow_run"], run["workflow_run"])
+            self.assertEqual(viewed["source_node_run"], image_node_run)
+            self.assertEqual(viewed["source_provider_job"], provider_job.name)
+            self.assertIn("created", viewed)
+            self.assertIn("modified", viewed)
+        image = next(row for row in viewed_assets if row["asset_type"] == "IMAGE")
+        video = next(row for row in viewed_assets if row["asset_type"] == "VIDEO")
+        text = next(row for row in viewed_assets if row["asset_type"] == "TEXT")
+        self.assertEqual(image["width"], 320)
+        self.assertEqual(image["height"], 240)
+        self.assertEqual(video["duration_seconds"], 2.5)
+        self.assertEqual(text["metadata"]["text"], "Preview text")
 
     def test_canvas_run_monitor_history_uses_real_provider_asset_ledger_and_error_records(self):
         frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")

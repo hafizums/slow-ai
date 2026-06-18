@@ -27,33 +27,34 @@ class SlowAiCanvasPlaceholder {
 		this.edges = this.defaultEdges();
 		this.selectedNodeId = null;
 		this.layout = { nodes: this.nodes.map((node) => ({ id: node.id, ...node.position })) };
-		this.makeControls();
 		this.makeBody();
+		this.makeControls();
 		this.bindRealtime();
 		this.render();
 	}
 
 	makeControls() {
+		const controlsParent = this.$draftControls || undefined;
 		this.projectField = this.page.add_field({
 			label: __("Project"),
 			fieldname: "project",
 			fieldtype: "Link",
 			options: "AI Project",
 			reqd: 1,
-		});
+		}, controlsParent);
 		this.workflowField = this.page.add_field({
 			label: __("Workflow"),
 			fieldname: "workflow",
 			fieldtype: "Link",
 			options: "AI Workflow",
 			change: () => this.loadWorkflow(),
-		});
+		}, controlsParent);
 		this.titleField = this.page.add_field({
 			label: __("Title"),
 			fieldname: "title",
 			fieldtype: "Data",
 			default: "Untitled AI Workflow",
-		});
+		}, controlsParent);
 		this.page.add_inner_button(__("Load"), () => this.loadWorkflow());
 		this.page.add_inner_button(__("Save Draft"), () => this.saveWorkflow(), __("Workflow"));
 		this.page.add_inner_button(__("Start Run"), () => this.startRun(), __("Workflow"));
@@ -65,6 +66,7 @@ class SlowAiCanvasPlaceholder {
 		this.page.main.empty();
 		$(frappe.render_template("slow_ai_canvas")).appendTo(this.page.main);
 		this.$root = this.page.main.find("[data-page='slow-ai-canvas']");
+		this.$draftControls = this.$root.find("[data-role='draft-controls']");
 		this.$status = this.$root.find("[data-role='status']");
 		this.$run = this.$root.find("[data-role='run']");
 		this.$palette = this.$root.find("[data-role='node-palette']");
@@ -107,6 +109,12 @@ class SlowAiCanvasPlaceholder {
 		});
 		this.$edgeList.on("click", "[data-action='delete-edge']", (event) => {
 			this.deleteEdge($(event.currentTarget).attr("data-edge-id"));
+		});
+		this.$assets.on("click", "[data-action='copy-asset-url']", (event) => {
+			this.copyAssetUrl($(event.currentTarget).attr("data-asset-name"));
+		});
+		this.$assets.on("click", "[data-action='refresh-asset']", (event) => {
+			this.refreshAssetCard($(event.currentTarget).attr("data-asset-name"));
 		});
 	}
 
@@ -1236,23 +1244,137 @@ class SlowAiCanvasPlaceholder {
 				frappe.call("slow_ai.api.assets.view", { asset: asset.name }).then((response) => response.message)
 			)
 		).then((viewedAssets) => {
-			const html = viewedAssets
-				.map((asset) => {
-					const href = asset.file || asset.url || "";
-					const link = href
-						? `<a class="slow-ai-canvas__asset-link" href="${this.escape(href)}" target="_blank" rel="noopener">${this.escape(href)}</a>`
-						: this.escape(asset.name);
-					return `<div class="slow-ai-canvas__asset-item">
-						<div>${this.escape(asset.asset_type)} · ${this.escape(asset.name)}</div>
-						<div>${this.escape(asset.mime_type || "")}</div>
-						<div>${__("Node Run")}: ${this.escape(asset.source_node_run || "")}</div>
-						<div>${__("Provider Job")}: ${this.escape(asset.source_provider_job || "")}</div>
-						<div>${link}</div>
-					</div>`;
-				})
-				.join("");
+			const html = viewedAssets.map((asset) => this.renderAssetCard(asset)).join("");
 			this.$assets.html(html);
 		});
+	}
+
+	renderAssetCard(asset) {
+		const url = this.assetUrl(asset);
+		const urlAttr = this.escape(url);
+		const openButton = url
+			? `<a class="btn btn-xs btn-default" href="${urlAttr}" target="_blank" rel="noopener" data-action="open-asset">${__("Open Asset")}</a>`
+			: `<button class="btn btn-xs btn-default" type="button" disabled>${__("Open Asset")}</button>`;
+		const copyButton = url
+			? `<button class="btn btn-xs btn-default" type="button" data-action="copy-asset-url" data-asset-name="${this.escape(asset.name)}">${__("Copy URL")}</button>`
+			: `<button class="btn btn-xs btn-default" type="button" disabled>${__("Copy URL")}</button>`;
+		return `<div class="slow-ai-canvas__asset-card" data-asset-name="${this.escape(asset.name)}" data-asset-url="${urlAttr}">
+			<div class="slow-ai-canvas__asset-preview">${this.renderAssetPreview(asset, url)}</div>
+			<div class="slow-ai-canvas__asset-body">
+				<div class="slow-ai-canvas__asset-title">${this.escape(asset.name)}</div>
+				<div class="slow-ai-canvas__asset-meta-grid">
+					${this.renderAssetMetaRow(__("Type"), asset.asset_type)}
+					${this.renderAssetMetaRow(__("MIME"), asset.mime_type)}
+					${this.renderAssetMetaRow(__("Workflow Run"), asset.source_workflow_run)}
+					${this.renderAssetMetaRow(__("Node Run"), asset.source_node_run)}
+					${this.renderAssetMetaRow(__("Provider Job"), asset.source_provider_job)}
+					${this.renderAssetMetaRow(__("Size"), this.assetSize(asset))}
+					${this.renderAssetMetaRow(__("Duration"), this.assetDuration(asset))}
+					${this.renderAssetMetaRow(__("Created"), this.formatTime(asset.created))}
+					${this.renderAssetMetaRow(__("Modified"), this.formatTime(asset.modified))}
+				</div>
+				<div class="slow-ai-canvas__asset-actions">
+					${openButton}
+					${copyButton}
+					<button class="btn btn-xs btn-default" type="button" data-action="refresh-asset" data-asset-name="${this.escape(asset.name)}">${__("Refresh Asset")}</button>
+				</div>
+			</div>
+		</div>`;
+	}
+
+	renderAssetPreview(asset, url) {
+		const assetType = String(asset.asset_type || "").toUpperCase();
+		if (assetType === "IMAGE" && url) {
+			return `<img class="slow-ai-canvas__asset-media" src="${this.escape(url)}" alt="${this.escape(asset.name)}">`;
+		}
+		if (assetType === "VIDEO" && url) {
+			return `<video class="slow-ai-canvas__asset-media" src="${this.escape(url)}" controls preload="metadata"></video>`;
+		}
+		if (assetType === "AUDIO" && url) {
+			return `<audio class="slow-ai-canvas__asset-audio" src="${this.escape(url)}" controls preload="metadata"></audio>`;
+		}
+		if (assetType === "JSON" || assetType === "TEXT") {
+			return `<pre class="slow-ai-canvas__asset-text-preview">${this.escape(this.assetTextSummary(asset))}</pre>`;
+		}
+		return `<div class="slow-ai-canvas__asset-placeholder">${this.escape(assetType || __("ASSET"))}</div>`;
+	}
+
+	renderAssetMetaRow(label, value) {
+		const display = value === null || value === undefined || value === "" ? "-" : value;
+		return `<div class="slow-ai-canvas__asset-meta-row">
+			<span>${this.escape(label)}</span>
+			<strong>${this.escape(display)}</strong>
+		</div>`;
+	}
+
+	assetUrl(asset) {
+		return (asset && (asset.file || asset.url)) || "";
+	}
+
+	assetSize(asset) {
+		if (asset && asset.width && asset.height) {
+			return `${asset.width} x ${asset.height}`;
+		}
+		return "";
+	}
+
+	assetDuration(asset) {
+		if (!asset || !asset.duration_seconds) {
+			return "";
+		}
+		return `${Number(asset.duration_seconds).toFixed(2)}s`;
+	}
+
+	assetTextSummary(asset) {
+		const metadata = (asset && asset.metadata) || {};
+		const candidate =
+			metadata.text ||
+			metadata.content ||
+			metadata.value ||
+			metadata.json ||
+			(Object.keys(metadata).length ? metadata : "");
+		if (!candidate) {
+			return __("No preview content");
+		}
+		if (typeof candidate === "string") {
+			return candidate.slice(0, 1000);
+		}
+		return JSON.stringify(candidate, null, 2).slice(0, 1000);
+	}
+
+	refreshAssetCard(assetName) {
+		if (!assetName) {
+			return Promise.resolve();
+		}
+		const $card = this.$assets.find(`[data-asset-name="${this.escapeSelector(assetName)}"]`);
+		$card.addClass("slow-ai-canvas__asset-card--loading");
+		return frappe.call("slow_ai.api.assets.view", { asset: assetName }).then((response) => {
+			const asset = response.message;
+			const html = this.renderAssetCard(asset);
+			if ($card.length) {
+				$card.replaceWith(html);
+			}
+			this.setStatus(__("Refreshed asset {0}", [assetName]));
+		});
+	}
+
+	copyAssetUrl(assetName) {
+		const $card = this.$assets.find(`[data-asset-name="${this.escapeSelector(assetName)}"]`);
+		const url = $card.attr("data-asset-url") || "";
+		if (!url) {
+			return;
+		}
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(url).then(() => this.setStatus(__("Copied asset URL")));
+			return;
+		}
+		const textarea = document.createElement("textarea");
+		textarea.value = url;
+		document.body.appendChild(textarea);
+		textarea.select();
+		document.execCommand("copy");
+		document.body.removeChild(textarea);
+		this.setStatus(__("Copied asset URL"));
 	}
 
 	setStatus(message) {
@@ -1303,6 +1425,13 @@ class SlowAiCanvasPlaceholder {
 			.replace(/https?:\/\/\S+/gi, "[link hidden]")
 			.replace(/(api[_-]?key|authorization|bearer|secret|token)\s*[:=]\s*[^,\s]+/gi, "$1: [redacted]")
 			.slice(0, 240);
+	}
+
+	escapeSelector(value) {
+		if (window.CSS && window.CSS.escape) {
+			return window.CSS.escape(value || "");
+		}
+		return String(value || "").replace(/["\\]/g, "\\$&");
 	}
 
 	escape(value) {

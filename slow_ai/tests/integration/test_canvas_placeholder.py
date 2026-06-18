@@ -4,6 +4,8 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.domain.exceptions import RunPreflightError
+
 
 ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.nodes.get_object_info",
@@ -145,6 +147,13 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("slow-ai-canvas__stage", page.style)
         self.assertIn("slow-ai-canvas__asset-output", page.style)
         self.assertIn("Provider Text to Image", page.script)
+        self.assertIn("paletteCategories", page.script)
+        self.assertIn('"input", "provider", "image", "video", "audio", "utility", "output"', page.script)
+        self.assertIn("input_schema", page.script)
+        self.assertIn("config_schema", page.script)
+        self.assertIn("output_schema", page.script)
+        self.assertIn("Add Node", page.script)
+        self.assertIn("addNodeFromMetadata", page.script)
         self.assertIn("This workflow may call an external provider and spend credits.", page.script)
         self.assertIn("cost unknown", page.script)
         self.assertIn("frappe.confirm", page.script)
@@ -158,6 +167,12 @@ class TestCanvasPlaceholder(FrappeTestCase):
         project = create_project()
         object_info = frappe.call("slow_ai.api.nodes.get_object_info")
         self.assertIn("text_prompt", object_info["nodes"])
+        self.assertEqual(object_info["nodes"]["text_prompt"]["category"], "input")
+        self.assertEqual(object_info["nodes"]["provider_text_to_image"]["category"], "provider")
+        self.assertEqual(object_info["nodes"]["export_output"]["category"], "output")
+        self.assertIn("prompt", object_info["nodes"]["provider_text_to_image"]["input_schema"])
+        self.assertIn("model", object_info["nodes"]["provider_text_to_image"]["config_schema"])
+        self.assertIn("image", object_info["nodes"]["provider_text_to_image"]["output_schema"])
 
         saved = frappe.call(
             "slow_ai.api.workflows.save_workflow",
@@ -182,6 +197,65 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertEqual(len(status["node_runs"]), 3)
         self.assertEqual(history["run"]["workflow_run"], run["workflow_run"])
         self.assertIn(run["workflow_run"], {row["name"] for row in queue["queued"]})
+
+    def test_added_provider_node_still_uses_backend_preflight_on_start(self):
+        project = create_project()
+        saved = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            project=project.name,
+            title="Canvas Added Provider Node Workflow",
+            nodes=json.dumps(
+                [
+                    {
+                        "id": "prompt_1",
+                        "type": "text_prompt",
+                        "label": "Prompt",
+                        "position": {"x": 96, "y": 128},
+                        "config": {"text": "Canvas prompt"},
+                    },
+                    {
+                        "id": "provider_text_to_image_2",
+                        "type": "provider_text_to_image",
+                        "label": "Provider Text To Image",
+                        "position": {"x": 376, "y": 128},
+                        "config": {"provider": "no_account_provider", "model": "missing-model"},
+                    },
+                    {
+                        "id": "output_1",
+                        "type": "export_output",
+                        "label": "Output",
+                        "position": {"x": 656, "y": 128},
+                        "config": {},
+                    },
+                ]
+            ),
+            edges=json.dumps(
+                [
+                    {
+                        "id": "edge_1",
+                        "source": "prompt_1",
+                        "source_port": "text",
+                        "target": "provider_text_to_image_2",
+                        "target_port": "prompt",
+                    },
+                    {
+                        "id": "edge_2",
+                        "source": "provider_text_to_image_2",
+                        "source_port": "image",
+                        "target": "output_1",
+                        "target_port": "image",
+                    },
+                ]
+            ),
+            layout=json.dumps({"nodes": [{"id": "provider_text_to_image_2", "x": 376, "y": 128}]}),
+        )
+        provider_job_count = frappe.db.count("AI Provider Job")
+
+        with self.assertRaises(RunPreflightError):
+            frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
+
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
+        self.assertFalse(frappe.db.exists("AI Workflow Run", {"workflow": saved["name"]}))
 
     def test_canvas_asset_view_api_flow_uses_real_asset_documents(self):
         ensure_canvas_provider_catalog()

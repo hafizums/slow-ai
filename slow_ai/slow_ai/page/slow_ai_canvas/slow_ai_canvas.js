@@ -74,6 +74,10 @@ class SlowAiCanvasPlaceholder {
 		this.$summary = this.$root.find("[data-role='run-summary']");
 		this.$history = this.$root.find("[data-role='history']");
 		this.$assets = this.$root.find("[data-role='asset-output']");
+		this.$palette.on("click", "[data-action='add-node']", (event) => {
+			const nodeType = $(event.currentTarget).attr("data-node-type");
+			this.addNodeFromMetadata(nodeType);
+		});
 	}
 
 	show() {
@@ -383,16 +387,119 @@ class SlowAiCanvasPlaceholder {
 		if (!this.$palette || !Object.keys(this.objectInfo).length) {
 			return;
 		}
-		this.$palette.html(
-			Object.values(this.objectInfo)
-				.map((node) => {
-					return `<div class="slow-ai-canvas__node-item">
-						<div class="slow-ai-canvas__node-title">${this.escape(node.label || node.type)}</div>
-						<div class="slow-ai-canvas__node-meta">${this.escape(node.type)}</div>
-					</div>`;
-				})
-				.join("")
-		);
+		const categories = this.paletteCategories();
+		this.$palette.html(categories.map((category) => this.renderPaletteCategory(category)).join(""));
+	}
+
+	paletteCategories() {
+		const order = ["input", "provider", "image", "video", "audio", "utility", "output"];
+		const categories = {};
+		order.forEach((category) => {
+			categories[category] = [];
+		});
+		Object.values(this.objectInfo).forEach((node) => {
+			const category = this.paletteCategoryForNode(node);
+			categories[category].push(node);
+		});
+		return order.map((category) => ({
+			name: category,
+			nodes: categories[category].sort((a, b) => (a.label || a.type).localeCompare(b.label || b.type)),
+		}));
+	}
+
+	paletteCategoryForNode(node) {
+		const category = (node.category || "").toLowerCase();
+		if (["input", "provider", "image", "video", "audio", "output"].includes(category)) {
+			return category;
+		}
+		return "utility";
+	}
+
+	renderPaletteCategory(category) {
+		const nodeList = category.nodes.length
+			? category.nodes.map((node) => this.renderPaletteNode(node)).join("")
+			: `<div class="slow-ai-canvas__empty">${__("No registered nodes")}</div>`;
+		return `<section class="slow-ai-canvas__palette-category" data-node-category="${this.escape(category.name)}">
+			<div class="slow-ai-canvas__category-title">${this.escape(this.titleCase(category.name))}</div>
+			${nodeList}
+		</section>`;
+	}
+
+	renderPaletteNode(node) {
+		return `<div class="slow-ai-canvas__node-item" data-palette-node-type="${this.escape(node.type)}">
+			<div class="slow-ai-canvas__node-title">${this.escape(node.label || node.type)}</div>
+			<div class="slow-ai-canvas__node-meta">${this.escape(node.type)}</div>
+			<div class="slow-ai-canvas__node-meta">${__("Category")}: ${this.escape(node.category || "utility")}</div>
+			${this.renderSchemaSummary(__("Inputs"), node.input_schema)}
+			${this.renderSchemaSummary(__("Config"), node.config_schema)}
+			${this.renderSchemaSummary(__("Outputs"), node.output_schema)}
+			<button class="btn btn-xs btn-default slow-ai-canvas__add-node" type="button" data-action="add-node" data-node-type="${this.escape(node.type)}">${__("Add Node")}</button>
+		</div>`;
+	}
+
+	renderSchemaSummary(label, schema) {
+		const summary = this.schemaSummary(schema);
+		return `<div class="slow-ai-canvas__schema-row"><span>${this.escape(label)}:</span> ${this.escape(summary)}</div>`;
+	}
+
+	schemaSummary(schema) {
+		const entries = Object.entries(schema || {});
+		if (!entries.length) {
+			return __("none");
+		}
+		return entries
+			.map(([fieldname, spec]) => {
+				const required = spec && spec.required ? "*" : "";
+				const type = spec && spec.type ? spec.type : "JSON";
+				return `${fieldname}:${type}${required}`;
+			})
+			.join(", ");
+	}
+
+	addNodeFromMetadata(nodeType) {
+		const metadata = this.objectInfo[nodeType];
+		if (!metadata) {
+			return;
+		}
+		const index = this.nodes.length + 1;
+		const node = {
+			id: this.nextNodeId(nodeType),
+			type: metadata.type,
+			label: metadata.label || metadata.type,
+			position: { x: 96 + ((index - 1) % 3) * 280, y: 128 + Math.floor((index - 1) / 3) * 150 },
+			config: this.defaultConfigFromSchema(metadata.config_schema || {}),
+		};
+		this.nodes.push(node);
+		this.captureLayout();
+		this.setStatus(__("Added {0}", [metadata.label || metadata.type]));
+		this.render();
+	}
+
+	nextNodeId(nodeType) {
+		const base = String(nodeType || "node").replace(/[^a-zA-Z0-9_]/g, "_");
+		let index = this.nodes.length + 1;
+		let candidate = `${base}_${index}`;
+		const existing = new Set(this.nodes.map((node) => node.id));
+		while (existing.has(candidate)) {
+			index += 1;
+			candidate = `${base}_${index}`;
+		}
+		return candidate;
+	}
+
+	defaultConfigFromSchema(schema) {
+		const config = {};
+		Object.entries(schema || {}).forEach(([fieldname, spec]) => {
+			if (!spec || !Object.prototype.hasOwnProperty.call(spec, "default")) {
+				return;
+			}
+			config[fieldname] = spec.default;
+		});
+		return config;
+	}
+
+	titleCase(value) {
+		return String(value || "").replace(/\b\w/g, (char) => char.toUpperCase());
 	}
 
 	renderNodes() {

@@ -70,7 +70,20 @@
 }
 
 .slow-ai-canvas__node-item {
-	padding: 8px 0;
+	padding: 10px 0;
+	border-bottom: 1px solid var(--slow-ai-border);
+}
+
+.slow-ai-canvas__palette-category {
+	margin-bottom: 12px;
+}
+
+.slow-ai-canvas__category-title {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--slow-ai-text);
+	text-transform: uppercase;
+	padding: 8px 0 6px;
 	border-bottom: 1px solid var(--slow-ai-border);
 }
 
@@ -82,10 +95,24 @@
 .slow-ai-canvas__node-meta,
 .slow-ai-canvas__metric,
 .slow-ai-canvas__history-item,
-.slow-ai-canvas__asset-item {
+.slow-ai-canvas__asset-item,
+.slow-ai-canvas__schema-row {
 	font-size: 12px;
 	color: var(--slow-ai-muted);
 	line-height: 1.45;
+}
+
+.slow-ai-canvas__schema-row {
+	overflow-wrap: anywhere;
+}
+
+.slow-ai-canvas__schema-row span {
+	font-weight: 600;
+	color: var(--slow-ai-text);
+}
+
+.slow-ai-canvas__add-node {
+	margin-top: 8px;
 }
 
 .slow-ai-canvas__asset-item {

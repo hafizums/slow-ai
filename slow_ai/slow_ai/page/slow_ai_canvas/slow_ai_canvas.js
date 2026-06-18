@@ -21,6 +21,9 @@ class SlowAiCanvasPlaceholder {
 		this.workflow = null;
 		this.workflowRun = null;
 		this.objectInfo = {};
+		this.templates = [];
+		this.selectedTemplate = null;
+		this.toolModeTemplate = null;
 		this.nodeRunsByNodeId = {};
 		this.pollTimer = null;
 		this.nodes = this.defaultNodes();
@@ -70,6 +73,9 @@ class SlowAiCanvasPlaceholder {
 		this.$status = this.$root.find("[data-role='status']");
 		this.$run = this.$root.find("[data-role='run']");
 		this.$palette = this.$root.find("[data-role='node-palette']");
+		this.$templateLibrary = this.$root.find("[data-role='template-library']");
+		this.$templatePreview = this.$root.find("[data-role='template-preview']");
+		this.$toolMode = this.$root.find("[data-role='tool-mode']");
 		this.$stage = this.$root.find("[data-role='stage']");
 		this.$edges = this.$root.find("[data-role='edges']");
 		this.$nodes = this.$root.find("[data-role='nodes']");
@@ -88,6 +94,30 @@ class SlowAiCanvasPlaceholder {
 		this.$palette.on("click", "[data-action='add-node']", (event) => {
 			const nodeType = $(event.currentTarget).attr("data-node-type");
 			this.addNodeFromMetadata(nodeType);
+		});
+		this.$templateLibrary.on("click", "[data-action='refresh-templates']", () => {
+			this.loadTemplates();
+		});
+		this.$templateLibrary.on("click", "[data-action='save-template']", () => {
+			this.saveCurrentWorkflowAsTemplate();
+		});
+		this.$templateLibrary.on("click", "[data-action='load-template-preview']", (event) => {
+			this.loadTemplatePreview($(event.currentTarget).attr("data-template-name"));
+		});
+		this.$templateLibrary.on("click", "[data-action='create-workflow-from-template']", (event) => {
+			this.createWorkflowFromTemplate($(event.currentTarget).attr("data-template-name"));
+		});
+		this.$templatePreview.on("click", "[data-action='create-workflow-from-template']", (event) => {
+			this.createWorkflowFromTemplate($(event.currentTarget).attr("data-template-name"));
+		});
+		this.$toolMode.on("change", "[data-tool-template]", (event) => {
+			this.loadToolModeTemplate($(event.currentTarget).val());
+		});
+		this.$toolMode.on("click", "[data-action='refresh-tool-templates']", () => {
+			this.loadTemplates();
+		});
+		this.$toolMode.on("click", "[data-action='run-tool-mode']", () => {
+			this.runToolModeForm();
 		});
 		this.$nodes.on("click", "[data-node-id]", (event) => {
 			this.selectNode($(event.currentTarget).attr("data-node-id"));
@@ -120,6 +150,7 @@ class SlowAiCanvasPlaceholder {
 
 	show() {
 		this.loadObjectInfo();
+		this.loadTemplates();
 		this.refreshQueue();
 		if (this.workflowRun) {
 			this.refreshRun();
@@ -289,6 +320,348 @@ class SlowAiCanvasPlaceholder {
 				<div class="slow-ai-canvas__metric">${__("Queued")}: ${counts.queued || 0}</div>
 				<div class="slow-ai-canvas__metric">${__("Running")}: ${counts.running || 0}</div>
 			`);
+		});
+	}
+
+	loadTemplates() {
+		if (!this.$templateLibrary) {
+			return Promise.resolve();
+		}
+		this.$templateLibrary.html(`<div class="slow-ai-canvas__empty">${__("Loading templates")}</div>`);
+		return frappe.call("slow_ai.api.templates.list_templates").then((response) => {
+			this.templates = (response.message && response.message.templates) || [];
+			this.renderTemplateLibrary();
+			this.renderToolModePanel();
+		});
+	}
+
+	renderTemplateLibrary() {
+		if (!this.$templateLibrary) {
+			return;
+		}
+		const actions = `<div class="slow-ai-canvas__template-actions">
+			<button class="btn btn-xs btn-default" type="button" data-action="refresh-templates">${__("Refresh Templates")}</button>
+			<button class="btn btn-xs btn-default" type="button" data-action="save-template">${__("Save Current Workflow as Template")}</button>
+		</div>`;
+		if (!this.templates.length) {
+			this.$templateLibrary.html(`${actions}<div class="slow-ai-canvas__empty">${__("No templates")}</div>`);
+			return;
+		}
+		const rows = this.templates.map((template) => this.renderTemplateCard(template)).join("");
+		this.$templateLibrary.html(`${actions}${rows}`);
+	}
+
+	renderTemplateCard(template) {
+		const preview = template.preview_asset
+			? `<div class="slow-ai-canvas__template-meta">${__("Preview Asset")}: ${this.escape(template.preview_asset)}</div>`
+			: "";
+		return `<div class="slow-ai-canvas__template-card" data-template-name="${this.escape(template.name)}">
+			<div class="slow-ai-canvas__template-title">${this.escape(template.template_name || template.name)}</div>
+			<div class="slow-ai-canvas__template-meta">${this.escape(template.category || __("Uncategorized"))} · ${this.escape(template.status || "")}</div>
+			${template.description ? `<div class="slow-ai-canvas__template-description">${this.escape(template.description)}</div>` : ""}
+			${preview}
+			<div class="slow-ai-canvas__template-card-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="load-template-preview" data-template-name="${this.escape(template.name)}">${__("Load Template Preview")}</button>
+				<button class="btn btn-xs btn-primary" type="button" data-action="create-workflow-from-template" data-template-name="${this.escape(template.name)}">${__("Create Workflow")}</button>
+			</div>
+		</div>`;
+	}
+
+	saveCurrentWorkflowAsTemplate() {
+		const defaultName = `${this.titleField.get_value() || __("Untitled AI Workflow")} Template`;
+		const fields = [
+			{ label: __("Template Name"), fieldname: "template_name", fieldtype: "Data", reqd: 1, default: defaultName },
+			{ label: __("Category"), fieldname: "category", fieldtype: "Data", default: "Canvas" },
+			{ label: __("Description"), fieldname: "description", fieldtype: "Small Text" },
+			{
+				label: __("Status"),
+				fieldname: "status",
+				fieldtype: "Select",
+				options: "DRAFT\nPUBLISHED\nARCHIVED",
+				default: "DRAFT",
+			},
+		];
+		return new Promise((resolve) => {
+			frappe.prompt(
+				fields,
+				(values) => {
+					this.captureLayout();
+					frappe
+						.call("slow_ai.api.templates.save_template", {
+							template_name: values.template_name,
+							status: values.status || "DRAFT",
+							category: values.category || "",
+							description: values.description || "",
+							nodes: this.nodes,
+							edges: this.edges,
+							layout: this.layout,
+						})
+						.then((response) => {
+							this.selectedTemplate = response.message;
+							this.setStatus(__("Saved template {0}", [response.message.name]));
+							this.renderTemplatePreview();
+							this.loadTemplates().then(resolve);
+						});
+				},
+				__("Save Template"),
+				__("Save")
+			);
+		});
+	}
+
+	loadTemplatePreview(templateName) {
+		if (!templateName) {
+			return Promise.resolve();
+		}
+		this.$templatePreview.html(`<div class="slow-ai-canvas__empty">${__("Loading template preview")}</div>`);
+		return frappe.call("slow_ai.api.templates.get_template", { template: templateName }).then((response) => {
+			this.selectedTemplate = response.message;
+			this.renderTemplatePreview();
+			this.setStatus(__("Loaded template preview {0}", [this.selectedTemplate.name]));
+		});
+	}
+
+	renderTemplatePreview() {
+		if (!this.$templatePreview) {
+			return;
+		}
+		const template = this.selectedTemplate;
+		if (!template) {
+			this.$templatePreview.html(`<div class="slow-ai-canvas__empty">${__("No template preview selected")}</div>`);
+			return;
+		}
+		const nodes = template.nodes || [];
+		const edges = template.edges || [];
+		const nodeRows = nodes
+			.map((node) => `<div class="slow-ai-canvas__template-preview-row">${this.escape(node.label || node.id)} · ${this.escape(node.type)}</div>`)
+			.join("");
+		this.$templatePreview.html(`<div class="slow-ai-canvas__template-preview-card">
+			<div class="slow-ai-canvas__template-title">${this.escape(template.template_name || template.name)}</div>
+			<div class="slow-ai-canvas__template-meta">${this.escape(template.category || __("Uncategorized"))} · ${this.escape(template.status || "")}</div>
+			${template.description ? `<div class="slow-ai-canvas__template-description">${this.escape(template.description)}</div>` : ""}
+			<div class="slow-ai-canvas__template-preview-row">${__("Nodes")}: ${nodes.length}</div>
+			<div class="slow-ai-canvas__template-preview-row">${__("Edges")}: ${edges.length}</div>
+			${template.preview_asset ? `<div class="slow-ai-canvas__template-preview-row">${__("Preview Asset")}: ${this.escape(template.preview_asset)}</div>` : ""}
+			${nodeRows}
+			<div class="slow-ai-canvas__template-card-actions">
+				<button class="btn btn-xs btn-primary" type="button" data-action="create-workflow-from-template" data-template-name="${this.escape(template.name)}">${__("Create Workflow from Template")}</button>
+			</div>
+		</div>`);
+	}
+
+	createWorkflowFromTemplate(templateName) {
+		const template = templateName || (this.selectedTemplate && this.selectedTemplate.name);
+		const project = this.projectField.get_value();
+		if (!template) {
+			frappe.msgprint(__("Select a template before creating a workflow."));
+			return Promise.resolve();
+		}
+		if (!project) {
+			frappe.msgprint(__("Select an AI Project before creating a workflow from a template."));
+			return Promise.resolve();
+		}
+		const title =
+			(this.selectedTemplate && this.selectedTemplate.name === template && this.selectedTemplate.template_name) ||
+			this.titleField.get_value() ||
+			__("Untitled AI Workflow");
+		return frappe
+			.call("slow_ai.api.templates.create_workflow_from_template", {
+				template,
+				project,
+				title,
+			})
+			.then((response) => {
+				const draft = response.message;
+				this.workflow = draft.name;
+				this.workflowRun = null;
+				this.workflowField.set_value(draft.name);
+				this.titleField.set_value(draft.title);
+				this.nodes = this.withPositions(draft.nodes || [], draft.layout || {});
+				this.edges = draft.edges || [];
+				this.layout = draft.layout || {};
+				this.selectedNodeId = this.nodes.length ? this.nodes[0].id : null;
+				this.nodeRunsByNodeId = {};
+				this.setStatus(__("Created workflow {0} from template", [draft.name]));
+				this.clearRunMonitor();
+				this.renderAssetOutputs([]);
+				this.render();
+			});
+	}
+
+	renderToolModePanel() {
+		if (!this.$toolMode) {
+			return;
+		}
+		const options = this.templates
+			.map((template) => {
+				const selected = this.toolModeTemplate && this.toolModeTemplate.name === template.name ? "selected" : "";
+				return `<option value="${this.escape(template.name)}" ${selected}>${this.escape(template.template_name || template.name)}</option>`;
+			})
+			.join("");
+		const selector = `<label class="slow-ai-canvas__tool-field">
+			<span>${__("Template")}</span>
+			<select class="form-control input-xs" data-tool-template>
+				<option value="">${__("Select a template")}</option>
+				${options}
+			</select>
+		</label>`;
+		const actions = `<div class="slow-ai-canvas__tool-actions">
+			<button class="btn btn-xs btn-default" type="button" data-action="refresh-tool-templates">${__("Refresh Templates")}</button>
+		</div>`;
+		if (!this.templates.length) {
+			this.$toolMode.html(`${actions}<div class="slow-ai-canvas__empty">${__("No templates available")}</div>`);
+			return;
+		}
+		if (!this.toolModeTemplate) {
+			this.$toolMode.html(`${selector}${actions}<div class="slow-ai-canvas__empty">${__("Select a template to run as a tool")}</div>`);
+			return;
+		}
+		this.$toolMode.html(`${selector}${this.renderToolModeForm(this.toolModeTemplate)}`);
+	}
+
+	loadToolModeTemplate(templateName) {
+		if (!templateName) {
+			this.toolModeTemplate = null;
+			this.renderToolModePanel();
+			return Promise.resolve();
+		}
+		this.$toolMode.html(`<div class="slow-ai-canvas__empty">${__("Loading tool form")}</div>`);
+		return frappe.call("slow_ai.api.templates.get_template", { template: templateName }).then((response) => {
+			this.toolModeTemplate = response.message;
+			this.renderToolModePanel();
+			this.setStatus(__("Loaded tool form {0}", [this.toolModeTemplate.template_name || this.toolModeTemplate.name]));
+		});
+	}
+
+	renderToolModeForm(template) {
+		const nodes = template.nodes || [];
+		const formRows = nodes.map((node) => this.renderToolModeNodeControl(node)).filter(Boolean).join("");
+		const providerRows = nodes
+			.filter((node) => node.type && node.type.indexOf("provider_") === 0)
+			.map((node) => this.renderToolModeProviderSummary(node))
+			.join("");
+		return `<div class="slow-ai-canvas__tool-card" data-tool-template-name="${this.escape(template.name)}">
+			<div class="slow-ai-canvas__tool-title">${this.escape(template.template_name || template.name)}</div>
+			<div class="slow-ai-canvas__tool-meta">${this.escape(template.category || __("Uncategorized"))} · ${this.escape(template.status || "")}</div>
+			${template.description ? `<div class="slow-ai-canvas__template-description">${this.escape(template.description)}</div>` : ""}
+			${formRows || `<div class="slow-ai-canvas__empty">${__("No editable form fields")}</div>`}
+			${providerRows}
+			<div class="slow-ai-canvas__tool-actions">
+				<button class="btn btn-xs btn-primary" type="button" data-action="run-tool-mode">${__("Run Tool")}</button>
+			</div>
+		</div>`;
+	}
+
+	renderToolModeNodeControl(node) {
+		const config = node.config || {};
+		const label = node.label || node.id;
+		if (node.type === "text_prompt") {
+			return `<label class="slow-ai-canvas__tool-field">
+				<span>${this.escape(label)}</span>
+				<textarea class="form-control input-xs slow-ai-canvas__tool-textarea" data-tool-node-id="${this.escape(node.id)}" data-tool-config-field="text">${this.escape(config.text || "")}</textarea>
+			</label>`;
+		}
+		if (node.type === "upload_asset") {
+			return `<div class="slow-ai-canvas__tool-section">
+				<div class="slow-ai-canvas__tool-title">${this.escape(label)}</div>
+				<label class="slow-ai-canvas__tool-field">
+					<span>${__("Asset")}</span>
+					<input class="form-control input-xs" type="text" placeholder="${__("AI Asset name")}" data-tool-node-id="${this.escape(node.id)}" data-tool-config-field="asset" value="${this.escape(config.asset || "")}">
+				</label>
+				<label class="slow-ai-canvas__tool-field">
+					<span>${__("Asset Type")}</span>
+					<select class="form-control input-xs" data-tool-node-id="${this.escape(node.id)}" data-tool-config-field="asset_type">
+						${this.renderAssetTypeOption("IMAGE", config.asset_type)}
+						${this.renderAssetTypeOption("VIDEO", config.asset_type)}
+						${this.renderAssetTypeOption("AUDIO", config.asset_type)}
+						${this.renderAssetTypeOption("MASK", config.asset_type)}
+					</select>
+				</label>
+				<div class="slow-ai-canvas__tool-meta">${__("Upload assets through AI Asset for now, then paste the asset name here.")}</div>
+			</div>`;
+		}
+		return "";
+	}
+
+	renderAssetTypeOption(assetType, selectedAssetType) {
+		const selected = String(assetType) === String(selectedAssetType || "") ? "selected" : "";
+		return `<option value="${this.escape(assetType)}" ${selected}>${this.escape(assetType)}</option>`;
+	}
+
+	renderToolModeProviderSummary(node) {
+		const config = node.config || {};
+		const parameters = this.formatJsonValue(config.parameters || {});
+		return `<div class="slow-ai-canvas__tool-section">
+			<div class="slow-ai-canvas__tool-title">${this.escape(node.label || node.id)}</div>
+			<div class="slow-ai-canvas__tool-readonly"><span>${__("Provider")}</span>: ${this.escape(config.provider || "")}</div>
+			<div class="slow-ai-canvas__tool-readonly"><span>${__("Model")}</span>: ${this.escape(config.model || "")}</div>
+			${config.provider_account ? `<div class="slow-ai-canvas__tool-readonly"><span>${__("Provider Account")}</span>: ${this.escape(config.provider_account)}</div>` : ""}
+			<div class="slow-ai-canvas__tool-readonly"><span>${__("Parameters")}</span>: ${this.escape(parameters || "{}")}</div>
+		</div>`;
+	}
+
+	runToolModeForm() {
+		const project = this.projectField.get_value();
+		const template = this.toolModeTemplate;
+		if (!project) {
+			frappe.msgprint(__("Select an AI Project before running Tool Mode."));
+			return Promise.resolve();
+		}
+		if (!template) {
+			frappe.msgprint(__("Select a template before running Tool Mode."));
+			return Promise.resolve();
+		}
+		const title = `${template.template_name || template.name} Run`;
+		const formValues = this.collectToolModeValues();
+		return frappe
+			.call("slow_ai.api.templates.create_workflow_from_template", {
+				template: template.name,
+				project,
+				title,
+			})
+			.then((response) => {
+				const draft = response.message;
+				this.workflow = draft.name;
+				this.workflowRun = null;
+				this.workflowField.set_value(draft.name);
+				this.titleField.set_value(draft.title);
+				this.nodes = this.applyToolModeValues(this.withPositions(draft.nodes || [], draft.layout || {}), formValues);
+				this.edges = draft.edges || [];
+				this.layout = draft.layout || {};
+				this.selectedNodeId = this.nodes.length ? this.nodes[0].id : null;
+				this.nodeRunsByNodeId = {};
+				this.clearRunMonitor();
+				this.renderAssetOutputs([]);
+				this.render();
+				return this.saveWorkflow();
+			})
+			.then(() => this.startRun());
+	}
+
+	collectToolModeValues() {
+		const values = {};
+		this.$toolMode.find("[data-tool-node-id][data-tool-config-field]").each((index, element) => {
+			const nodeId = $(element).attr("data-tool-node-id");
+			const fieldname = $(element).attr("data-tool-config-field");
+			values[nodeId] = values[nodeId] || {};
+			values[nodeId][fieldname] = $(element).val();
+		});
+		return values;
+	}
+
+	applyToolModeValues(nodes, values) {
+		return nodes.map((node) => {
+			const nodeValues = values[node.id];
+			if (!nodeValues) {
+				return node;
+			}
+			return {
+				...node,
+				config: {
+					...(node.config || {}),
+					...nodeValues,
+				},
+			};
 		});
 	}
 

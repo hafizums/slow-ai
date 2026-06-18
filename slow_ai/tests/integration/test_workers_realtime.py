@@ -11,7 +11,7 @@ from slow_ai.infrastructure.provider_jobs import ProviderJobRepository
 from slow_ai.infrastructure.realtime import NODE_RUN_EVENT, PROVIDER_JOB_EVENT, WORKFLOW_RUN_EVENT
 from slow_ai.providers.contracts import NormalizedProviderResult, ProviderAdapter, ProviderSubmission
 from slow_ai.providers.registry import ProviderRegistry
-from slow_ai.workers.poll_provider_job import poll_provider_job
+from slow_ai.workers.poll_provider_job import poll_pending_provider_jobs, poll_provider_job
 from slow_ai.workers.resume_workflow import resume_workflow
 from slow_ai.workers.run_node import run_node
 from slow_ai.workers.run_workflow import run_workflow
@@ -73,11 +73,13 @@ class PollingProviderAdapter(ProviderAdapter):
 
     def __init__(self) -> None:
         self.provider_jobs = ProviderJobRepository()
+        self.polled: list[str] = []
 
     def submit_job(self, submission: ProviderSubmission) -> NormalizedProviderResult:
         raise NotImplementedError("Polling test adapter only supports poll_job.")
 
     def poll_job(self, provider_job_name: str) -> NormalizedProviderResult:
+        self.polled.append(provider_job_name)
         result = NormalizedProviderResult(
             status=ProviderJobStatus.SUCCEEDED.value,
             external_job_id="external-poll-123",
@@ -203,4 +205,58 @@ class TestWorkersRealtime(FrappeTestCase):
         self.assertEqual(result["status"], ProviderJobStatus.SUCCEEDED.value)
         self.assertTrue(result["queue_job_id"].startswith("slow_ai:workflow_run:"))
         self.assertEqual(provider_job.status, ProviderJobStatus.SUCCEEDED.value)
+        self.assertIn(PROVIDER_JOB_EVENT, event_names())
+
+    def test_scheduled_provider_polling_polls_only_waiting_external_jobs(self):
+        workflow = create_text_workflow(create_project())
+        start_result = RunService().start_run(workflow.name)
+        node_run_name = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": start_result.workflow_run, "node_id": "prompt_1"},
+            "name",
+        )
+        model = insert_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique("poll/model"),
+                "model_name": "Scheduled Polling Test Model",
+                "provider": "polling_provider",
+                "status": "ENABLED",
+                "modality": "TEXT_TO_IMAGE",
+            }
+        )
+        pollable_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run_name,
+                "provider": "polling_provider",
+                "model": model.name,
+                "external_job_id": "external-poll-123",
+                "status": "WAITING_PROVIDER",
+                "idempotency_key": unique("scheduled-poll-job"),
+                "request_json": json.dumps({"prompt": "Worker text"}),
+            }
+        )
+        queued_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run_name,
+                "provider": "polling_provider",
+                "model": model.name,
+                "status": "QUEUED",
+                "idempotency_key": unique("scheduled-queued-job"),
+                "request_json": json.dumps({"prompt": "Worker text"}),
+            }
+        )
+        registry = ProviderRegistry([PollingProviderAdapter()])
+
+        result = poll_pending_provider_jobs(provider="polling_provider", provider_registry=registry)
+
+        pollable_job.reload()
+        queued_job.reload()
+        self.assertEqual([row["provider_job"] for row in result["polled"]], [pollable_job.name])
+        self.assertEqual(result["skipped"], [])
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(pollable_job.status, ProviderJobStatus.SUCCEEDED.value)
+        self.assertEqual(queued_job.status, ProviderJobStatus.QUEUED.value)
         self.assertIn(PROVIDER_JOB_EVENT, event_names())

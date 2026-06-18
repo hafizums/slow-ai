@@ -129,23 +129,13 @@ on_login = ["slow_ai.infrastructure.workspace.sync_private_workspace_on_login"]
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"slow_ai.tasks.all"
-# 	],
-# 	"daily": [
-# 		"slow_ai.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"slow_ai.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"slow_ai.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"slow_ai.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+    "cron": {
+        "* * * * *": [
+            "slow_ai.workers.poll_provider_job.poll_pending_provider_jobs"
+        ]
+    }
+}
 
 # Testing
 # -------

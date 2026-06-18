@@ -12,6 +12,59 @@ from slow_ai.infrastructure.repositories import FrappeEngineRepository
 from slow_ai.providers.registry import ProviderRegistry, create_default_provider_registry
 
 
+POLLABLE_PROVIDER_JOB_STATUSES = (
+    ProviderJobStatus.SUBMITTED.value,
+    ProviderJobStatus.WAITING_PROVIDER.value,
+)
+
+
+def poll_pending_provider_jobs(
+    limit: int = 20,
+    provider: str | None = None,
+    provider_registry: ProviderRegistry | None = None,
+) -> dict:
+    """Poll persisted provider jobs that are waiting on external providers."""
+    filters: dict = {"status": ["in", POLLABLE_PROVIDER_JOB_STATUSES]}
+    if provider:
+        filters["provider"] = provider
+    rows = frappe.get_all(
+        "AI Provider Job",
+        filters=filters,
+        fields=["name", "external_job_id"],
+        order_by="modified asc",
+        limit=max(int(limit), 1),
+    )
+    registry = provider_registry or create_default_provider_registry()
+    polled: list[dict] = []
+    skipped: list[str] = []
+    errors: list[dict] = []
+
+    for row in rows:
+        if not row.external_job_id:
+            skipped.append(row.name)
+            continue
+        try:
+            polled.append(
+                poll_provider_job(
+                    row.name,
+                    provider_registry=registry,
+                    enqueue_resume=True,
+                )
+            )
+        except Exception:
+            errors.append({"provider_job": row.name, "error": "Polling failed. See Error Log."})
+            frappe.log_error(
+                title=f"Slow AI provider polling failed: {row.name}",
+                message=frappe.get_traceback(),
+            )
+
+    return {
+        "polled": polled,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
 def poll_provider_job(
     provider_job_name: str,
     provider_registry: ProviderRegistry | None = None,

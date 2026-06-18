@@ -17,6 +17,10 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.queue.get_queue_status",
     "slow_ai.api.assets.view",
     "slow_ai.api.models.get_model_metadata",
+    "slow_ai.api.templates.list_templates",
+    "slow_ai.api.templates.get_template",
+    "slow_ai.api.templates.save_template",
+    "slow_ai.api.templates.create_workflow_from_template",
 }
 
 FORBIDDEN_CANVAS_FRAGMENTS = (
@@ -135,6 +139,41 @@ def canvas_edges():
     ]
 
 
+def tool_mode_nodes(text: str = "Tool mode prompt"):
+    return [
+        {
+            "id": "prompt_1",
+            "type": "text_prompt",
+            "label": "Prompt",
+            "position": {"x": 96, "y": 128},
+            "config": {"text": text},
+        },
+        {
+            "id": "tool_output_1",
+            "type": "tool_output",
+            "label": "Tool Output",
+            "position": {"x": 376, "y": 128},
+            "config": {
+                "output_name": "answer",
+                "description": "Primary tool output",
+                "schema": {"type": "string"},
+            },
+        },
+    ]
+
+
+def tool_mode_edges():
+    return [
+        {
+            "id": "edge_1",
+            "source": "prompt_1",
+            "source_port": "text",
+            "target": "tool_output_1",
+            "target_port": "text",
+        }
+    ]
+
+
 class TestCanvasPlaceholder(FrappeTestCase):
     def test_canvas_page_loads_only_api_driven_assets(self):
         frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
@@ -204,6 +243,24 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("This workflow may call an external provider and spend credits.", page.script)
         self.assertIn("cost unknown", page.script)
         self.assertIn("frappe.confirm", page.script)
+        self.assertIn("Template Library", page.script)
+        self.assertIn("loadTemplates", page.script)
+        self.assertIn("renderTemplateLibrary", page.script)
+        self.assertIn("saveCurrentWorkflowAsTemplate", page.script)
+        self.assertIn("loadTemplatePreview", page.script)
+        self.assertIn("createWorkflowFromTemplate", page.script)
+        self.assertIn("Save Current Workflow as Template", page.script)
+        self.assertIn("Load Template Preview", page.script)
+        self.assertIn("Create Workflow from Template", page.script)
+        self.assertIn("frappe.prompt", page.script)
+        self.assertIn("Tool Mode", page.script)
+        self.assertIn("renderToolModePanel", page.script)
+        self.assertIn("loadToolModeTemplate", page.script)
+        self.assertIn("runToolModeForm", page.script)
+        self.assertIn("collectToolModeValues", page.script)
+        self.assertIn("applyToolModeValues", page.script)
+        self.assertIn("Run Tool", page.script)
+        self.assertIn("AI Asset name", page.script)
         for method in ALLOWED_CANVAS_METHODS:
             self.assertIn(method, page.script)
         for fragment in FORBIDDEN_CANVAS_FRAGMENTS:
@@ -278,6 +335,182 @@ class TestCanvasPlaceholder(FrappeTestCase):
                 edges=json.dumps(invalid_edges),
                 layout=json.dumps({"nodes": [{"id": "output_1", "x": 656, "y": 128}]}),
             )
+
+    def test_canvas_template_library_uses_backend_apis_without_starting_runs(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        self.assertIn("slow_ai.api.templates.list_templates", page.script)
+        self.assertIn("slow_ai.api.templates.get_template", page.script)
+        self.assertIn("slow_ai.api.templates.save_template", page.script)
+        self.assertIn("slow_ai.api.templates.create_workflow_from_template", page.script)
+        self.assertIn('frappe.call("slow_ai.api.runs.start_run"', page.script)
+        self.assertIn("This workflow may call an external provider and spend credits.", page.script)
+        for forbidden in ("frappe.db", "providers/wavespeed", "api.wavespeed.ai", "WAVESPEED_API_KEY"):
+            self.assertNotIn(forbidden, page.script)
+
+        project = create_project()
+        before_runs = frappe.db.count("AI Workflow Run")
+        before_versions = frappe.db.count("AI Workflow Version")
+        before_provider_jobs = frappe.db.count("AI Provider Job")
+
+        template = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template_name=unique("Canvas Template"),
+            status="PUBLISHED",
+            category="Canvas",
+            description="Canvas template library test",
+            nodes=json.dumps(canvas_nodes()),
+            edges=json.dumps(canvas_edges()),
+            layout=json.dumps({"nodes": [{"id": "image_1", "x": 376, "y": 128}]}),
+        )
+        listed = frappe.call("slow_ai.api.templates.list_templates", status="PUBLISHED", category="Canvas")
+        loaded = frappe.call("slow_ai.api.templates.get_template", template=template["name"])
+        created = frappe.call(
+            "slow_ai.api.templates.create_workflow_from_template",
+            template=template["name"],
+            project=project.name,
+            title="Workflow From Canvas Template",
+        )
+
+        self.assertTrue(frappe.db.exists("AI Workflow Template", template["name"]))
+        self.assertIn(template["name"], {row["name"] for row in listed["templates"]})
+        self.assertEqual(loaded["name"], template["name"])
+        self.assertEqual(loaded["nodes"][1]["type"], "provider_text_to_image")
+        self.assertTrue(frappe.db.exists("AI Workflow", created["name"]))
+        self.assertEqual(created["status"], "DRAFT")
+        self.assertEqual(frappe.db.get_value("AI Workflow", created["name"], "project"), project.name)
+        self.assertEqual(frappe.db.count("AI Workflow Run"), before_runs)
+        self.assertEqual(frappe.db.count("AI Workflow Version"), before_versions)
+        self.assertEqual(frappe.db.count("AI Provider Job"), before_provider_jobs)
+
+        ensure_canvas_provider_catalog()
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=created["name"])
+
+        self.assertTrue(frappe.db.exists("AI Workflow Run", run["workflow_run"]))
+        self.assertTrue(frappe.db.exists("AI Workflow Version", run["workflow_version"]))
+
+    def test_canvas_tool_mode_form_flow_uses_template_draft_save_and_start_run(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        self.assertIn("Tool Mode", page.script)
+        self.assertIn("slow_ai.api.templates.list_templates", page.script)
+        self.assertIn("slow_ai.api.templates.get_template", page.script)
+        self.assertIn("slow_ai.api.templates.create_workflow_from_template", page.script)
+        self.assertIn("slow_ai.api.workflows.save_workflow", page.script)
+        self.assertIn("slow_ai.api.runs.start_run", page.script)
+        for forbidden in ("frappe.db", "providers/wavespeed", "api.wavespeed.ai", "WAVESPEED_API_KEY"):
+            self.assertNotIn(forbidden, page.script)
+
+        project = create_project()
+        before_provider_jobs = frappe.db.count("AI Provider Job")
+        before_runs = frappe.db.count("AI Workflow Run")
+        template = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template_name=unique("Canvas Tool Template"),
+            status="PUBLISHED",
+            category="Tool",
+            description="Canvas Tool Mode template",
+            nodes=json.dumps(tool_mode_nodes("Template prompt")),
+            edges=json.dumps(tool_mode_edges()),
+            layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+        )
+        loaded = frappe.call("slow_ai.api.templates.get_template", template=template["name"])
+        draft = frappe.call(
+            "slow_ai.api.templates.create_workflow_from_template",
+            template=template["name"],
+            project=project.name,
+            title="Canvas Tool Mode Run",
+        )
+        draft["nodes"][0]["config"]["text"] = "Prompt entered through Tool Mode"
+        saved = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            workflow=draft["name"],
+            project=project.name,
+            title=draft["title"],
+            nodes=json.dumps(draft["nodes"]),
+            edges=json.dumps(draft["edges"]),
+            layout=json.dumps(draft["layout"]),
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
+
+        self.assertEqual(loaded["nodes"][0]["config"]["text"], "Template prompt")
+        self.assertEqual(saved["nodes"][0]["config"]["text"], "Prompt entered through Tool Mode")
+        self.assertEqual(frappe.db.count("AI Provider Job"), before_provider_jobs)
+        self.assertEqual(frappe.db.count("AI Workflow Run"), before_runs + 1)
+        self.assertTrue(frappe.db.exists("AI Workflow", saved["name"]))
+        self.assertTrue(frappe.db.exists("AI Workflow Version", run["workflow_version"]))
+        self.assertTrue(frappe.db.exists("AI Workflow Run", run["workflow_run"]))
+
+    def test_canvas_tool_mode_provider_template_still_uses_backend_preflight(self):
+        project = create_project()
+        before_provider_jobs = frappe.db.count("AI Provider Job")
+        template = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template_name=unique("Canvas Tool Provider Template"),
+            status="PUBLISHED",
+            category="Tool",
+            description="Provider template preflight test",
+            nodes=json.dumps(
+                [
+                    {
+                        "id": "prompt_1",
+                        "type": "text_prompt",
+                        "label": "Prompt",
+                        "position": {"x": 96, "y": 128},
+                        "config": {"text": "Provider prompt"},
+                    },
+                    {
+                        "id": "provider_text_to_image_1",
+                        "type": "provider_text_to_image",
+                        "label": "Provider Text To Image",
+                        "position": {"x": 376, "y": 128},
+                        "config": {"provider": "no_account_provider", "model": "missing-model"},
+                    },
+                    {
+                        "id": "output_1",
+                        "type": "export_output",
+                        "label": "Output",
+                        "position": {"x": 656, "y": 128},
+                        "config": {},
+                    },
+                ]
+            ),
+            edges=json.dumps(
+                [
+                    {
+                        "id": "edge_1",
+                        "source": "prompt_1",
+                        "source_port": "text",
+                        "target": "provider_text_to_image_1",
+                        "target_port": "prompt",
+                    },
+                    {
+                        "id": "edge_2",
+                        "source": "provider_text_to_image_1",
+                        "source_port": "image",
+                        "target": "output_1",
+                        "target_port": "image",
+                    },
+                ]
+            ),
+            layout=json.dumps({"nodes": [{"id": "provider_text_to_image_1", "x": 376, "y": 128}]}),
+        )
+        draft = frappe.call(
+            "slow_ai.api.templates.create_workflow_from_template",
+            template=template["name"],
+            project=project.name,
+            title="Canvas Tool Provider Run",
+        )
+
+        with self.assertRaises(RunPreflightError):
+            frappe.call("slow_ai.api.runs.start_run", workflow=draft["name"])
+
+        self.assertEqual(frappe.db.count("AI Provider Job"), before_provider_jobs)
+        self.assertFalse(frappe.db.exists("AI Workflow Run", {"workflow": draft["name"]}))
 
     def test_added_provider_node_still_uses_backend_preflight_on_start(self):
         project = create_project()

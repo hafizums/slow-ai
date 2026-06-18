@@ -94,6 +94,9 @@
 }
 
 .slow-ai-canvas__node-list,
+.slow-ai-canvas__template-library,
+.slow-ai-canvas__template-preview,
+.slow-ai-canvas__tool-mode,
 .slow-ai-canvas__summary,
 .slow-ai-canvas__history,
 .slow-ai-canvas__asset-output,
@@ -257,6 +260,101 @@
 }
 
 .slow-ai-canvas__asset-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.slow-ai-canvas__template-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.slow-ai-canvas__template-card,
+.slow-ai-canvas__template-preview-card {
+	padding: 9px 0;
+	border-bottom: 1px solid var(--slow-ai-border);
+	overflow-wrap: anywhere;
+}
+
+.slow-ai-canvas__template-title {
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--slow-ai-text);
+}
+
+.slow-ai-canvas__template-meta,
+.slow-ai-canvas__template-description,
+.slow-ai-canvas__template-preview-row {
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--slow-ai-muted);
+}
+
+.slow-ai-canvas__template-description {
+	margin-top: 4px;
+}
+
+.slow-ai-canvas__template-card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.slow-ai-canvas__tool-card {
+	padding: 9px 0;
+	border-bottom: 1px solid var(--slow-ai-border);
+}
+
+.slow-ai-canvas__tool-section {
+	padding: 8px 0;
+	border-top: 1px solid var(--slow-ai-border);
+}
+
+.slow-ai-canvas__tool-title {
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--slow-ai-text);
+	overflow-wrap: anywhere;
+}
+
+.slow-ai-canvas__tool-meta,
+.slow-ai-canvas__tool-readonly {
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--slow-ai-muted);
+	overflow-wrap: anywhere;
+}
+
+.slow-ai-canvas__tool-readonly span {
+	font-weight: 600;
+	color: var(--slow-ai-text);
+}
+
+.slow-ai-canvas__tool-field {
+	display: block;
+	margin: 8px 0;
+	font-size: 12px;
+	color: var(--slow-ai-muted);
+}
+
+.slow-ai-canvas__tool-field span {
+	display: block;
+	margin-bottom: 3px;
+	font-weight: 600;
+	color: var(--slow-ai-text);
+}
+
+.slow-ai-canvas__tool-textarea {
+	min-height: 78px;
+	resize: vertical;
+}
+
+.slow-ai-canvas__tool-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;

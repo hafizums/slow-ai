@@ -1,0 +1,88 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:model_id",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "model_id",
+  "model_name",
+  "provider",
+  "status",
+  "modality",
+  "pricing_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "model_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Model ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "model_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Model Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Provider",
+   "reqd": 1
+  },
+  {
+   "default": "ENABLED",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "ENABLED\nDISABLED",
+   "reqd": 1
+  },
+  {
+   "fieldname": "modality",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Modality",
+   "options": "TEXT_TO_IMAGE\nIMAGE_TO_IMAGE\nIMAGE_TO_VIDEO\nSTART_END_TO_VIDEO\nTEXT_TO_VIDEO\nTEXT_TO_SPEECH\nSPEECH_TO_TEXT\nBACKGROUND_REMOVAL\nUPSCALING\nMEDIA_UTILITY"
+  },
+  {
+   "fieldname": "pricing_json",
+   "fieldtype": "Code",
+   "label": "Pricing JSON",
+   "options": "JSON"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Slow Ai",
+ "name": "AI Model",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "model_name",
+ "track_changes": 1
+}

@@ -1,0 +1,92 @@
+"""Provider job polling worker entrypoint."""
+
+from __future__ import annotations
+
+import frappe
+
+from slow_ai.domain.status import PROVIDER_JOB_TERMINAL_STATUSES, NodeRunStatus, ProviderJobStatus
+from slow_ai.infrastructure.provider_jobs import ProviderJobRepository
+from slow_ai.infrastructure.provider_outputs import ProviderOutputService
+from slow_ai.infrastructure.queue import FrappeWorkflowQueue
+from slow_ai.infrastructure.repositories import FrappeEngineRepository
+from slow_ai.providers.registry import ProviderRegistry, create_default_provider_registry
+
+
+def poll_provider_job(
+    provider_job_name: str,
+    provider_registry: ProviderRegistry | None = None,
+    *,
+    enqueue_resume: bool = True,
+) -> dict:
+    """Poll one persisted provider job and optionally enqueue workflow resume."""
+    provider_jobs = ProviderJobRepository()
+    provider_job = provider_jobs.get(provider_job_name)
+    registry = provider_registry or create_default_provider_registry()
+    result = registry.get(provider_job.provider).poll_job(provider_job.name)
+    provider_job = provider_jobs.get(provider_job_name)
+    workflow_run = None
+
+    if provider_job.node_run:
+        workflow_run = frappe.db.get_value("AI Node Run", provider_job.node_run, "workflow_run")
+        _update_waiting_node_from_provider_result(provider_job, result, workflow_run)
+
+    target_status = ProviderJobStatus(result.status)
+    if enqueue_resume and target_status in PROVIDER_JOB_TERMINAL_STATUSES and provider_job.node_run:
+        if workflow_run:
+            queue_job_id = FrappeWorkflowQueue().enqueue_workflow_run(workflow_run)
+        else:
+            queue_job_id = None
+    else:
+        queue_job_id = None
+
+    return {
+        "provider_job": provider_job_name,
+        "status": result.status,
+        "external_job_id": result.external_job_id,
+        "queue_job_id": queue_job_id,
+    }
+
+
+def _update_waiting_node_from_provider_result(provider_job, result, workflow_run: str | None) -> None:
+    if not workflow_run:
+        return
+    repository = FrappeEngineRepository()
+    node_run = repository.get_node_run(provider_job.node_run)
+    if node_run.status != "WAITING_PROVIDER":
+        return
+
+    target_status = ProviderJobStatus(result.status)
+    if target_status == ProviderJobStatus.SUCCEEDED:
+        materialized = ProviderOutputService().materialize(
+            project_name=frappe.db.get_value("AI Workflow Run", workflow_run, "project"),
+            workflow_run_name=workflow_run,
+            node_run_name=node_run.name,
+            provider_job_name=provider_job.name,
+            result=result,
+            description=f"{node_run.node_type} provider cost",
+        )
+        repository.set_node_status(
+            node_run.name,
+            status=NodeRunStatus.SUCCEEDED,
+            outputs=materialized.node_outputs,
+            cost_usd=result.cost_usd,
+            provider_job_name=provider_job.name,
+        )
+        return
+
+    if target_status == ProviderJobStatus.CANCELLED:
+        repository.set_node_status(
+            node_run.name,
+            status=NodeRunStatus.CANCELLED,
+            error=result.error,
+            provider_job_name=provider_job.name,
+        )
+        return
+
+    if target_status in {ProviderJobStatus.FAILED, ProviderJobStatus.EXPIRED}:
+        repository.set_node_status(
+            node_run.name,
+            status=NodeRunStatus.FAILED,
+            error=result.error or {"message": f"Provider job ended with status {result.status}."},
+            provider_job_name=provider_job.name,
+        )

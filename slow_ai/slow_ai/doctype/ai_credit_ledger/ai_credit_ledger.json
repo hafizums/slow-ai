@@ -1,0 +1,109 @@
+{
+ "actions": [],
+ "autoname": "format:AI-CREDIT-LEDGER-{#####}",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "workflow_run",
+  "node_run",
+  "provider_job",
+  "ledger_type",
+  "amount_usd",
+  "currency",
+  "description",
+  "reference_doctype",
+  "reference_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "AI Project",
+   "reqd": 1
+  },
+  {
+   "fieldname": "workflow_run",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Workflow Run",
+   "options": "AI Workflow Run"
+  },
+  {
+   "fieldname": "node_run",
+   "fieldtype": "Link",
+   "label": "Node Run",
+   "options": "AI Node Run"
+  },
+  {
+   "fieldname": "provider_job",
+   "fieldtype": "Link",
+   "label": "Provider Job",
+   "options": "AI Provider Job"
+  },
+  {
+   "fieldname": "ledger_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Ledger Type",
+   "options": "CREDIT\nDEBIT\nADJUSTMENT",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amount_usd",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount USD",
+   "reqd": 1
+  },
+  {
+   "default": "USD",
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "label": "Reference DocType"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference Name",
+   "options": "reference_doctype"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Slow Ai",
+ "name": "AI Credit Ledger",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "export": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

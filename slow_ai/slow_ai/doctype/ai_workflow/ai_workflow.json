@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:AI-WORKFLOW-{#####}",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "project",
+  "status",
+  "current_version",
+  "draft_nodes_json",
+  "draft_edges_json",
+  "layout_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "AI Project",
+   "reqd": 1
+  },
+  {
+   "default": "DRAFT",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "DRAFT\nACTIVE\nARCHIVED",
+   "reqd": 1
+  },
+  {
+   "fieldname": "current_version",
+   "fieldtype": "Link",
+   "label": "Current Version",
+   "options": "AI Workflow Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "draft_nodes_json",
+   "fieldtype": "Code",
+   "label": "Draft Nodes JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "draft_edges_json",
+   "fieldtype": "Code",
+   "label": "Draft Edges JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "layout_json",
+   "fieldtype": "Code",
+   "label": "Layout JSON",
+   "options": "JSON"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Slow Ai",
+ "name": "AI Workflow",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

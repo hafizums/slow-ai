@@ -1,0 +1,157 @@
+{
+ "actions": [],
+ "autoname": "format:AI-NODE-RUN-{#####}",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "workflow_run",
+  "node_id",
+  "node_type",
+  "status",
+  "attempt_no",
+  "provider_job",
+  "cost_usd",
+  "cache_hit",
+  "input_hash",
+  "config_hash",
+  "cache_key",
+  "started_at",
+  "completed_at",
+  "input_json",
+  "config_json",
+  "output_json",
+  "error_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "workflow_run",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Workflow Run",
+   "options": "AI Workflow Run",
+   "reqd": 1
+  },
+  {
+   "fieldname": "node_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Node ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "node_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Node Type",
+   "reqd": 1
+  },
+  {
+   "default": "PENDING",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "PENDING\nREADY\nRUNNING\nWAITING_PROVIDER\nSUCCEEDED\nFAILED\nSKIPPED\nCANCELLED",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "attempt_no",
+   "fieldtype": "Int",
+   "label": "Attempt No",
+   "reqd": 1
+  },
+  {
+   "fieldname": "provider_job",
+   "fieldtype": "Link",
+   "label": "Provider Job",
+   "options": "AI Provider Job"
+  },
+  {
+   "fieldname": "cost_usd",
+   "fieldtype": "Currency",
+   "label": "Cost USD"
+  },
+  {
+   "default": "0",
+   "fieldname": "cache_hit",
+   "fieldtype": "Check",
+   "label": "Cache Hit"
+  },
+  {
+   "fieldname": "input_hash",
+   "fieldtype": "Data",
+   "label": "Input Hash"
+  },
+  {
+   "fieldname": "config_hash",
+   "fieldtype": "Data",
+   "label": "Config Hash"
+  },
+  {
+   "fieldname": "cache_key",
+   "fieldtype": "Data",
+   "label": "Cache Key"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "input_json",
+   "fieldtype": "Code",
+   "label": "Input JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "config_json",
+   "fieldtype": "Code",
+   "label": "Config JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "output_json",
+   "fieldtype": "Code",
+   "label": "Output JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "error_json",
+   "fieldtype": "Code",
+   "label": "Error JSON",
+   "options": "JSON"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Slow Ai",
+ "name": "AI Node Run",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

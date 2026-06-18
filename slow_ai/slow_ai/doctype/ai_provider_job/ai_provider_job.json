@@ -1,0 +1,130 @@
+{
+ "actions": [],
+ "autoname": "format:AI-PROVIDER-JOB-{#####}",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "node_run",
+  "provider",
+  "provider_account",
+  "model",
+  "external_job_id",
+  "status",
+  "idempotency_key",
+  "cost_usd",
+  "submitted_at",
+  "completed_at",
+  "request_json",
+  "response_json",
+  "raw_error_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "node_run",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Node Run",
+   "options": "AI Node Run"
+  },
+  {
+   "fieldname": "provider",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Provider",
+   "reqd": 1
+  },
+  {
+   "fieldname": "provider_account",
+   "fieldtype": "Link",
+   "label": "Provider Account",
+   "options": "AI Provider Account"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Model",
+   "options": "AI Model"
+  },
+  {
+   "fieldname": "external_job_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "External Job ID"
+  },
+  {
+   "default": "QUEUED",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "QUEUED\nSUBMITTING\nSUBMITTED\nWAITING_PROVIDER\nSUCCEEDED\nFAILED\nCANCELLED\nEXPIRED",
+   "reqd": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Idempotency Key",
+   "unique": 1
+  },
+  {
+   "fieldname": "cost_usd",
+   "fieldtype": "Currency",
+   "label": "Cost USD"
+  },
+  {
+   "fieldname": "submitted_at",
+   "fieldtype": "Datetime",
+   "label": "Submitted At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "request_json",
+   "fieldtype": "Code",
+   "label": "Request JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "response_json",
+   "fieldtype": "Code",
+   "label": "Response JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "raw_error_json",
+   "fieldtype": "Code",
+   "label": "Raw Error JSON",
+   "options": "JSON"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Slow Ai",
+ "name": "AI Provider Job",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

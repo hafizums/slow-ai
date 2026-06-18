@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "autoname": "format:AI-ASSET-{#####}",
+ "creation": "2026-06-18 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "project",
+  "asset_type",
+  "file",
+  "url",
+  "mime_type",
+  "width",
+  "height",
+  "duration_seconds",
+  "source_workflow_run",
+  "source_node_run",
+  "source_provider_job",
+  "metadata_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "AI Project",
+   "reqd": 1
+  },
+  {
+   "fieldname": "asset_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Asset Type",
+   "options": "IMAGE\nVIDEO\nAUDIO\nMASK\nJSON\nTEXT",
+   "reqd": 1
+  },
+  {
+   "fieldname": "file",
+   "fieldtype": "Attach",
+   "label": "File"
+  },
+  {
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "URL"
+  },
+  {
+   "fieldname": "mime_type",
+   "fieldtype": "Data",
+   "label": "MIME Type"
+  },
+  {
+   "fieldname": "width",
+   "fieldtype": "Int",
+   "label": "Width"
+  },
+  {
+   "fieldname": "height",
+   "fieldtype": "Int",
+   "label": "Height"
+  },
+  {
+   "fieldname": "duration_seconds",
+   "fieldtype": "Float",
+   "label": "Duration Seconds"
+  },
+  {
+   "fieldname": "source_workflow_run",
+   "fieldtype": "Link",
+   "label": "Source Workflow Run",
+   "options": "AI Workflow Run"
+  },
+  {
+   "fieldname": "source_node_run",
+   "fieldtype": "Link",
+   "label": "Source Node Run",
+   "options": "AI Node Run"
+  },
+  {
+   "fieldname": "source_provider_job",
+   "fieldtype": "Link",
+   "label": "Source Provider Job",
+   "options": "AI Provider Job"
+  },
+  {
+   "fieldname": "metadata_json",
+   "fieldtype": "Code",
+   "label": "Metadata JSON",
+   "options": "JSON"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Slow Ai",
+ "name": "AI Asset",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

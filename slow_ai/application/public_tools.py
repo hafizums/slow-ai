@@ -24,6 +24,7 @@ from slow_ai.application.project_access import (
 from slow_ai.application.templates import create_workflow_from_template as create_template_workflow
 from slow_ai.application.templates import get_template as get_template_service
 from slow_ai.application.templates import list_templates as list_templates_service
+from slow_ai.application.run_outputs import get_run_output_gallery as get_run_output_gallery_service
 from slow_ai.application.template_inputs import apply_input_values
 from slow_ai.application.template_inputs import apply_legacy_public_tool_values
 from slow_ai.application.workflows import save_workflow
@@ -136,15 +137,22 @@ def get_my_run(workflow_run: str) -> dict[str, Any]:
     provider_jobs = _provider_job_summaries(node_runs)
     assets = _asset_summaries(run.name)
     ledger = _ledger_summaries(run.name)
+    output_gallery = get_run_output_gallery_service(run.name)
     return {
         "run": _run_summary(run.as_dict()) | {"error": _safe_error(run.error_json)},
         "node_runs": [_node_run_summary(row) for row in node_runs],
         "provider_jobs": provider_jobs,
         "provider_summary": _status_summary(provider_jobs),
         "assets": assets,
+        "output_gallery": output_gallery,
         "ledger": ledger,
         "cost_summary": _cost_summary(ledger),
     }
+
+
+def get_run_output_gallery(workflow_run: str) -> dict[str, Any]:
+    _require_logged_in_user()
+    return get_run_output_gallery_service(workflow_run)
 
 
 def create_run_share(
@@ -191,10 +199,18 @@ def get_shared_run(share_token: str) -> dict[str, Any]:
     run = frappe.get_doc("AI Workflow Run", doc.workflow_run)
     _assert_shareable_run(run)
     ledger = _ledger_summaries(run.name)
+    selected_assets = _selected_assets_for_share(doc)
+    output_gallery = get_run_output_gallery_service(
+        run.name,
+        selected_assets=selected_assets,
+        include_unselected=False,
+        ignore_project_permissions=True,
+    )
     return {
         "share": _public_share_summary(doc.as_dict()),
         "run": _public_run_summary(run.as_dict()),
-        "assets": _shared_asset_views(_selected_assets_for_share(doc)),
+        "assets": output_gallery["assets"],
+        "output_gallery": output_gallery,
         "cost_summary": _cost_summary(ledger),
     }
 

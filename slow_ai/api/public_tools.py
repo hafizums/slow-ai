@@ -8,6 +8,7 @@ from slow_ai.application.public_tools import create_run_share as create_run_shar
 from slow_ai.application.public_tools import create_workflow_from_template as create_workflow_from_template_service
 from slow_ai.application.public_tools import disable_run_share as disable_run_share_service
 from slow_ai.application.public_tools import get_my_run as get_my_run_service
+from slow_ai.application.public_tools import get_run_output_gallery as get_run_output_gallery_service
 from slow_ai.application.public_tools import get_shared_run as get_shared_run_service
 from slow_ai.application.public_tools import get_template as get_template_service
 from slow_ai.application.public_tools import list_my_runs as list_my_runs_service
@@ -43,6 +44,11 @@ def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict:
 @frappe.whitelist()
 def get_my_run(workflow_run: str) -> dict:
     return get_my_run_service(workflow_run)
+
+
+@frappe.whitelist()
+def get_run_output_gallery(workflow_run: str) -> dict:
+    return get_run_output_gallery_service(workflow_run)
 
 
 @frappe.whitelist()

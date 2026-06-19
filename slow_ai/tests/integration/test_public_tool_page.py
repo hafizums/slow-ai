@@ -19,6 +19,7 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.prepare_workflow_from_template",
     "slow_ai.api.public_tools.list_my_runs",
     "slow_ai.api.public_tools.get_my_run",
+    "slow_ai.api.public_tools.get_run_output_gallery",
     "slow_ai.api.public_tools.create_run_share",
     "slow_ai.api.public_tools.disable_run_share",
     "slow_ai.api.public_tools.get_shared_run",
@@ -102,6 +103,18 @@ def create_project(owner: str):
     frappe.db.set_value("AI Project", project.name, "owner", owner)
     project.reload()
     return project
+
+
+def add_member(project: str, user: str, role: str):
+    return insert_doc(
+        {
+            "doctype": "AI Project Member",
+            "project": project,
+            "user": user,
+            "role": role,
+            "status": "ACTIVE",
+        }
+    )
 
 
 def text_tool_nodes(text: str = "Template prompt"):
@@ -306,6 +319,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
+        self.assertIn("slow_ai.api.public_tools.get_run_output_gallery", page.script)
         self.assertIn("slow_ai.api.public_tools.create_run_share", page.script)
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
@@ -315,7 +329,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.assets.view", page.script)
         self.assertIn("slow_ai.api.billing.get_balance", page.script)
         self.assertIn("slow_ai.api.models.get_model_metadata", page.script)
-        self.assertIn("assetNamesFromHistory", page.script)
+        self.assertIn("renderOutputGallery", page.script)
 
         methods = set(re.findall(r"frappe\.call\(\s*[\"']([^\"']+)[\"']", page.script))
         self.assertTrue(methods)
@@ -622,6 +636,127 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertTrue(any(asset["name"] in json.dumps(output, default=str) for output in output_values))
         self.assertEqual(preview["name"], asset["name"])
         self.assertEqual(preview["url"], "https://example.invalid/public-tool-input.png")
+
+    def test_run_output_gallery_returns_safe_grouped_assets_and_no_side_effects(self):
+        created = create_shareable_asset_run(self.user, title="Gallery Safe Run")
+        run_name = created["run"]["workflow_run"]
+        node_run = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": run_name, "node_id": "tool_output_1"},
+            "name",
+        )
+        secret = "gallery-secret-token"
+        model = insert_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique("gallery-provider/model"),
+                "model_name": "Gallery Provider Model",
+                "provider": "gallery-provider",
+                "status": "ENABLED",
+                "node_type": "provider_text_to_image",
+                "category": "provider",
+                "modality": "TEXT_TO_IMAGE",
+                "pricing_json": json.dumps({"unit": "run", "amount_usd": "0.01"}),
+            }
+        )
+        account = insert_doc(
+            {
+                "doctype": "AI Provider Account",
+                "provider": "gallery-provider",
+                "account_label": "gallery-provider-account-secret-name",
+                "api_key_secret": secret,
+                "status": "ACTIVE",
+            }
+        )
+        provider_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run,
+                "provider": "gallery-provider",
+                "model": model.name,
+                "status": "SUCCEEDED",
+                "provider_account": account.name,
+                "request_json": json.dumps({"Authorization": f"Bearer {secret}"}),
+                "response_json": json.dumps({"output": "https://provider.example.invalid/raw.png", "secret": secret}),
+                "raw_error_json": json.dumps({"message": f"token={secret}"}),
+            }
+        )
+        frappe.db.set_value("AI Asset", created["asset"].name, "source_provider_job", provider_job.name)
+        counts_before = {
+            "AI Provider Job": frappe.db.count("AI Provider Job"),
+            "AI Asset": frappe.db.count("AI Asset"),
+            "AI Credit Ledger": frappe.db.count("AI Credit Ledger"),
+            "AI Workflow Version": frappe.db.count("AI Workflow Version"),
+            "AI Workflow Run": frappe.db.count("AI Workflow Run"),
+            "AI Node Run": frappe.db.count("AI Node Run"),
+        }
+
+        frappe.set_user(self.user)
+        gallery = frappe.call("slow_ai.api.public_tools.get_run_output_gallery", workflow_run=run_name)
+        encoded = json.dumps(gallery, default=str)
+
+        self.assertEqual(gallery["run"]["workflow_run"], run_name)
+        self.assertTrue(gallery["groups"])
+        self.assertIn(created["asset"].name, {asset["name"] for asset in gallery["assets"]})
+        self.assertIn(created["other_asset"].name, {asset["name"] for asset in gallery["assets"]})
+        self.assertTrue(all("assets" in group for group in gallery["groups"]))
+        self.assertIn("source_node_run", gallery["assets"][0])
+        self.assertNotIn("gallery-provider-account-secret-name", encoded)
+        self.assertNotIn(account.name, encoded)
+        self.assertNotIn(secret, encoded)
+        self.assertNotIn("request_json", encoded)
+        self.assertNotIn("response_json", encoded)
+        self.assertNotIn("raw_error_json", encoded)
+        for doctype, count in counts_before.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+
+    def test_run_output_gallery_respects_project_membership(self):
+        created = create_shareable_asset_run(self.user, title="Gallery Membership Run")
+        viewer = ensure_user(f"slow.ai.gallery.viewer.{uuid4().hex[:8]}@example.test")
+        editor = ensure_user(f"slow.ai.gallery.editor.{uuid4().hex[:8]}@example.test")
+        outsider = ensure_user(f"slow.ai.gallery.outsider.{uuid4().hex[:8]}@example.test")
+        add_member(created["project"].name, viewer, "VIEWER")
+        add_member(created["project"].name, editor, "EDITOR")
+
+        frappe.set_user(viewer)
+        viewer_gallery = frappe.call(
+            "slow_ai.api.public_tools.get_run_output_gallery",
+            workflow_run=created["run"]["workflow_run"],
+        )
+        frappe.set_user(editor)
+        editor_gallery = frappe.call(
+            "slow_ai.api.public_tools.get_run_output_gallery",
+            workflow_run=created["run"]["workflow_run"],
+        )
+        frappe.set_user(outsider)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call(
+                "slow_ai.api.public_tools.get_run_output_gallery",
+                workflow_run=created["run"]["workflow_run"],
+            )
+
+        self.assertEqual(viewer_gallery["run"]["workflow_run"], created["run"]["workflow_run"])
+        self.assertEqual(editor_gallery["run"]["workflow_run"], created["run"]["workflow_run"])
+
+    def test_run_output_gallery_empty_failed_run_returns_safe_empty_payload(self):
+        created = create_text_tool_run(self.user, title="Gallery Empty Failed Run")
+        workflow_run = created["run"]["workflow_run"]
+        frappe.db.set_value(
+            "AI Workflow Run",
+            workflow_run,
+            {
+                "status": "FAILED",
+                "error_json": json.dumps({"message": "Failed without outputs token=secret"}),
+            },
+        )
+
+        frappe.set_user(self.user)
+        gallery = frappe.call("slow_ai.api.public_tools.get_run_output_gallery", workflow_run=workflow_run)
+
+        self.assertEqual(gallery["run"]["workflow_run"], workflow_run)
+        self.assertEqual(gallery["run"]["status"], "FAILED")
+        self.assertEqual(gallery["groups"], [])
+        self.assertEqual(gallery["assets"], [])
 
     def test_user_can_create_share_with_selected_asset_and_guest_sees_only_selected_output(self):
         created = create_shareable_asset_run(self.user)

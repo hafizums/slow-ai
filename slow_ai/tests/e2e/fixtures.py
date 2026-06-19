@@ -84,6 +84,8 @@ def setup_canvas_e2e() -> dict:
         "public_asset_workflow_run": public_asset_run["workflow_run"],
         "public_history_asset": public_asset_run["asset"],
         "public_unshared_history_asset": public_asset_run["unshared_asset"],
+        "public_video_history_asset": public_asset_run["video_asset"],
+        "public_audio_history_asset": public_asset_run["audio_asset"],
         "project": project.name,
         "canvas_title": f"Browser E2E Canvas {uuid4().hex[:8]}",
         "tool_template": tool_template["name"],
@@ -101,6 +103,8 @@ def setup_canvas_e2e() -> dict:
         "model_catalog_label": catalog_model["model_name"],
         "asset_workflow_run": asset_run["workflow_run"],
         "history_asset": asset_run["asset"],
+        "video_history_asset": asset_run["video_asset"],
+        "audio_history_asset": asset_run["audio_asset"],
     }
 
 
@@ -451,7 +455,41 @@ def _create_history_asset_run(project: str) -> dict:
             "metadata_json": json.dumps({"origin": "browser-e2e-history-unshared"}),
         }
     ).insert(ignore_permissions=True)
-    return {"workflow_run": run["workflow_run"], "asset": asset.name, "unshared_asset": unshared_asset.name}
+    video_asset = frappe.get_doc(
+        {
+            "doctype": "AI Asset",
+            "project": project,
+            "asset_type": "VIDEO",
+            "url": f"https://example.invalid/e2e-history-video-{uuid4().hex[:8]}.mp4",
+            "mime_type": "video/mp4",
+            "width": 640,
+            "height": 360,
+            "duration_seconds": 2.5,
+            "source_workflow_run": run["workflow_run"],
+            "source_node_run": node_run,
+            "metadata_json": json.dumps({"origin": "browser-e2e-history-video"}),
+        }
+    ).insert(ignore_permissions=True)
+    audio_asset = frappe.get_doc(
+        {
+            "doctype": "AI Asset",
+            "project": project,
+            "asset_type": "AUDIO",
+            "url": f"https://example.invalid/e2e-history-audio-{uuid4().hex[:8]}.mp3",
+            "mime_type": "audio/mpeg",
+            "duration_seconds": 1.5,
+            "source_workflow_run": run["workflow_run"],
+            "source_node_run": node_run,
+            "metadata_json": json.dumps({"origin": "browser-e2e-history-audio"}),
+        }
+    ).insert(ignore_permissions=True)
+    return {
+        "workflow_run": run["workflow_run"],
+        "asset": asset.name,
+        "unshared_asset": unshared_asset.name,
+        "video_asset": video_asset.name,
+        "audio_asset": audio_asset.name,
+    }
 
 
 def _unique(prefix: str) -> str:

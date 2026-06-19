@@ -91,6 +91,15 @@ class SlowAiToolsPage {
 		this.$root.on("click", "[data-action='copy-asset-url']", (event) => {
 			this.copyAssetUrl($(event.currentTarget).attr("data-asset-url"));
 		});
+		this.$root.on("click", "[data-action='select-gallery-assets']", (event) => {
+			this.setGalleryAssetSelection($(event.currentTarget).attr("data-run-id"), true);
+		});
+		this.$root.on("click", "[data-action='clear-gallery-assets']", (event) => {
+			this.setGalleryAssetSelection($(event.currentTarget).attr("data-run-id"), false);
+		});
+		this.$root.on("click", "[data-action='filter-gallery']", (event) => {
+			this.filterGallery($(event.currentTarget).attr("data-gallery-filter") || "ALL");
+		});
 		this.$root.on("click", "[data-action='refresh-project-members']", () => this.loadProjectMembers());
 		this.$root.on("click", "[data-action='add-project-member']", () => this.addProjectMember());
 		this.$root.on("change", "[data-action='update-project-member-role']", (event) => {
@@ -670,7 +679,7 @@ class SlowAiToolsPage {
 			if (detail.run && this.isTerminal(detail.run.status)) {
 				this.stopPolling();
 			}
-			return this.renderOutputAssets(detail);
+			return this.loadOutputGallery(this.workflowRun);
 		});
 	}
 
@@ -724,22 +733,6 @@ class SlowAiToolsPage {
 			}
 		});
 		return messages.map((message) => `<div class="slow-ai-tools__error">${this.escape(message)}</div>`).join("");
-	}
-
-	renderOutputAssets(history) {
-		const assetNames = this.assetNamesFromHistory(history);
-		if (!assetNames.length) {
-			this.$assets.html(`<div class="slow-ai-tools__empty">${__("No asset outputs yet")}</div>`);
-			return Promise.resolve();
-		}
-		this.$assets.html(`<div class="slow-ai-tools__empty">${__("Loading asset outputs")}</div>`);
-		return Promise.all(
-			assetNames.map((asset) =>
-				frappe.call("slow_ai.api.assets.view", { asset }).then((response) => response.message)
-			)
-		).then((assets) => {
-			this.$assets.html(assets.map((asset) => this.renderAssetCard(asset)).join(""));
-		});
 	}
 
 	loadMyRuns() {
@@ -855,7 +848,7 @@ class SlowAiToolsPage {
 			this.renderRunStatus(detail.run || {});
 			this.renderHistory(detail);
 			this.renderRunDetail(detail);
-			return this.renderOutputAssets(detail);
+			return this.loadOutputGallery(runId);
 		});
 	}
 
@@ -863,9 +856,10 @@ class SlowAiToolsPage {
 		const run = detail.run || {};
 		const provider = detail.provider_summary || {};
 		const cost = detail.cost_summary || {};
-		const assetNames = this.assetNamesFromHistory(detail);
 		const shareActions = this.renderShareActions(run, true);
-		const shareSelection = this.renderShareAssetSelection(run, assetNames);
+		const assetCount = detail.output_gallery
+			? (detail.output_gallery.assets || []).length
+			: (detail.assets || []).length;
 		this.$runDetail.html(`<div class="slow-ai-tools__run-card">
 			<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
@@ -875,24 +869,25 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Completed")}</span><strong>${this.escape(run.completed_at || "-")}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
-			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetNames.length)}</strong></div>
-			${shareSelection}
+			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetCount)}</strong></div>
 			<div class="slow-ai-tools__inline-actions">${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
 	}
 
-	renderShareAssetSelection(run, assetNames) {
+	renderShareAssetSelection(run, assets) {
 		if (!run || run.status !== "SUCCEEDED") {
 			return "";
 		}
-		if (!assetNames.length) {
+		if (!assets.length) {
 			return `<div class="slow-ai-tools__empty">${__("No output assets are available to share")}</div>`;
 		}
-		const options = assetNames
-			.map((assetName) => {
+		const options = assets
+			.map((asset) => {
+				const assetName = asset.name;
+				const checked = asset.selected || run.status === "SUCCEEDED" ? "checked" : "";
 				return `<label class="slow-ai-tools__share-option">
-					<input type="checkbox" data-share-asset="${this.escape(assetName)}" data-run-id="${this.escape(run.workflow_run)}" checked>
+					<input type="checkbox" data-share-asset="${this.escape(assetName)}" data-run-id="${this.escape(run.workflow_run)}" ${checked}>
 					<span>${this.escape(assetName)}</span>
 				</label>`;
 			})
@@ -903,37 +898,69 @@ class SlowAiToolsPage {
 		</div>`;
 	}
 
-	assetNamesFromHistory(history) {
-		const names = new Set();
-		(history.assets || []).forEach((asset) => {
-			if (asset.name) {
-				names.add(asset.name);
-			}
-		});
-		(history.node_runs || []).forEach((nodeRun) => {
-			(nodeRun.asset_names || []).forEach((assetName) => names.add(assetName));
-			this.collectAssetNames(nodeRun.output, names);
-		});
-		return Array.from(names);
+	loadOutputGallery(runId) {
+		if (!runId) {
+			this.$assets.html(`<div class="slow-ai-tools__empty">${__("No run selected")}</div>`);
+			return Promise.resolve();
+		}
+		this.$assets.html(`<div class="slow-ai-tools__empty">${__("Loading output gallery")}</div>`);
+		return frappe
+			.call("slow_ai.api.public_tools.get_run_output_gallery", { workflow_run: runId })
+			.then((response) => {
+				this.renderOutputGallery(response.message || {});
+			});
 	}
 
-	collectAssetNames(value, names) {
-		if (typeof value === "string" && value.indexOf("AI-ASSET-") === 0) {
-			names.add(value);
+	renderOutputGallery(gallery) {
+		const run = gallery.run || {};
+		const groups = gallery.groups || [];
+		if (!groups.length) {
+			this.$assets.html(`<div class="slow-ai-tools__empty">${__("No asset outputs yet")}</div>`);
 			return;
 		}
-		if (Array.isArray(value)) {
-			value.forEach((item) => this.collectAssetNames(item, names));
-			return;
-		}
-		if (value && typeof value === "object") {
-			Object.keys(value).forEach((key) => this.collectAssetNames(value[key], names));
-		}
+		const controls = `<div class="slow-ai-tools__gallery-toolbar">
+			<div class="slow-ai-tools__inline-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="filter-gallery" data-gallery-filter="ALL">${__("All")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="filter-gallery" data-gallery-filter="IMAGE">${__("Images")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="filter-gallery" data-gallery-filter="VIDEO">${__("Videos")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="filter-gallery" data-gallery-filter="AUDIO">${__("Audio")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="filter-gallery" data-gallery-filter="JSON">${__("JSON/Text")}</button>
+			</div>
+			${run.status === "SUCCEEDED" ? `<div class="slow-ai-tools__inline-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="select-gallery-assets" data-run-id="${this.escape(run.workflow_run)}">${__("Select All")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="clear-gallery-assets" data-run-id="${this.escape(run.workflow_run)}">${__("Clear Selection")}</button>
+			</div>` : ""}
+		</div>`;
+		this.$assets.html(`${controls}${groups.map((group) => this.renderGalleryGroup(group, run)).join("")}`);
 	}
 
-	renderAssetCard(asset) {
+	renderGalleryGroup(group, run) {
+		const assets = group.assets || [];
+		const source = [group.source_node_id, group.source_node_type].filter(Boolean).join(" · ");
+		return `<section class="slow-ai-tools__gallery-group" data-gallery-group="${this.escape(group.group_id)}">
+			<div class="slow-ai-tools__gallery-head">
+				<div>
+					<h4>${this.escape(group.label || __("Run Outputs"))}</h4>
+					<div class="slow-ai-tools__muted">${this.escape(source || group.source_node_run || "")}</div>
+				</div>
+				<strong>${this.escape(assets.length)} ${__("assets")}</strong>
+			</div>
+			<div class="slow-ai-tools__gallery-grid">
+				${assets.map((asset) => this.renderAssetCard(asset, { run })).join("")}
+			</div>
+		</section>`;
+	}
+
+	renderAssetCard(asset, options = {}) {
 		const url = this.assetUrl(asset);
 		const preview = this.renderAssetPreview(asset, url);
+		const run = options.run || {};
+		const shareControl = asset.shareable && run.workflow_run
+			? `<label class="slow-ai-tools__share-option">
+				<input type="checkbox" data-share-asset="${this.escape(asset.name)}" data-run-id="${this.escape(run.workflow_run)}" checked>
+				<span>${__("Select for Share")}</span>
+			</label>`
+			: "";
 		const open = url
 			? `<a class="btn btn-xs btn-default" href="${this.escape(url)}" target="_blank" rel="noopener">${__("Open Asset")}</a>`
 			: "";
@@ -946,6 +973,11 @@ class SlowAiToolsPage {
 				<h4>${this.escape(asset.name)}</h4>
 				<div class="slow-ai-tools__muted">${this.escape(asset.asset_type || "")} · ${this.escape(asset.mime_type || "")}</div>
 				<div class="slow-ai-tools__muted">${__("Source Run")}: ${this.escape(asset.source_workflow_run || "-")}</div>
+				<div class="slow-ai-tools__muted">${__("Source Node")}: ${this.escape(asset.source_node_run || "-")}</div>
+				<div class="slow-ai-tools__muted">${__("Created")}: ${this.escape(asset.created || "-")}</div>
+				${asset.width || asset.height ? `<div class="slow-ai-tools__muted">${__("Size")}: ${this.escape(asset.width || "-")} x ${this.escape(asset.height || "-")}</div>` : ""}
+				${asset.duration_seconds ? `<div class="slow-ai-tools__muted">${__("Duration")}: ${this.escape(asset.duration_seconds)}s</div>` : ""}
+				${shareControl}
 				<div class="slow-ai-tools__inline-actions">${open}${copy}</div>
 			</div>
 		</article>`;
@@ -962,7 +994,25 @@ class SlowAiToolsPage {
 		if (assetType === "AUDIO" && url) {
 			return `<audio src="${this.escape(url)}" controls preload="metadata"></audio>`;
 		}
+		if ((assetType === "JSON" || assetType === "TEXT") && asset.metadata) {
+			return `<pre>${this.escape(JSON.stringify(asset.metadata, null, 2)).slice(0, 600)}</pre>`;
+		}
 		return `<div class="slow-ai-tools__asset-placeholder">${this.escape(assetType || __("ASSET"))}</div>`;
+	}
+
+	filterGallery(assetType) {
+		const normalized = String(assetType || "ALL").toUpperCase();
+		this.$assets.find("[data-asset-name]").each((index, element) => {
+			const $card = $(element);
+			const cardType = String($card.find(".slow-ai-tools__muted").first().text().split("·")[0] || "").trim().toUpperCase();
+			const visible = normalized === "ALL" || cardType === normalized || (normalized === "JSON" && cardType === "TEXT");
+			$card.toggle(visible);
+		});
+	}
+
+	setGalleryAssetSelection(runId, selected) {
+		const selector = `[data-run-id="${this.escapeSelector(runId)}"][data-share-asset]`;
+		this.$assets.find(selector).prop("checked", selected);
 	}
 
 	startPolling() {
@@ -993,8 +1043,8 @@ class SlowAiToolsPage {
 	}
 
 	selectedShareAssets(runId) {
-		const selector = `[data-share-assets-run="${this.escapeSelector(runId)}"] [data-share-asset]:checked`;
-		return this.$runDetail
+		const selector = `[data-run-id="${this.escapeSelector(runId)}"][data-share-asset]:checked`;
+		return this.$root
 			.find(selector)
 			.toArray()
 			.map((element) => $(element).attr("data-share-asset"))

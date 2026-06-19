@@ -62,8 +62,23 @@
 	.slow-ai-shared__assets {
 		display: grid;
 		gap: 12px;
-		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		margin-top: 12px;
+	}
+	.slow-ai-shared__group {
+		border: 1px solid #d7dee8;
+		border-radius: 8px;
+		padding: 14px;
+	}
+	.slow-ai-shared__group-head {
+		align-items: center;
+		display: flex;
+		justify-content: space-between;
+		margin-bottom: 12px;
+	}
+	.slow-ai-shared__grid {
+		display: grid;
+		gap: 12px;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 	}
 	.slow-ai-shared__asset {
 		border: 1px solid #d7dee8;
@@ -85,6 +100,14 @@
 	}
 	.slow-ai-shared__preview audio {
 		width: 90%;
+	}
+	.slow-ai-shared__preview pre {
+		font-size: 12px;
+		max-height: 100%;
+		overflow: auto;
+		padding: 10px;
+		white-space: pre-wrap;
+		width: 100%;
 	}
 	.slow-ai-shared__asset-body {
 		padding: 14px;
@@ -144,6 +167,9 @@
 		if (type === "AUDIO" && url) {
 			return `<audio src="${escape(url)}" controls preload="metadata"></audio>`;
 		}
+		if ((type === "JSON" || type === "TEXT") && asset.metadata) {
+			return `<pre>${escape(JSON.stringify(asset.metadata, null, 2)).slice(0, 600)}</pre>`;
+		}
 		return `<div class="slow-ai-shared__muted">${escape(type || "ASSET")}</div>`;
 	}
 
@@ -159,9 +185,24 @@
 				<h3>${escape(asset.name)}</h3>
 				<div class="slow-ai-shared__muted">${escape(asset.asset_type || "")} · ${escape(asset.mime_type || "")}</div>
 				<div class="slow-ai-shared__muted">${escape(asset.created || "")}</div>
+				<div class="slow-ai-shared__muted">Source node: ${escape(asset.source_node_run || "-")}</div>
 				<div class="slow-ai-shared__actions">${open}${copy}</div>
 			</div>
 		</article>`;
+	}
+
+	function renderGroup(group) {
+		const rows = group.assets || [];
+		return `<section class="slow-ai-shared__group" data-gallery-group="${escape(group.group_id || "")}">
+			<div class="slow-ai-shared__group-head">
+				<div>
+					<h3>${escape(group.label || "Run Outputs")}</h3>
+					<div class="slow-ai-shared__muted">${escape(group.source_node_id || group.source_node_run || "")}</div>
+				</div>
+				<strong>${escape(rows.length)} assets</strong>
+			</div>
+			<div class="slow-ai-shared__grid">${rows.map(renderAsset).join("")}</div>
+		</section>`;
 	}
 
 	function render(payload) {
@@ -173,8 +214,12 @@
 			<div class="slow-ai-shared__row"><span>Status</span><strong>${escape(run.status || "")}</strong></div>
 			<div class="slow-ai-shared__row"><span>Completed</span><strong>${escape(run.completed_at || "-")}</strong></div>
 			<div class="slow-ai-shared__row"><span>Cost</span><strong>${escape(money(cost))}</strong></div>`;
+		const gallery = payload.output_gallery || {};
+		const groups = gallery.groups || [];
 		const rows = payload.assets || [];
-		assets.innerHTML = rows.length ? rows.map(renderAsset).join("") : `<div class="slow-ai-shared__muted">No shared outputs are available.</div>`;
+		assets.innerHTML = groups.length
+			? groups.map(renderGroup).join("")
+			: rows.length ? `<div class="slow-ai-shared__grid">${rows.map(renderAsset).join("")}</div>` : `<div class="slow-ai-shared__muted">No shared outputs are available.</div>`;
 	}
 
 	function unavailable() {

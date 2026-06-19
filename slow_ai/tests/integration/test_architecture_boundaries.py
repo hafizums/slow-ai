@@ -55,6 +55,7 @@ API_ALLOWED_CLIENT_METHODS = {
     "slow_ai.api.public_tools.prepare_workflow_from_template",
     "slow_ai.api.public_tools.list_my_runs",
     "slow_ai.api.public_tools.get_my_run",
+    "slow_ai.api.public_tools.get_run_output_gallery",
     "slow_ai.api.public_tools.create_run_share",
     "slow_ai.api.public_tools.disable_run_share",
     "slow_ai.api.public_tools.get_shared_run",

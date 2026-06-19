@@ -7,11 +7,17 @@
  "engine": "InnoDB",
  "field_order": [
   "model_id",
+  "model_slug",
   "model_name",
   "provider",
   "status",
+  "node_type",
+  "category",
   "modality",
-  "pricing_json"
+  "pricing_json",
+  "capabilities_json",
+  "input_metadata_json",
+  "output_metadata_json"
  ],
  "fields": [
   {
@@ -19,15 +25,22 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Model ID",
+   "label": "Model ID / Provider Path",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "fieldname": "model_slug",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Model Slug"
   },
   {
    "fieldname": "model_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Model Name",
+   "label": "Display Name",
    "reqd": 1
   },
   {
@@ -49,6 +62,19 @@
    "reqd": 1
   },
   {
+   "fieldname": "node_type",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Node Type"
+  },
+  {
+   "default": "provider",
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Category"
+  },
+  {
    "fieldname": "modality",
    "fieldtype": "Select",
    "in_standard_filter": 1,
@@ -59,6 +85,24 @@
    "fieldname": "pricing_json",
    "fieldtype": "Code",
    "label": "Pricing JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "capabilities_json",
+   "fieldtype": "Code",
+   "label": "Capabilities JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "input_metadata_json",
+   "fieldtype": "Code",
+   "label": "Input Metadata JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "output_metadata_json",
+   "fieldtype": "Code",
+   "label": "Output Metadata JSON",
    "options": "JSON"
   }
  ],

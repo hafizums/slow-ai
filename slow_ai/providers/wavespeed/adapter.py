@@ -147,6 +147,15 @@ class WaveSpeedAdapter(ProviderAdapter):
     def _resolve_model_id(self, model: str) -> str:
         if frappe.db.exists("AI Model", model):
             return frappe.get_doc("AI Model", model).model_id
+        matches = frappe.get_all(
+            "AI Model",
+            filters={"model_slug": model},
+            fields=["name"],
+            order_by="creation asc",
+            limit=1,
+        )
+        if matches:
+            return frappe.get_doc("AI Model", matches[0].name).model_id
         return model
 
     def _ensure_wavespeed_request(self, provider: str) -> None:

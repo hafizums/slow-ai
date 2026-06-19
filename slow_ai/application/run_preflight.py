@@ -92,6 +92,15 @@ class RunPreflightService:
             )
         if model.status != "ENABLED":
             raise RunPreflightError(f"Provider node {node.id} uses disabled model {model_ref}.")
+        if getattr(model, "category", None) and model.category != "provider":
+            raise RunPreflightError(
+                f"Provider node {node.id} uses model {model_ref} with non-provider category {model.category}."
+            )
+        if getattr(model, "node_type", None) and model.node_type != node.type:
+            raise RunPreflightError(
+                f"Provider node {node.id} uses model {model_ref} for node type "
+                f"{model.node_type}, not {node.type}."
+            )
 
         pricing = pricing_summary_from_json(model.pricing_json)
         if not pricing["pricing_known"] and self.policy.require_known_pricing:
@@ -120,6 +129,14 @@ class RunPreflightService:
             order_by="creation asc",
             limit=1,
         )
+        if not matches:
+            matches = frappe.get_all(
+                "AI Model",
+                filters={"model_slug": model_ref},
+                fields=["name"],
+                order_by="creation asc",
+                limit=1,
+            )
         if not matches:
             raise RunPreflightError(f"Provider model is not configured: {model_ref}.")
         return frappe.get_doc("AI Model", matches[0].name)

@@ -1,0 +1,214 @@
+<main class="slow-ai-shared" data-page="slow-ai-shared" data-share-token="{{ share_token | e }}">
+	<header class="slow-ai-shared__header">
+		<div>
+			<div class="slow-ai-shared__eyebrow">Slow AI</div>
+			<h1>Shared Run</h1>
+		</div>
+		<div class="slow-ai-shared__status" data-role="shared-status">Loading shared run</div>
+	</header>
+	<section class="slow-ai-shared__panel">
+		<h2 data-role="shared-title">Run Output</h2>
+		<div class="slow-ai-shared__meta" data-role="shared-meta"></div>
+	</section>
+	<section class="slow-ai-shared__panel">
+		<h2>Outputs</h2>
+		<div class="slow-ai-shared__assets" data-role="shared-assets"></div>
+	</section>
+</main>
+
+<style>
+	.slow-ai-shared {
+		color: #18202d;
+		font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		margin: 0 auto;
+		max-width: 1120px;
+		padding: 32px 20px 48px;
+	}
+	.slow-ai-shared__header,
+	.slow-ai-shared__panel {
+		border: 1px solid #d7dee8;
+		border-radius: 8px;
+		margin-bottom: 16px;
+		padding: 18px;
+	}
+	.slow-ai-shared__header {
+		align-items: center;
+		display: flex;
+		justify-content: space-between;
+	}
+	.slow-ai-shared h1,
+	.slow-ai-shared h2,
+	.slow-ai-shared h3 {
+		letter-spacing: 0;
+		margin: 0;
+	}
+	.slow-ai-shared__eyebrow,
+	.slow-ai-shared__muted,
+	.slow-ai-shared__status {
+		color: #64748b;
+		font-size: 13px;
+	}
+	.slow-ai-shared__meta {
+		display: grid;
+		gap: 8px;
+		margin-top: 12px;
+	}
+	.slow-ai-shared__row {
+		align-items: center;
+		display: flex;
+		gap: 12px;
+		justify-content: space-between;
+	}
+	.slow-ai-shared__assets {
+		display: grid;
+		gap: 12px;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		margin-top: 12px;
+	}
+	.slow-ai-shared__asset {
+		border: 1px solid #d7dee8;
+		border-radius: 8px;
+		overflow: hidden;
+	}
+	.slow-ai-shared__preview {
+		align-items: center;
+		aspect-ratio: 16 / 10;
+		background: #f8fafc;
+		display: flex;
+		justify-content: center;
+	}
+	.slow-ai-shared__preview img,
+	.slow-ai-shared__preview video {
+		height: 100%;
+		object-fit: contain;
+		width: 100%;
+	}
+	.slow-ai-shared__preview audio {
+		width: 90%;
+	}
+	.slow-ai-shared__asset-body {
+		padding: 14px;
+	}
+	.slow-ai-shared__actions {
+		display: flex;
+		gap: 8px;
+		margin-top: 12px;
+	}
+	.slow-ai-shared__button {
+		background: #fff;
+		border: 1px solid #ccd5e1;
+		border-radius: 6px;
+		color: #18202d;
+		cursor: pointer;
+		font-size: 13px;
+		padding: 6px 10px;
+		text-decoration: none;
+	}
+</style>
+
+<script>
+(function () {
+	const root = document.querySelector("[data-page='slow-ai-shared']");
+	const token = root ? root.getAttribute("data-share-token") : "";
+	const status = document.querySelector("[data-role='shared-status']");
+	const title = document.querySelector("[data-role='shared-title']");
+	const meta = document.querySelector("[data-role='shared-meta']");
+	const assets = document.querySelector("[data-role='shared-assets']");
+
+	function escape(value) {
+		return String(value === null || value === undefined ? "" : value)
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#039;");
+	}
+
+	function assetUrl(asset) {
+		return (asset && (asset.file || asset.url)) || "";
+	}
+
+	function money(summary) {
+		const value = summary && summary.debits_usd !== undefined ? Number(summary.debits_usd).toFixed(4) : "0.0000";
+		return `${(summary && summary.currency) || "USD"} ${value}`;
+	}
+
+	function renderPreview(asset, url) {
+		const type = String((asset && asset.asset_type) || "").toUpperCase();
+		if (type === "IMAGE" && url) {
+			return `<img src="${escape(url)}" alt="${escape(asset.name)}">`;
+		}
+		if (type === "VIDEO" && url) {
+			return `<video src="${escape(url)}" controls preload="metadata"></video>`;
+		}
+		if (type === "AUDIO" && url) {
+			return `<audio src="${escape(url)}" controls preload="metadata"></audio>`;
+		}
+		return `<div class="slow-ai-shared__muted">${escape(type || "ASSET")}</div>`;
+	}
+
+	function renderAsset(asset) {
+		const url = assetUrl(asset);
+		const open = url
+			? `<a class="slow-ai-shared__button" href="${escape(url)}" target="_blank" rel="noopener">Open Asset</a>`
+			: "";
+		const copy = url ? `<button class="slow-ai-shared__button" type="button" data-copy-url="${escape(url)}">Copy URL</button>` : "";
+		return `<article class="slow-ai-shared__asset" data-asset-name="${escape(asset.name)}">
+			<div class="slow-ai-shared__preview">${renderPreview(asset, url)}</div>
+			<div class="slow-ai-shared__asset-body">
+				<h3>${escape(asset.name)}</h3>
+				<div class="slow-ai-shared__muted">${escape(asset.asset_type || "")} · ${escape(asset.mime_type || "")}</div>
+				<div class="slow-ai-shared__muted">${escape(asset.created || "")}</div>
+				<div class="slow-ai-shared__actions">${open}${copy}</div>
+			</div>
+		</article>`;
+	}
+
+	function render(payload) {
+		const run = payload.run || {};
+		const cost = payload.cost_summary || {};
+		status.textContent = run.status || "Unavailable";
+		title.textContent = run.workflow_title || "Shared Run";
+		meta.innerHTML = `<div class="slow-ai-shared__row"><span>Run</span><strong>${escape(run.workflow_run || "")}</strong></div>
+			<div class="slow-ai-shared__row"><span>Status</span><strong>${escape(run.status || "")}</strong></div>
+			<div class="slow-ai-shared__row"><span>Completed</span><strong>${escape(run.completed_at || "-")}</strong></div>
+			<div class="slow-ai-shared__row"><span>Cost</span><strong>${escape(money(cost))}</strong></div>`;
+		const rows = payload.assets || [];
+		assets.innerHTML = rows.length ? rows.map(renderAsset).join("") : `<div class="slow-ai-shared__muted">No shared outputs are available.</div>`;
+	}
+
+	function unavailable() {
+		status.textContent = "Unavailable";
+		meta.innerHTML = `<div class="slow-ai-shared__muted">Shared run unavailable.</div>`;
+		assets.innerHTML = "";
+	}
+
+	if (!token) {
+		unavailable();
+		return;
+	}
+
+	const form = new URLSearchParams();
+	form.append("share_token", token);
+	fetch("/api/method/slow_ai.api.public_tools.get_shared_run", {
+		method: "POST",
+		body: form,
+	})
+		.then((response) => response.ok ? response.json() : Promise.reject(new Error("unavailable")))
+		.then((payload) => render(payload.message || {}))
+		.catch(unavailable);
+
+	document.addEventListener("click", function (event) {
+		const target = event.target.closest("[data-copy-url]");
+		if (!target) {
+			return;
+		}
+		const url = target.getAttribute("data-copy-url");
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(url).then(function () {
+				status.textContent = "Asset URL copied";
+			});
+		}
+	});
+}());
+</script>

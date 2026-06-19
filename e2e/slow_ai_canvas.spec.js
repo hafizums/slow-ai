@@ -17,6 +17,9 @@ const API = {
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
 	publicListMyRuns: "slow_ai.api.public_tools.list_my_runs",
 	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
+	publicCreateRunShare: "slow_ai.api.public_tools.create_run_share",
+	publicDisableRunShare: "slow_ai.api.public_tools.disable_run_share",
+	publicGetSharedRun: "slow_ai.api.public_tools.get_shared_run",
 	modelMetadata: "slow_ai.api.models.get_model_metadata",
 	billingBalance: "slow_ai.api.billing.get_balance",
 	listProviderAccounts: "slow_ai.api.provider_accounts.list_accounts",
@@ -374,7 +377,7 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	expect(await instance.evaluate((value) => Boolean(value.workflowRun))).toBe(true);
 });
 
-test("Slow AI public tool page runs published templates through backend APIs", async ({ page }) => {
+test("Slow AI public tool page runs published templates through backend APIs", async ({ page, browser }) => {
 	const providerRequests = [];
 	page.on("request", (request) => {
 		const url = request.url();
@@ -494,6 +497,45 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	);
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Open Asset");
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Copy URL");
+
+	const createShareResponse = page.waitForResponse(apiPredicate(API.publicCreateRunShare));
+	await page
+		.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)
+		.getByRole("button", { name: "Create Share Link" })
+		.click();
+	const createdShare = await apiJson(await createShareResponse);
+	expect(createdShare.message.share.status).toBe("ACTIVE");
+	expect(createdShare.message.share.share_url).toContain("/slow-ai/shared/");
+	await expect(page.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)).toContainText("Share");
+
+	const guestContext = await browser.newContext();
+	const guestPage = await guestContext.newPage();
+	const guestProviderRequests = [];
+	guestPage.on("request", (request) => {
+		const url = request.url();
+		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
+			guestProviderRequests.push(url);
+		}
+	});
+	const shareUrl = new URL(createdShare.message.share.share_url, page.url()).toString();
+	const sharedRunResponse = guestPage.waitForResponse(apiPredicate(API.publicGetSharedRun));
+	await guestPage.goto(shareUrl);
+	const sharedRun = await apiJson(await sharedRunResponse);
+	expect(sharedRun.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
+	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_history_asset)).toBe(true);
+	await expect(guestPage.locator("[data-page='slow-ai-shared']")).toBeVisible();
+	await expect(guestPage.locator("[data-role='shared-assets']")).toContainText(fixtures.public_history_asset);
+	await expect(guestPage.getByRole("button", { name: /^Run$/ })).toHaveCount(0);
+	const guestSource = await guestPage.locator("html").innerHTML();
+	expect(guestSource).not.toContain("slow_ai.api.runs.start_run");
+	expect(guestSource).not.toContain("WAVESPEED_API_KEY");
+	expect(guestSource).not.toContain("REPLICATE_API_KEY");
+	expect(guestSource).not.toContain("api_key_secret");
+	expect(guestSource).not.toContain("api.wavespeed.ai");
+	expect(guestSource).not.toContain("api.replicate.com");
+	expect(guestSource).not.toContain("Authorization: Bearer");
+	expect(guestProviderRequests).toEqual([]);
+	await guestContext.close();
 
 	const pageSource = await page.locator("html").innerHTML();
 	expect(pageSource).not.toContain("WAVESPEED_API_KEY");

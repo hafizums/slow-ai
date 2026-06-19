@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import frappe
 
+from slow_ai.application.public_tools import create_run_share as create_run_share_service
 from slow_ai.application.public_tools import create_workflow_from_template as create_workflow_from_template_service
+from slow_ai.application.public_tools import disable_run_share as disable_run_share_service
 from slow_ai.application.public_tools import get_my_run as get_my_run_service
+from slow_ai.application.public_tools import get_shared_run as get_shared_run_service
 from slow_ai.application.public_tools import get_template as get_template_service
 from slow_ai.application.public_tools import list_my_runs as list_my_runs_service
 from slow_ai.application.public_tools import list_templates as list_templates_service
@@ -34,3 +37,18 @@ def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict:
 @frappe.whitelist()
 def get_my_run(workflow_run: str) -> dict:
     return get_my_run_service(workflow_run)
+
+
+@frappe.whitelist()
+def create_run_share(workflow_run: str, expires_at: str | None = None) -> dict:
+    return create_run_share_service(workflow_run=workflow_run, expires_at=expires_at)
+
+
+@frappe.whitelist()
+def disable_run_share(share_token: str | None = None, share: str | None = None) -> dict:
+    return disable_run_share_service(share_token=share_token, share=share)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_shared_run(share_token: str) -> dict:
+    return get_shared_run_service(share_token=share_token)

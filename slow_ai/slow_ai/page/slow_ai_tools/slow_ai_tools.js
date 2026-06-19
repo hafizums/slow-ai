@@ -64,6 +64,15 @@ class SlowAiToolsPage {
 		this.$root.on("click", "[data-action='open-run-detail']", (event) => {
 			this.openRunDetail($(event.currentTarget).attr("data-run-id"));
 		});
+		this.$root.on("click", "[data-action='create-run-share']", (event) => {
+			this.createRunShare($(event.currentTarget).attr("data-run-id"));
+		});
+		this.$root.on("click", "[data-action='disable-run-share']", (event) => {
+			this.disableRunShare($(event.currentTarget).attr("data-share-token"));
+		});
+		this.$root.on("click", "[data-action='copy-share-link']", (event) => {
+			this.copyShareLink($(event.currentTarget).attr("data-share-url"));
+		});
 		this.$root.on("click", "[data-action='copy-asset-url']", (event) => {
 			this.copyAssetUrl($(event.currentTarget).attr("data-asset-url"));
 		});
@@ -514,6 +523,7 @@ class SlowAiToolsPage {
 				.map((run) => {
 					const cost = run.cost_summary || {};
 					const provider = run.provider_summary || {};
+					const shareActions = this.renderShareActions(run);
 					return `<article class="slow-ai-tools__run-card" data-run-id="${this.escape(run.workflow_run)}">
 						<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
@@ -526,11 +536,58 @@ class SlowAiToolsPage {
 						<div class="slow-ai-tools__inline-actions">
 							<button class="btn btn-xs btn-default" type="button" data-action="open-run-detail" data-run-id="${this.escape(run.workflow_run)}">${__("Open Detail")}</button>
 							<a class="btn btn-xs btn-default" href="/app/slow-ai-tools">${__("Rerun Tool")}</a>
+							${shareActions}
 						</div>
 					</article>`;
 				})
 				.join("")
 		);
+	}
+
+	renderShareActions(run) {
+		if (run.status !== "SUCCEEDED") {
+			return `<span class="slow-ai-tools__muted">${__("Share available after success")}</span>`;
+		}
+		const share = run.share || {};
+		if (share.status === "ACTIVE" && share.share_token && share.share_url) {
+			const url = this.absoluteShareUrl(share.share_url);
+			return `<span class="slow-ai-tools__muted">${__("Share")}: ${this.escape(share.status)}</span>
+				<button class="btn btn-xs btn-default" type="button" data-action="copy-share-link" data-share-url="${this.escape(url)}">${__("Copy Share Link")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="disable-run-share" data-share-token="${this.escape(share.share_token)}">${__("Disable Share")}</button>`;
+		}
+		if (share.status) {
+			return `<span class="slow-ai-tools__muted">${__("Share")}: ${this.escape(share.status)}</span>
+				<button class="btn btn-xs btn-default" type="button" data-action="create-run-share" data-run-id="${this.escape(run.workflow_run)}">${__("Create Share Link")}</button>`;
+		}
+		return `<button class="btn btn-xs btn-default" type="button" data-action="create-run-share" data-run-id="${this.escape(run.workflow_run)}">${__("Create Share Link")}</button>`;
+	}
+
+	createRunShare(runId) {
+		if (!runId) {
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.public_tools.create_run_share", { workflow_run: runId })
+			.then((response) => {
+				const share = response.message && response.message.share;
+				if (share && share.share_url) {
+					this.setStatus(__("Share link ready"));
+					this.copyShareLink(this.absoluteShareUrl(share.share_url));
+				}
+				return this.loadMyRuns();
+			});
+	}
+
+	disableRunShare(token) {
+		if (!token) {
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.public_tools.disable_run_share", { share_token: token })
+			.then(() => {
+				this.setStatus(__("Share disabled"));
+				return this.loadMyRuns();
+			});
 	}
 
 	openRunDetail(runId) {
@@ -553,6 +610,7 @@ class SlowAiToolsPage {
 		const provider = detail.provider_summary || {};
 		const cost = detail.cost_summary || {};
 		const assetNames = this.assetNamesFromHistory(detail);
+		const shareActions = this.renderShareActions(run);
 		this.$runDetail.html(`<div class="slow-ai-tools__run-card">
 			<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
@@ -563,6 +621,7 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetNames.length)}</strong></div>
+			<div class="slow-ai-tools__inline-actions">${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
 	}
@@ -665,6 +724,27 @@ class SlowAiToolsPage {
 		}
 		window.prompt(__("Copy asset URL"), url);
 		return Promise.resolve();
+	}
+
+	copyShareLink(url) {
+		if (!url) {
+			return Promise.resolve();
+		}
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			return navigator.clipboard.writeText(url).then(() => this.setStatus(__("Share link copied")));
+		}
+		window.prompt(__("Copy share link"), url);
+		return Promise.resolve();
+	}
+
+	absoluteShareUrl(path) {
+		if (!path) {
+			return "";
+		}
+		if (/^https?:\/\//i.test(path)) {
+			return path;
+		}
+		return `${window.location.origin}${path}`;
 	}
 
 	money(value, currency) {

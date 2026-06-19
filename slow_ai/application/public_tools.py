@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 from decimal import Decimal
 from typing import Any
 
 import frappe
+from frappe.utils import get_datetime
+from frappe.utils import now_datetime
 
+from slow_ai.application.assets import view as view_asset
 from slow_ai.application.templates import create_workflow_from_template as create_template_workflow
 from slow_ai.application.templates import get_template as get_template_service
 from slow_ai.application.templates import list_templates as list_templates_service
@@ -101,6 +105,52 @@ def get_my_run(workflow_run: str) -> dict[str, Any]:
     }
 
 
+def create_run_share(workflow_run: str, expires_at: str | None = None) -> dict[str, Any]:
+    _require_logged_in_user()
+    run = frappe.get_doc("AI Workflow Run", workflow_run)
+    _assert_project_access(run.project)
+    _assert_shareable_run(run)
+
+    existing = _get_existing_share_for_user(run.name)
+    if existing:
+        return {"share": _share_summary(existing)}
+
+    share = frappe.get_doc(
+        {
+            "doctype": "AI Tool Run Share",
+            "workflow_run": run.name,
+            "project": run.project,
+            "share_token": _new_share_token(),
+            "status": "ACTIVE",
+            "expires_at": expires_at,
+        }
+    ).insert(ignore_permissions=True)
+    return {"share": _share_summary(share.as_dict())}
+
+
+def disable_run_share(share_token: str | None = None, share: str | None = None) -> dict[str, Any]:
+    _require_logged_in_user()
+    doc = _get_share_doc(share_token=share_token, share=share)
+    _assert_share_manage_access(doc)
+    doc.status = "DISABLED"
+    doc.save(ignore_permissions=True)
+    return {"share": _share_summary(doc.as_dict())}
+
+
+def get_shared_run(share_token: str) -> dict[str, Any]:
+    doc = _get_share_doc(share_token=share_token)
+    _assert_share_readable(doc)
+    run = frappe.get_doc("AI Workflow Run", doc.workflow_run)
+    _assert_shareable_run(run)
+    ledger = _ledger_summaries(run.name)
+    return {
+        "share": _public_share_summary(doc.as_dict()),
+        "run": _public_run_summary(run.as_dict()),
+        "assets": _shared_asset_views(run.name),
+        "cost_summary": _cost_summary(ledger),
+    }
+
+
 def _require_logged_in_user() -> None:
     if frappe.session.user == "Guest":
         frappe.throw("Login is required to run Slow AI tools.", frappe.PermissionError)
@@ -159,6 +209,21 @@ def _run_summary(row) -> dict[str, Any]:
         "provider_summary": _provider_summary_for_run(row.get("name")),
         "cost_summary": _cost_summary(_ledger_summaries(row.get("name"))),
         "asset_count": frappe.db.count("AI Asset", {"source_workflow_run": row.get("name")}) if row.get("name") else 0,
+        "share": _share_summary_for_run(row.get("name")),
+    }
+
+
+def _public_run_summary(row) -> dict[str, Any]:
+    workflow = row.get("workflow")
+    return {
+        "workflow_run": row.get("name"),
+        "workflow_title": frappe.db.get_value("AI Workflow", workflow, "title") if workflow else None,
+        "status": row.get("status"),
+        "queued_at": row.get("queued_at"),
+        "started_at": row.get("started_at"),
+        "completed_at": row.get("completed_at"),
+        "created": row.get("creation"),
+        "modified": row.get("modified"),
     }
 
 
@@ -250,6 +315,46 @@ def _asset_summaries(workflow_run: str) -> list[dict[str, Any]]:
         order_by="creation asc",
     )
     return [dict(row) for row in rows]
+
+
+def _shared_asset_views(workflow_run: str) -> list[dict[str, Any]]:
+    names = _asset_names_for_run(workflow_run)
+    assets = []
+    for asset_name in names:
+        if frappe.db.exists("AI Asset", asset_name):
+            assets.append(_safe_shared_asset(view_asset(asset_name)))
+    return assets
+
+
+def _asset_names_for_run(workflow_run: str) -> list[str]:
+    names = {row["name"] for row in _asset_summaries(workflow_run)}
+    node_runs = frappe.get_all(
+        "AI Node Run",
+        filters={"workflow_run": workflow_run},
+        fields=["output_json"],
+        order_by="creation asc",
+    )
+    for row in node_runs:
+        names.update(_asset_names_from_value(_loads_json(row.output_json, {})))
+    return sorted(names)
+
+
+def _safe_shared_asset(asset: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": asset.get("name"),
+        "asset_type": asset.get("asset_type"),
+        "file": asset.get("file"),
+        "url": asset.get("url"),
+        "mime_type": asset.get("mime_type"),
+        "width": asset.get("width"),
+        "height": asset.get("height"),
+        "duration_seconds": asset.get("duration_seconds"),
+        "source_workflow_run": asset.get("source_workflow_run"),
+        "source_node_run": asset.get("source_node_run"),
+        "created": asset.get("created"),
+        "modified": asset.get("modified"),
+        "metadata": asset.get("metadata") or {},
+    }
 
 
 def _ledger_summaries(workflow_run: str | None) -> list[dict[str, Any]]:
@@ -365,3 +470,100 @@ def _as_decimal(value: Any) -> Decimal:
 
 def _decimal_string(value: Any) -> str:
     return str(_as_decimal(value))
+
+
+def _assert_shareable_run(run) -> None:
+    if run.status != "SUCCEEDED":
+        frappe.throw("Only completed successful tool runs can be shared.", frappe.PermissionError)
+
+
+def _assert_share_manage_access(share_doc) -> None:
+    if "System Manager" in frappe.get_roles():
+        return
+    if share_doc.owner != frappe.session.user:
+        frappe.throw("You do not have access to this shared run.", frappe.PermissionError)
+    _assert_project_access(share_doc.project)
+
+
+def _assert_share_readable(share_doc) -> None:
+    if share_doc.status != "ACTIVE":
+        frappe.throw("Shared run is not active.", frappe.PermissionError)
+    if share_doc.expires_at and get_datetime(share_doc.expires_at) <= now_datetime():
+        frappe.throw("Shared run has expired.", frappe.PermissionError)
+
+
+def _get_share_doc(share_token: str | None = None, share: str | None = None):
+    filters = {}
+    if share:
+        if not frappe.db.exists("AI Tool Run Share", share):
+            frappe.throw("Shared run does not exist.", frappe.PermissionError)
+        return frappe.get_doc("AI Tool Run Share", share)
+    token = str(share_token or "").strip()
+    if not token:
+        frappe.throw("Share token is required.", frappe.PermissionError)
+    filters["share_token"] = token
+    name = frappe.db.get_value("AI Tool Run Share", filters, "name")
+    if not name:
+        frappe.throw("Shared run does not exist.", frappe.PermissionError)
+    return frappe.get_doc("AI Tool Run Share", name)
+
+
+def _get_existing_share_for_user(workflow_run: str):
+    rows = frappe.get_all(
+        "AI Tool Run Share",
+        filters={"workflow_run": workflow_run, "owner": frappe.session.user, "status": "ACTIVE"},
+        fields=["name", "workflow_run", "project", "share_token", "status", "expires_at", "owner", "creation", "modified"],
+        order_by="modified desc",
+        limit=1,
+    )
+    return rows[0] if rows else None
+
+
+def _share_summary_for_run(workflow_run: str | None) -> dict[str, Any] | None:
+    if not workflow_run:
+        return None
+    filters: dict[str, Any] = {"workflow_run": workflow_run}
+    if "System Manager" not in frappe.get_roles():
+        filters["owner"] = frappe.session.user
+    rows = frappe.get_all(
+        "AI Tool Run Share",
+        filters=filters,
+        fields=["name", "workflow_run", "project", "share_token", "status", "expires_at", "owner", "creation", "modified"],
+        order_by="modified desc",
+        limit=1,
+    )
+    if not rows:
+        return None
+    return _share_summary(rows[0])
+
+
+def _share_summary(row) -> dict[str, Any]:
+    token = row.get("share_token")
+    status = row.get("status")
+    return {
+        "name": row.get("name"),
+        "workflow_run": row.get("workflow_run"),
+        "status": status,
+        "expires_at": row.get("expires_at"),
+        "created": row.get("creation"),
+        "modified": row.get("modified"),
+        "share_token": token if status == "ACTIVE" else None,
+        "share_url": f"/slow-ai/shared/{token}" if token and status == "ACTIVE" else None,
+    }
+
+
+def _public_share_summary(row) -> dict[str, Any]:
+    return {
+        "status": row.get("status"),
+        "expires_at": row.get("expires_at"),
+        "created": row.get("creation"),
+        "modified": row.get("modified"),
+    }
+
+
+def _new_share_token() -> str:
+    for _attempt in range(5):
+        token = secrets.token_urlsafe(24)
+        if not frappe.db.exists("AI Tool Run Share", {"share_token": token}):
+            return token
+    frappe.throw("Could not create a unique share token.")

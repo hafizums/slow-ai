@@ -143,6 +143,15 @@ class TestCoreDocTypes(FrappeTestCase):
                 "layout_json": workflow.layout_json,
             }
         )
+        share = insert_doc(
+            {
+                "doctype": "AI Tool Run Share",
+                "workflow_run": workflow_run.name,
+                "project": project.name,
+                "share_token": unique("share-token"),
+                "status": "ACTIVE",
+            }
+        )
 
         return {
             "project": project,
@@ -156,6 +165,7 @@ class TestCoreDocTypes(FrappeTestCase):
             "asset": asset,
             "ledger": ledger,
             "template": template,
+            "share": share,
         }
 
     def test_platform_kernel_creates_real_documents(self):
@@ -203,6 +213,7 @@ class TestCoreDocTypes(FrappeTestCase):
             "slow_ai/doctype/ai_provider_account/ai_provider_account.py",
             "slow_ai/doctype/ai_credit_ledger/ai_credit_ledger.py",
             "slow_ai/doctype/ai_workflow_template/ai_workflow_template.py",
+            "slow_ai/doctype/ai_tool_run_share/ai_tool_run_share.py",
         ]
         forbidden = ("providers.", "engine.", "node_registry.", "frappe.enqueue")
         for path in controller_paths:

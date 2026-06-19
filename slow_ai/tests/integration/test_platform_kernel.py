@@ -145,6 +145,7 @@ class TestPlatformKernel(FrappeTestCase):
             "AI Provider Account",
             "AI Credit Ledger",
             "AI Workflow Template",
+            "AI Tool Run Share",
         }
 
         self.assertEqual(set(PERMANENT_DOCTYPES), expected_doctypes)

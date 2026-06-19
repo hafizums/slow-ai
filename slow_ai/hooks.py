@@ -137,6 +137,10 @@ scheduler_events = {
     }
 }
 
+website_route_rules = [
+    {"from_route": "/slow-ai/shared/<token>", "to_route": "slow-ai/shared"},
+]
+
 # Testing
 # -------
 

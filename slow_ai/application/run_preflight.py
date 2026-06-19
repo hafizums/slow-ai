@@ -8,6 +8,7 @@ from typing import Any
 
 import frappe
 
+from slow_ai.application.billing import assert_project_has_balance
 from slow_ai.application.contracts import WorkflowDraft
 from slow_ai.application.models import pricing_summary_from_json
 from slow_ai.domain.exceptions import RunPreflightError
@@ -70,6 +71,9 @@ class RunPreflightService:
                     f"{total_estimated_cost} USD exceeds configured budget "
                     f"{self.policy.max_estimated_cost_usd} USD."
                 )
+
+        if total_estimated_cost > Decimal("0"):
+            assert_project_has_balance(draft.project, total_estimated_cost)
 
         return RunPreflightResult(
             provider_runs=tuple(provider_runs),

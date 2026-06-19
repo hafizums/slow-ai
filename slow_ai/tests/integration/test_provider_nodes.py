@@ -5,6 +5,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.application.billing import create_top_up
 from slow_ai.application.run_service import RunService
 from slow_ai.domain.status import ProviderJobStatus
 from slow_ai.engine.executor import WorkflowExecutor
@@ -199,6 +200,7 @@ class TestProviderNodes(FrappeTestCase):
         project = create_project()
         model = create_model()
         create_provider_account()
+        create_top_up(project.name, "0.50", "Provider node test credit")
         adapter = DeterministicProviderAdapter()
         registry = provider_node_registry(adapter)
         workflow = create_workflow(project, model.name)
@@ -251,6 +253,7 @@ class TestProviderNodes(FrappeTestCase):
         project = create_project()
         model = create_model()
         create_provider_account()
+        create_top_up(project.name, "0.50", "Provider TTS test credit")
         adapter = DeterministicProviderAdapter(
             asset_type="AUDIO",
             url="https://example.invalid/generated.mp3",

@@ -8,6 +8,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.application.billing import create_top_up
 from slow_ai.application.runs import get_history
 from slow_ai.application.run_service import RunService
 from slow_ai.domain.status import PROVIDER_JOB_TERMINAL_STATUSES, ProviderJobStatus
@@ -246,6 +247,7 @@ class TestRealWaveSpeedProvider(FrappeTestCase):
         model = frappe.get_doc("AI Model", model_row.name)
         provider_account = create_provider_account(os.environ[WAVESPEED_API_KEY_ENV])
         project = create_project()
+        create_top_up(project.name, str(configured_budget()), "Real WaveSpeed test credit")
         workflow = create_real_provider_workflow(project, model, provider_account.name)
 
         start_result = RunService().start_run(workflow.name)

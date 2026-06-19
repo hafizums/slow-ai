@@ -5,6 +5,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.application.billing import create_top_up
 from slow_ai.domain.exceptions import RunPreflightError
 from slow_ai.providers.wavespeed.models import upsert_wavespeed_model_catalog
 
@@ -206,7 +207,9 @@ class TestModelCatalogAdmin(FrappeTestCase):
             pricing_json={"unit": "run", "amount_usd": "0.01"},
         )
         create_provider_account(provider=provider)
-        workflow = create_provider_workflow(create_project(), provider=provider, model_ref=model.model_slug)
+        project = create_project()
+        create_top_up(project.name, "0.05", "Model slug preflight credit")
+        workflow = create_provider_workflow(project, provider=provider, model_ref=model.model_slug)
         provider_job_count = frappe.db.count("AI Provider Job")
 
         result = frappe.call("slow_ai.api.runs.start_run", workflow=workflow.name)

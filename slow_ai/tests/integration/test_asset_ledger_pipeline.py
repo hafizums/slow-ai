@@ -5,6 +5,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.application.billing import create_top_up
 from slow_ai.application.run_service import RunService
 from slow_ai.domain.status import ProviderJobStatus
 from slow_ai.engine.executor import WorkflowExecutor
@@ -178,6 +179,7 @@ class TestAssetLedgerPipeline(FrappeTestCase):
         project = create_project()
         model = create_model()
         create_provider_account()
+        create_top_up(project.name, "0.50", "Async provider pipeline credit")
         workflow = create_workflow(project, model.name)
         start_result = RunService(node_registry=node_registry).start_run(workflow.name)
 

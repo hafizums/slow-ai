@@ -4,6 +4,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.application.billing import create_top_up
 from slow_ai.domain.exceptions import GraphValidationError, RunPreflightError
 
 
@@ -325,6 +326,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
     def test_canvas_api_flow_saves_starts_and_reads_real_run_records(self):
         ensure_canvas_provider_catalog()
         project = create_project()
+        create_top_up(project.name, "0.05", "Canvas API flow credit")
         object_info = frappe.call("slow_ai.api.nodes.get_object_info")
         self.assertIn("text_prompt", object_info["nodes"])
         self.assertEqual(object_info["nodes"]["text_prompt"]["category"], "input")
@@ -446,6 +448,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertEqual(frappe.db.count("AI Provider Job"), before_provider_jobs)
 
         ensure_canvas_provider_catalog()
+        create_top_up(project.name, "0.05", "Canvas template run credit")
         run = frappe.call("slow_ai.api.runs.start_run", workflow=created["name"])
 
         self.assertTrue(frappe.db.exists("AI Workflow Run", run["workflow_run"]))
@@ -709,6 +712,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
     def test_canvas_asset_view_api_flow_uses_real_asset_documents(self):
         ensure_canvas_provider_catalog()
         project = create_project()
+        create_top_up(project.name, "0.05", "Canvas asset view credit")
         workflow = frappe.call(
             "slow_ai.api.workflows.save_workflow",
             project=project.name,
@@ -762,6 +766,8 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("asset.width && asset.height", page.script)
 
         project = create_project()
+        ensure_canvas_provider_catalog()
+        create_top_up(project.name, "0.05", "Canvas asset preview credit")
         workflow = frappe.call(
             "slow_ai.api.workflows.save_workflow",
             project=project.name,
@@ -840,6 +846,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
 
         ensure_canvas_provider_catalog()
         project = create_project()
+        create_top_up(project.name, "0.05", "Canvas monitor credit")
         workflow = frappe.call(
             "slow_ai.api.workflows.save_workflow",
             project=project.name,

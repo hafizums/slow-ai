@@ -5,6 +5,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.application.billing import create_top_up
 from slow_ai.domain.exceptions import RunPreflightError
 
 
@@ -166,7 +167,9 @@ class TestRunPreflight(FrappeTestCase):
             pricing_json={"unit": "run", "amount_usd": "0.10"},
         )
         create_provider_account(provider=provider)
-        workflow = create_provider_workflow(create_project(), provider=provider, model_name=model.name)
+        project = create_project()
+        create_top_up(project.name, "0.20", "Preflight provider run credit")
+        workflow = create_provider_workflow(project, provider=provider, model_name=model.name)
 
         with preflight_policy(slow_ai_run_preflight_max_cost_usd="0.20"):
             result = frappe.call("slow_ai.api.runs.start_run", workflow=workflow.name)
@@ -233,7 +236,8 @@ class TestRunPreflight(FrappeTestCase):
         provider = unique("unpriced-allowed-provider")
         model = create_model(provider=provider)
         create_provider_account(provider=provider)
-        workflow = create_provider_workflow(create_project(), provider=provider, model_name=model.name)
+        project = create_project()
+        workflow = create_provider_workflow(project, provider=provider, model_name=model.name)
 
         with preflight_policy(slow_ai_run_preflight_require_known_pricing=False):
             result = frappe.call("slow_ai.api.runs.start_run", workflow=workflow.name)

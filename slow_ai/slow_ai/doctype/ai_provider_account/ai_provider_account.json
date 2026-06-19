@@ -7,6 +7,8 @@
  "field_order": [
   "provider",
   "account_label",
+  "project",
+  "user",
   "api_key_secret",
   "is_default",
   "status",
@@ -27,6 +29,20 @@
    "in_list_view": 1,
    "label": "Account Label",
    "reqd": 1
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Project",
+   "options": "AI Project"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User"
   },
   {
    "fieldname": "api_key_secret",

@@ -89,6 +89,7 @@ class ProviderNodeBase(ConfigSchemaMixin, NodeDefinition):
         provider = str(config["provider"])
         model = str(config["model"])
         idempotency_key = f"{context.node_run_name}:{self.type}"
+        project_name = context.project_name or get_workflow_run_project(context.workflow_run_name)
         provider_job_name = self._get_or_create_provider_job(
             ProviderJobRequest(
                 provider=provider,
@@ -96,6 +97,7 @@ class ProviderNodeBase(ConfigSchemaMixin, NodeDefinition):
                 input_data=input_data,
                 node_run_name=context.node_run_name,
                 provider_account_name=config.get("provider_account"),
+                project_name=project_name,
                 idempotency_key=idempotency_key,
             )
         )
@@ -135,7 +137,6 @@ class ProviderNodeBase(ConfigSchemaMixin, NodeDefinition):
         if not result.outputs:
             raise ProviderInvariantError(f"Provider job returned no outputs: {provider_job_name}")
 
-        project_name = context.project_name or get_workflow_run_project(context.workflow_run_name)
         materialized = self.provider_outputs.materialize(
             project_name=project_name,
             workflow_run_name=context.workflow_run_name,

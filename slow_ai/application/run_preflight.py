@@ -13,6 +13,7 @@ from slow_ai.application.contracts import WorkflowDraft
 from slow_ai.application.models import pricing_summary_from_json
 from slow_ai.domain.exceptions import RunPreflightError
 from slow_ai.domain.workflow_graph import WorkflowGraph, WorkflowNode
+from slow_ai.infrastructure.provider_accounts import resolve_provider_account_name
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ class RunPreflightService:
         for node in graph.nodes:
             if not is_provider_node(node):
                 continue
-            provider_run = self._inspect_provider_node(node)
+            provider_run = self._inspect_provider_node(node, draft.project)
             provider_runs.append(provider_run)
             total_estimated_cost += provider_run.estimated_cost_usd
 
@@ -80,7 +81,7 @@ class RunPreflightService:
             estimated_cost_usd=total_estimated_cost,
         )
 
-    def _inspect_provider_node(self, node: WorkflowNode) -> ProviderRunPreflight:
+    def _inspect_provider_node(self, node: WorkflowNode, project_name: str) -> ProviderRunPreflight:
         provider = str(node.config.get("provider") or "").strip()
         model_ref = str(node.config.get("model") or "").strip()
         if not provider:
@@ -112,7 +113,11 @@ class RunPreflightService:
                 f"Provider node {node.id} uses model {model_ref} without known pricing."
             )
 
-        provider_account = self._resolve_provider_account(provider, node.config.get("provider_account"))
+        provider_account = self._resolve_provider_account(
+            provider,
+            node.config.get("provider_account"),
+            project_name,
+        )
         return ProviderRunPreflight(
             node_id=node.id,
             node_type=node.type,
@@ -145,27 +150,22 @@ class RunPreflightService:
             raise RunPreflightError(f"Provider model is not configured: {model_ref}.")
         return frappe.get_doc("AI Model", matches[0].name)
 
-    def _resolve_provider_account(self, provider: str, provider_account_name: Any | None) -> str:
-        if provider_account_name:
-            account = frappe.get_doc("AI Provider Account", str(provider_account_name))
-            if account.provider != provider:
-                raise RunPreflightError(
-                    f"Provider account {account.name} belongs to provider {account.provider}, not {provider}."
-                )
-            if account.status != "ACTIVE":
-                raise RunPreflightError(f"Provider account {account.name} is not active.")
-            return account.name
-
-        matches = frappe.get_all(
-            "AI Provider Account",
-            filters={"provider": provider, "status": "ACTIVE", "is_default": 1},
-            fields=["name"],
-            order_by="creation asc",
-            limit=1,
+    def _resolve_provider_account(
+        self,
+        provider: str,
+        provider_account_name: Any | None,
+        project_name: str,
+    ) -> str:
+        account_name = resolve_provider_account_name(
+            provider,
+            provider_account_name,
+            project_name=project_name,
+            require_default=True,
+            error_cls=RunPreflightError,
         )
-        if not matches:
+        if not account_name:
             raise RunPreflightError(f"No active default provider account is configured for {provider}.")
-        return matches[0].name
+        return account_name
 
 
 def is_provider_node(node: WorkflowNode) -> bool:

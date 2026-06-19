@@ -11,6 +11,7 @@ from slow_ai.domain.exceptions import ProviderInvariantError
 from slow_ai.domain.snapshots import canonical_json
 from slow_ai.domain.status import PROVIDER_JOB_TERMINAL_STATUSES, ProviderJobStatus
 from slow_ai.engine.state_machine import transition_provider_job
+from slow_ai.infrastructure.provider_accounts import resolve_provider_account_name
 from slow_ai.infrastructure.realtime import publish_provider_job_update
 from slow_ai.providers.contracts import NormalizedProviderResult, ProviderJobRequest
 
@@ -20,6 +21,7 @@ class ProviderJobRepository:
         provider_account_name = self._resolve_provider_account(
             request.provider,
             request.provider_account_name,
+            request.project_name,
         )
         model_name = self._resolve_model(request.model)
         provider_job = frappe.get_doc(
@@ -36,25 +38,18 @@ class ProviderJobRepository:
         ).insert(ignore_permissions=True)
         return provider_job.name
 
-    def _resolve_provider_account(self, provider: str, provider_account_name: str | None) -> str | None:
-        if provider_account_name:
-            account = frappe.get_doc("AI Provider Account", provider_account_name)
-            if account.provider != provider:
-                raise ProviderInvariantError(
-                    f"Provider account {account.name} belongs to provider {account.provider}, not {provider}."
-                )
-            if account.status != "ACTIVE":
-                raise ProviderInvariantError(f"Provider account {account.name} is not active.")
-            return account.name
-
-        matches = frappe.get_all(
-            "AI Provider Account",
-            filters={"provider": provider, "status": "ACTIVE", "is_default": 1},
-            fields=["name"],
-            order_by="creation asc",
-            limit=1,
+    def _resolve_provider_account(
+        self,
+        provider: str,
+        provider_account_name: str | None,
+        project_name: str | None,
+    ) -> str | None:
+        return resolve_provider_account_name(
+            provider,
+            provider_account_name,
+            project_name=project_name,
+            error_cls=ProviderInvariantError,
         )
-        return matches[0].name if matches else None
 
     def _resolve_model(self, model_ref: str) -> str:
         if frappe.db.exists("AI Model", model_ref):

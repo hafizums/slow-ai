@@ -16,6 +16,7 @@ class ProviderJobRequest:
     input_data: Mapping[str, Any]
     node_run_name: str | None = None
     provider_account_name: str | None = None
+    project_name: str | None = None
     idempotency_key: str | None = None
 
     def __post_init__(self) -> None:

@@ -110,7 +110,7 @@ class ProviderNodeBase(ConfigSchemaMixin, NodeDefinition):
             result = adapter.submit_job(
                 ProviderSubmission(
                     provider_job_name=provider_job_name,
-                    model=model,
+                    model=provider_job.model,
                     input_data=input_data,
                 )
             )

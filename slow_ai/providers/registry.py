@@ -44,9 +44,10 @@ class ProviderRegistry:
 
 
 def create_default_provider_registry() -> ProviderRegistry:
+    from slow_ai.providers.replicate import ReplicateAdapter
     from slow_ai.providers.wavespeed import WaveSpeedAdapter
 
-    return ProviderRegistry([WaveSpeedAdapter()])
+    return ProviderRegistry([WaveSpeedAdapter(), ReplicateAdapter()])
 
 
 def _normalize_provider_name(provider_name: str) -> str:

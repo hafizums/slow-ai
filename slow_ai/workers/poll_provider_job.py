@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import frappe
 
-from slow_ai.domain.status import PROVIDER_JOB_TERMINAL_STATUSES, NodeRunStatus, ProviderJobStatus
+from slow_ai.domain.status import (
+    NODE_TERMINAL_STATUSES,
+    PROVIDER_JOB_TERMINAL_STATUSES,
+    NodeRunStatus,
+    ProviderJobStatus,
+    WorkflowRunStatus,
+)
 from slow_ai.infrastructure.provider_jobs import ProviderJobRepository
 from slow_ai.infrastructure.provider_outputs import ProviderOutputService
 from slow_ai.infrastructure.queue import FrappeWorkflowQueue
@@ -74,10 +80,13 @@ def poll_provider_job(
     """Poll one persisted provider job and optionally enqueue workflow resume."""
     provider_jobs = ProviderJobRepository()
     provider_job = provider_jobs.get(provider_job_name)
+    workflow_run = frappe.db.get_value("AI Node Run", provider_job.node_run, "workflow_run") if provider_job.node_run else None
+    if workflow_run and frappe.db.get_value("AI Workflow Run", workflow_run, "status") == WorkflowRunStatus.CANCELLED.value:
+        return _stop_polling_cancelled_run(provider_job, workflow_run, provider_jobs)
+
     registry = provider_registry or create_default_provider_registry()
     result = registry.get(provider_job.provider).poll_job(provider_job.name)
     provider_job = provider_jobs.get(provider_job_name)
-    workflow_run = None
 
     if provider_job.node_run:
         workflow_run = frappe.db.get_value("AI Node Run", provider_job.node_run, "workflow_run")
@@ -97,6 +106,30 @@ def poll_provider_job(
         "status": result.status,
         "external_job_id": result.external_job_id,
         "queue_job_id": queue_job_id,
+    }
+
+
+def _stop_polling_cancelled_run(provider_job, workflow_run: str, provider_jobs: ProviderJobRepository) -> dict:
+    repository = FrappeEngineRepository()
+    if provider_job.status not in {status.value for status in PROVIDER_JOB_TERMINAL_STATUSES}:
+        provider_jobs.mark_cancelled(provider_job.name)
+        provider_job = provider_jobs.get(provider_job.name)
+
+    if provider_job.node_run:
+        node_run = repository.get_node_run(provider_job.node_run)
+        if NodeRunStatus(node_run.status) not in NODE_TERMINAL_STATUSES:
+            repository.set_node_status(
+                node_run.name,
+                status=NodeRunStatus.CANCELLED,
+                error={"type": "RunCancelled", "message": "Run cancelled by user."},
+                provider_job_name=provider_job.name,
+            )
+
+    return {
+        "provider_job": provider_job.name,
+        "status": provider_job.status,
+        "external_job_id": provider_job.external_job_id,
+        "queue_job_id": None,
     }
 
 

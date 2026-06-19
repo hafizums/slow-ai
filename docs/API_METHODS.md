@@ -37,6 +37,7 @@ slow_ai.api.public_tools.update_rerun_draft_values
 slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
+slow_ai.api.public_tools.cancel_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.public_tools.get_shared_run
@@ -652,6 +653,29 @@ provider calls. It must not expose provider account names, provider secrets,
 raw provider request/response/error JSON, workflow draft internals, or unsafe
 errors.
 
+### slow_ai.api.public_tools.cancel_my_run
+
+```txt
+Arguments: workflow_run
+Application service: slow_ai.application.public_tools.cancel_my_run
+Writes: existing AI Workflow Run, non-terminal AI Node Run rows, and local non-terminal AI Provider Job rows
+Returns: safe cancelled run summary
+```
+
+This API requires a logged-in user with project edit access: project owner,
+OWNER, EDITOR, or System Manager. VIEWER and BILLING members must be rejected.
+
+Cancellation is allowed only while the workflow run is `QUEUED`, `RUNNING`, or
+`WAITING_PROVIDER`. It marks the workflow run `CANCELLED` with a safe
+user-facing cancellation message. Non-terminal node runs are marked
+`CANCELLED`. Local persisted provider jobs in non-terminal states are marked
+`CANCELLED` without calling external provider cancel APIs.
+
+The API must not call providers, enqueue workers, create workflow versions,
+workflow runs, node runs, provider jobs, assets, or ledger rows. Public payloads
+must not expose provider account names, provider secrets, raw provider
+request/response/error JSON, provider URLs, or unsafe errors.
+
 ### slow_ai.api.public_tools.create_run_share
 
 ```txt
@@ -779,9 +803,12 @@ only:
 slow_ai.api.public_tools.list_templates
 slow_ai.api.public_tools.get_template
 slow_ai.api.public_tools.prepare_workflow_from_template
+slow_ai.api.public_tools.prepare_rerun_from_run
+slow_ai.api.public_tools.update_rerun_draft_values
 slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
+slow_ai.api.public_tools.cancel_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.runs.start_run

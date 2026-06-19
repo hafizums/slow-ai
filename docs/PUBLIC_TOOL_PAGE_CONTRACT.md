@@ -30,6 +30,7 @@ slow_ai.api.public_tools.update_rerun_draft_values
 slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
+slow_ai.api.public_tools.cancel_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.runs.start_run
@@ -112,6 +113,7 @@ create an editable workflow draft from a published template
 start only through slow_ai.api.runs.start_run
 show status/history through scoped public tool run APIs
 show output previews through slow_ai.api.public_tools.get_run_output_gallery
+cancel only through slow_ai.api.public_tools.cancel_my_run
 ```
 
 When a template has `input_schema_json`, the form must render from that schema
@@ -190,6 +192,36 @@ unsafe error payloads.
 
 Listing or viewing runs must not create provider jobs, enqueue work, call
 providers, mutate workflow state, or create assets/ledger rows.
+
+## Cancellation Rules
+
+The My Runs detail view may show a Cancel action only when the selected run is
+cancellable for the current user. Cancellable workflow statuses are:
+
+```txt
+QUEUED
+RUNNING
+WAITING_PROVIDER
+```
+
+Cancel must call only:
+
+```txt
+slow_ai.api.public_tools.cancel_my_run
+```
+
+The backend cancel service is authoritative. Only the run project owner,
+OWNER, EDITOR, or System Manager may cancel. VIEWER and BILLING members must be
+rejected. Cancellation marks the existing workflow run `CANCELLED`, marks
+non-terminal node runs `CANCELLED`, and may mark local non-terminal provider
+jobs `CANCELLED` without calling external provider cancel APIs.
+
+Cancel must not create workflow versions, workflow runs, node runs, provider
+jobs, assets, credit ledger rows, enqueue workers, execute workflow logic, or
+call providers. Public cancel and run-detail payloads may show only a safe
+cancellation message and must not expose provider account names, provider
+secrets, raw provider request/response/error JSON, provider URLs, or raw
+errors.
 
 ## Rerun Rules
 

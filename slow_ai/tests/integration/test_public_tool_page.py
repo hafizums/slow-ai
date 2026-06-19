@@ -10,6 +10,7 @@ from frappe.utils import now_datetime
 from frappe.utils.password import update_password
 
 from slow_ai.domain.exceptions import RunPreflightError
+from slow_ai.workers.poll_provider_job import poll_provider_job
 from slow_ai.workers.run_workflow import run_workflow
 
 
@@ -22,6 +23,7 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.list_my_runs",
     "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.public_tools.get_run_output_gallery",
+    "slow_ai.api.public_tools.cancel_my_run",
     "slow_ai.api.public_tools.create_run_share",
     "slow_ai.api.public_tools.disable_run_share",
     "slow_ai.api.public_tools.get_shared_run",
@@ -398,6 +400,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.get_run_output_gallery", page.script)
+        self.assertIn("slow_ai.api.public_tools.cancel_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.create_run_share", page.script)
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
@@ -868,6 +871,111 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(upload_version_asset["config"]["asset"], replacement_asset["name"])
         self.assertEqual(upload_run_lineage.source_template, upload_template["name"])
         self.assertEqual(upload_run_lineage.source_template_version, upload_rerun["template"]["template_version"])
+
+    def test_public_tool_cancel_run_permissions_and_terminal_guard(self):
+        editor = ensure_user(f"slow.ai.public.editor.{uuid4().hex[:8]}@example.test")
+        viewer = ensure_user(f"slow.ai.public.viewer.{uuid4().hex[:8]}@example.test")
+        billing = ensure_user(f"slow.ai.public.billing.{uuid4().hex[:8]}@example.test")
+        created = create_text_tool_run(self.user, title="Cancellable Public Tool Run")
+        project_name = created["project"].name
+        add_member(project_name, editor, "EDITOR")
+        add_member(project_name, viewer, "VIEWER")
+        add_member(project_name, billing, "BILLING")
+
+        frappe.set_user(viewer)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call("slow_ai.api.public_tools.cancel_my_run", workflow_run=created["run"]["workflow_run"])
+        frappe.set_user(billing)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call("slow_ai.api.public_tools.cancel_my_run", workflow_run=created["run"]["workflow_run"])
+
+        frappe.set_user(editor)
+        cancelled = frappe.call("slow_ai.api.public_tools.cancel_my_run", workflow_run=created["run"]["workflow_run"])
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=created["run"]["workflow_run"])
+
+        self.assertEqual(cancelled["run"]["status"], "CANCELLED")
+        self.assertFalse(cancelled["run"]["can_cancel"])
+        self.assertEqual(cancelled["run"]["error"], "Run cancelled by user.")
+        self.assertEqual(detail["run"]["status"], "CANCELLED")
+        self.assertEqual(detail["run"]["error"], "Run cancelled by user.")
+
+        terminal = create_text_tool_run(self.user, title="Terminal Public Tool Run")
+        run_workflow(terminal["run"]["workflow_run"])
+        frappe.set_user(self.user)
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call("slow_ai.api.public_tools.cancel_my_run", workflow_run=terminal["run"]["workflow_run"])
+
+    def test_public_tool_cancel_persists_state_and_worker_noops(self):
+        created = create_text_tool_run(self.user, title="Waiting Provider Cancel Run")
+        run_name = created["run"]["workflow_run"]
+        node_run = frappe.db.get_value("AI Node Run", {"workflow_run": run_name, "node_id": "prompt_1"}, "name")
+        provider = unique("cancel-provider").lower().replace(" ", "-")
+        model = insert_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique(f"{provider}/model"),
+                "model_name": "Cancel Provider Model",
+                "provider": provider,
+                "status": "ENABLED",
+                "node_type": "provider_text_to_image",
+                "category": "provider",
+                "modality": "TEXT_TO_IMAGE",
+                "pricing_json": json.dumps({"unit": "run", "amount_usd": "0.01"}),
+            }
+        )
+        account = insert_doc(
+            {
+                "doctype": "AI Provider Account",
+                "provider": provider,
+                "account_label": "Cancel Provider Account",
+                "api_key_secret": "cancel-provider-secret",
+                "status": "ACTIVE",
+            }
+        )
+        provider_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run,
+                "provider": provider,
+                "provider_account": account.name,
+                "model": model.name,
+                "status": "SUBMITTED",
+                "external_job_id": "external-cancel-test",
+                "request_json": json.dumps({"prompt": "cancel prompt"}),
+                "response_json": json.dumps({"raw": "server-side-only"}),
+            }
+        )
+        frappe.db.set_value("AI Workflow Run", run_name, "status", "WAITING_PROVIDER")
+        frappe.db.set_value("AI Node Run", node_run, {"status": "WAITING_PROVIDER", "provider_job": provider_job.name})
+        counts_before_cancel = lineage_side_effect_counts()
+
+        frappe.set_user(self.user)
+        cancelled = frappe.call("slow_ai.api.public_tools.cancel_my_run", workflow_run=run_name)
+        node_status = frappe.db.get_value("AI Node Run", node_run, "status")
+        provider_status = frappe.db.get_value("AI Provider Job", provider_job.name, "status")
+
+        self.assertEqual(cancelled["run"]["status"], "CANCELLED")
+        self.assertEqual(cancelled["run"]["error"], "Run cancelled by user.")
+        self.assertEqual(node_status, "CANCELLED")
+        self.assertEqual(provider_status, "CANCELLED")
+        for doctype, count in counts_before_cancel.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+
+        polled = poll_provider_job(provider_job.name)
+        run_workflow(run_name)
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=run_name)
+        encoded = json.dumps(detail, default=str)
+
+        self.assertEqual(polled["status"], "CANCELLED")
+        self.assertIsNone(polled["queue_job_id"])
+        self.assertEqual(frappe.db.get_value("AI Workflow Run", run_name, "status"), "CANCELLED")
+        self.assertEqual(frappe.db.get_value("AI Node Run", node_run, "status"), "CANCELLED")
+        self.assertEqual(frappe.db.get_value("AI Provider Job", provider_job.name, "status"), "CANCELLED")
+        self.assertIn("Run cancelled by user.", encoded)
+        self.assertNotIn("cancel-provider-secret", encoded)
+        self.assertNotIn("server-side-only", encoded)
+        self.assertNotIn("request_json", encoded)
+        self.assertNotIn("response_json", encoded)
 
     def test_run_library_scopes_normal_users_to_owned_project_runs(self):
         other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")

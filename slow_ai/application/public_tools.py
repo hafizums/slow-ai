@@ -17,6 +17,7 @@ from slow_ai.application.project_access import (
     assert_can_edit_project,
     assert_can_share_run,
     assert_can_view_project,
+    can_edit_project,
     can_manage_project_members,
     is_system_manager,
     list_accessible_project_names,
@@ -30,6 +31,28 @@ from slow_ai.application.template_inputs import apply_input_values
 from slow_ai.application.template_inputs import apply_legacy_public_tool_values
 from slow_ai.application.template_inputs import extract_input_values_from_nodes
 from slow_ai.application.workflows import save_workflow
+from slow_ai.domain.status import (
+    NODE_TERMINAL_STATUSES,
+    PROVIDER_JOB_TERMINAL_STATUSES,
+    WORKFLOW_TERMINAL_STATUSES,
+    NodeRunStatus,
+    ProviderJobStatus,
+    WorkflowRunStatus,
+)
+from slow_ai.engine.state_machine import transition_node_run
+from slow_ai.engine.state_machine import transition_workflow_run
+from slow_ai.infrastructure.provider_jobs import ProviderJobRepository
+from slow_ai.infrastructure.repositories import FrappeEngineRepository
+
+
+CANCELLABLE_WORKFLOW_STATUSES = frozenset(
+    {
+        WorkflowRunStatus.QUEUED,
+        WorkflowRunStatus.RUNNING,
+        WorkflowRunStatus.WAITING_PROVIDER,
+    }
+)
+CANCELLATION_ERROR = {"type": "RunCancelled", "message": "Run cancelled by user."}
 
 
 def list_templates(category: str | None = None) -> dict[str, Any]:
@@ -259,6 +282,56 @@ def get_run_output_gallery(workflow_run: str) -> dict[str, Any]:
     return get_run_output_gallery_service(workflow_run)
 
 
+def cancel_my_run(workflow_run: str) -> dict[str, Any]:
+    _require_logged_in_user()
+    run = frappe.get_doc("AI Workflow Run", workflow_run)
+    assert_can_edit_project(run.project)
+
+    current = WorkflowRunStatus(run.status)
+    if current in WORKFLOW_TERMINAL_STATUSES:
+        frappe.throw("Terminal tool runs cannot be cancelled.", frappe.ValidationError)
+    if current not in CANCELLABLE_WORKFLOW_STATUSES:
+        frappe.throw(f"Tool run cannot be cancelled from status {current.value}.", frappe.ValidationError)
+
+    repository = FrappeEngineRepository()
+    provider_jobs = ProviderJobRepository()
+    node_rows = frappe.get_all(
+        "AI Node Run",
+        filters={"workflow_run": run.name},
+        fields=["name", "status"],
+        order_by="creation asc",
+    )
+    node_names = [row.name for row in node_rows]
+    provider_rows = (
+        frappe.get_all(
+            "AI Provider Job",
+            filters={"node_run": ["in", node_names]},
+            fields=["name", "status"],
+            order_by="creation asc",
+        )
+        if node_names
+        else []
+    )
+
+    for row in provider_rows:
+        status = ProviderJobStatus(row.status)
+        if status in PROVIDER_JOB_TERMINAL_STATUSES:
+            continue
+        provider_jobs.mark_cancelled(row.name)
+
+    for row in node_rows:
+        status = NodeRunStatus(row.status)
+        if status in NODE_TERMINAL_STATUSES:
+            continue
+        transition_node_run(status, NodeRunStatus.CANCELLED)
+        repository.set_node_status(row.name, NodeRunStatus.CANCELLED, error=CANCELLATION_ERROR)
+
+    transition_workflow_run(current, WorkflowRunStatus.CANCELLED)
+    repository.set_workflow_status(run.name, WorkflowRunStatus.CANCELLED, CANCELLATION_ERROR)
+    run.reload()
+    return {"run": _run_summary(run.as_dict()) | {"error": _safe_error(run.error_json)}}
+
+
 def create_run_share(
     workflow_run: str,
     selected_assets: Any | None = None,
@@ -367,6 +440,7 @@ def _run_summary(row) -> dict[str, Any]:
         "cost_summary": _cost_summary(_ledger_summaries(row.get("name"))),
         "asset_count": frappe.db.count("AI Asset", {"source_workflow_run": row.get("name")}) if row.get("name") else 0,
         "share": _share_summary_for_run(row.get("name")),
+        "can_cancel": _can_cancel_run(row),
         "template_lineage": safe_template_lineage(
             row.get("source_template"),
             row.get("source_template_version"),
@@ -390,6 +464,20 @@ def _public_run_summary(row) -> dict[str, Any]:
             row.get("source_template_version"),
         ),
     }
+
+
+def _can_cancel_run(row) -> bool:
+    try:
+        status = WorkflowRunStatus(row.get("status"))
+    except ValueError:
+        return False
+    project = row.get("project")
+    if not project or status not in CANCELLABLE_WORKFLOW_STATUSES:
+        return False
+    try:
+        return can_edit_project(project)
+    except frappe.PermissionError:
+        return False
 
 
 def _public_output_gallery(gallery: dict[str, Any]) -> dict[str, Any]:

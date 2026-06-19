@@ -83,6 +83,9 @@ class SlowAiToolsPage {
 		this.$root.on("click", "[data-action='prepare-rerun']", (event) => {
 			this.prepareRerun($(event.currentTarget).attr("data-run-id"));
 		});
+		this.$root.on("click", "[data-action='cancel-run']", (event) => {
+			this.cancelRun($(event.currentTarget).attr("data-run-id"));
+		});
 		this.$root.on("click", "[data-action='create-run-share']", (event) => {
 			this.createRunShare($(event.currentTarget).attr("data-run-id"));
 		});
@@ -892,6 +895,9 @@ class SlowAiToolsPage {
 		const cost = detail.cost_summary || {};
 		const shareActions = this.renderShareActions(run, true);
 		const lineageRows = this.renderTemplateLineageRows(run.template_lineage);
+		const cancelAction = run.can_cancel
+			? `<button class="btn btn-xs btn-default" type="button" data-action="cancel-run" data-run-id="${this.escape(run.workflow_run)}">${__("Cancel")}</button>`
+			: "";
 		const rerunAction = run.template_lineage && run.template_lineage.source_template_version
 			? `<button class="btn btn-xs btn-primary" type="button" data-action="prepare-rerun" data-run-id="${this.escape(run.workflow_run)}">${__("Rerun")}</button>`
 			: "";
@@ -909,9 +915,23 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetCount)}</strong></div>
-			<div class="slow-ai-tools__inline-actions">${rerunAction}${shareActions}</div>
+			<div class="slow-ai-tools__inline-actions">${cancelAction}${rerunAction}${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
+	}
+
+	cancelRun(runId) {
+		if (!runId) {
+			return Promise.resolve();
+		}
+		this.setStatus(__("Cancelling run"));
+		return frappe
+			.call("slow_ai.api.public_tools.cancel_my_run", { workflow_run: runId })
+			.then(() => {
+				this.setStatus(__("Run cancelled"));
+				return this.openRunDetail(runId);
+			})
+			.then(() => this.loadMyRuns());
 	}
 
 	prepareRerun(runId) {

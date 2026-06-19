@@ -28,6 +28,7 @@ const API = {
 	publicListMyRuns: "slow_ai.api.public_tools.list_my_runs",
 	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
 	publicGetRunOutputGallery: "slow_ai.api.public_tools.get_run_output_gallery",
+	publicCancelMyRun: "slow_ai.api.public_tools.cancel_my_run",
 	publicCreateRunShare: "slow_ai.api.public_tools.create_run_share",
 	publicDisableRunShare: "slow_ai.api.public_tools.disable_run_share",
 	publicGetSharedRun: "slow_ai.api.public_tools.get_shared_run",
@@ -654,6 +655,36 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(updatedLegacyPrompt.config.text).toBe(editedLegacyPrompt);
 	const legacyRerunStarted = await apiJson(await startLegacyRerunResponse);
 	expect(legacyRerunStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+
+	const cancelTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
+	await page
+		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)
+		.getByRole("button", { name: "Select" })
+		.click();
+	await apiJson(await cancelTemplateResponse);
+	await page.locator("[data-input-id='prompt']").fill(`${fixtures.public_tool_prompt} cancel`);
+	await page.locator("[data-input-id='style']").selectOption("natural");
+	await page.locator("[data-input-id='steps']").fill("5");
+	const prepareCancelWorkflowResponse = page.waitForResponse(apiPredicate(API.publicPrepareWorkflowFromTemplate));
+	const startCancelRunResponse = page.waitForResponse(apiPredicate(API.startRun));
+	const cancelRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
+	await page.locator("[data-action='run-tool']").click();
+	await apiJson(await prepareCancelWorkflowResponse);
+	const cancelStarted = await apiJson(await startCancelRunResponse);
+	expect(cancelStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+	const cancelRunDetail = await apiJson(await cancelRunDetailResponse);
+	expect(cancelRunDetail.message.run.can_cancel).toBe(true);
+	await expect(page.locator("[data-role='run-detail']")).toContainText(cancelStarted.message.workflow_run);
+	const cancelResponse = page.waitForResponse(apiPredicate(API.publicCancelMyRun));
+	const cancelledDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
+	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Cancel" }).click();
+	const cancelled = await apiJson(await cancelResponse);
+	expect(cancelled.message.run.status).toBe("CANCELLED");
+	expect(cancelled.message.run.error).toBe("Run cancelled by user.");
+	const cancelledDetail = await apiJson(await cancelledDetailResponse);
+	expect(cancelledDetail.message.run.status).toBe("CANCELLED");
+	await expect(page.locator("[data-role='run-detail']")).toContainText("CANCELLED");
+	await expect(page.locator("[data-role='run-detail']")).toContainText("Run cancelled by user.");
 
 	const uploadTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page

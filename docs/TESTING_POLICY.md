@@ -242,7 +242,12 @@ also covers the Tool Run Library by proving normal users see only owned-project
 runs, System Managers can see all runs, run detail payloads strip provider
 accounts/raw provider payloads/secrets, failed errors are sanitized, asset
 previews resolve through the safe run output gallery service, and listing/viewing
-runs does not create provider jobs or call providers.
+runs does not create provider jobs or call providers. Public tool cancellation
+coverage proves OWNER/EDITOR users can cancel non-terminal runs, VIEWER/BILLING
+users are rejected, terminal runs are rejected, node/provider job rows are
+marked only through local persisted state, workers and pollers do not progress
+cancelled runs, and cancel actions create no new execution/provider/billing
+records.
 
 The Run Output Gallery coverage in the same module proves grouped gallery
 payloads are built from real `AI Asset` and `AI Node Run` records, only safe

@@ -21,6 +21,31 @@ Prefer short repeated polling jobs.
 
 Do not keep one worker sleeping for many minutes.
 
+Provider job polling is bounded by persisted policy fields on
+`AI Provider Job`:
+
+```txt
+last_polled_at
+poll_attempts
+max_poll_attempts
+timeout_seconds
+retry_count
+max_retries
+```
+
+`poll_provider_job` checks cancellation and terminal workflow state before
+timeout/retry policy. Cancellation wins and must not submit, poll, expire, or
+resume provider work. For non-terminal provider jobs, polling stops and marks
+the provider job `EXPIRED` when `poll_attempts >= max_poll_attempts` or
+`submitted_at + timeout_seconds` has passed. Timeout handling marks the waiting
+node run `FAILED` with a safe structured error and marks the workflow run
+`EXPIRED` when it is waiting on the provider, or `FAILED` when it is queued or
+running.
+
+Automatic provider retry is not enabled by default. Retry metadata is persisted
+with `max_retries=0` unless a future explicit retry action changes it. Retrying
+must remain bounded and must preserve provider-job idempotency.
+
 ## Idempotency policy
 
 Run creation and worker execution must tolerate retries:
@@ -123,6 +148,7 @@ SUCCEEDED
 
 FAILED / EXPIRED
   mark AI Node Run as FAILED with structured error
+  timeout policy also marks AI Workflow Run EXPIRED or FAILED without enqueueing resume
 
 CANCELLED
   mark AI Node Run as CANCELLED

@@ -90,16 +90,26 @@ Suggested fields:
 
 ```txt
 provider
+provider_account
 model
 external_job_id
 status
+idempotency_key
+estimated_cost_usd
+cost_usd
+debit_cost_usd
+debit_cost_source
+last_polled_at
+poll_attempts
+max_poll_attempts
+timeout_seconds
+retry_count
+max_retries
+submitted_at
+completed_at
 request_json
 response_json
 raw_error_json
-submitted_at
-completed_at
-cost_usd
-idempotency_key
 ```
 
 ## AI Asset

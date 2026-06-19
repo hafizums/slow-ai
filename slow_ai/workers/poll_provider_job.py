@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from datetime import timedelta
 
 import frappe
+from frappe.utils import get_datetime, now_datetime
 
 from slow_ai.domain.status import (
     NODE_TERMINAL_STATUSES,
@@ -26,6 +29,17 @@ POLLABLE_PROVIDER_JOB_STATUSES = (
     ProviderJobStatus.SUBMITTED.value,
     ProviderJobStatus.WAITING_PROVIDER.value,
 )
+DEFAULT_MAX_POLL_ATTEMPTS = 120
+DEFAULT_PROVIDER_JOB_TIMEOUT_SECONDS = 3600
+
+
+@dataclass(frozen=True)
+class ProviderJobPollPolicyViolation:
+    error_type: str
+    message: str
+
+    def as_error(self) -> dict[str, str]:
+        return {"type": self.error_type, "message": self.message}
 
 
 def poll_pending_provider_jobs(
@@ -111,6 +125,11 @@ def poll_provider_job(
             "queue_job_id": queue_job_id,
         }
 
+    violation = _poll_policy_violation(provider_job)
+    if violation:
+        return _expire_provider_job(provider_job, workflow_run, provider_jobs, violation.as_error())
+
+    provider_jobs.record_poll_attempt(provider_job.name)
     result = registry.get(provider_job.provider).poll_job(provider_job.name)
     provider_job = provider_jobs.get(provider_job_name)
 
@@ -119,6 +138,11 @@ def poll_provider_job(
         _update_waiting_node_from_provider_result(provider_job, result, workflow_run)
 
     target_status = ProviderJobStatus(result.status)
+    if target_status not in PROVIDER_JOB_TERMINAL_STATUSES:
+        violation = _poll_policy_violation(provider_job)
+        if violation:
+            return _expire_provider_job(provider_job, workflow_run, provider_jobs, violation.as_error())
+
     if (
         enqueue_resume
         and target_status in PROVIDER_JOB_TERMINAL_STATUSES
@@ -138,6 +162,86 @@ def poll_provider_job(
         "external_job_id": result.external_job_id,
         "queue_job_id": queue_job_id,
     }
+
+
+def _poll_policy_violation(provider_job) -> ProviderJobPollPolicyViolation | None:
+    max_attempts = _as_non_negative_int(
+        getattr(provider_job, "max_poll_attempts", None),
+        DEFAULT_MAX_POLL_ATTEMPTS,
+    )
+    poll_attempts = _as_non_negative_int(getattr(provider_job, "poll_attempts", None), 0)
+    if max_attempts == 0 or poll_attempts >= max_attempts:
+        return ProviderJobPollPolicyViolation(
+            error_type="ProviderJobMaxPollAttemptsExceeded",
+            message=f"Provider job exceeded max poll attempts ({max_attempts}).",
+        )
+
+    timeout_seconds = _as_non_negative_int(
+        getattr(provider_job, "timeout_seconds", None),
+        DEFAULT_PROVIDER_JOB_TIMEOUT_SECONDS,
+    )
+    if timeout_seconds == 0:
+        return ProviderJobPollPolicyViolation(
+            error_type="ProviderJobTimeout",
+            message="Provider job timed out before completion.",
+        )
+    submitted_at = getattr(provider_job, "submitted_at", None) or getattr(provider_job, "creation", None)
+    if submitted_at and get_datetime(submitted_at) + timedelta(seconds=timeout_seconds) <= now_datetime():
+        return ProviderJobPollPolicyViolation(
+            error_type="ProviderJobTimeout",
+            message="Provider job timed out before completion.",
+        )
+    return None
+
+
+def _expire_provider_job(
+    provider_job,
+    workflow_run: str | None,
+    provider_jobs: ProviderJobRepository,
+    error: dict[str, str],
+) -> dict:
+    provider_jobs.mark_expired(provider_job.name, error)
+    provider_job = provider_jobs.get(provider_job.name)
+    _mark_timed_out_node_and_workflow(provider_job, workflow_run, error)
+    return {
+        "provider_job": provider_job.name,
+        "status": provider_job.status,
+        "external_job_id": provider_job.external_job_id,
+        "queue_job_id": None,
+    }
+
+
+def _mark_timed_out_node_and_workflow(provider_job, workflow_run: str | None, error: dict[str, str]) -> None:
+    repository = FrappeEngineRepository()
+    if provider_job.node_run:
+        node_run = repository.get_node_run(provider_job.node_run)
+        current_node_status = NodeRunStatus(node_run.status)
+        if current_node_status not in NODE_TERMINAL_STATUSES:
+            if current_node_status in {
+                NodeRunStatus.PENDING,
+                NodeRunStatus.RUNNING,
+                NodeRunStatus.WAITING_PROVIDER,
+            }:
+                repository.set_node_status(
+                    node_run.name,
+                    status=NodeRunStatus.FAILED,
+                    error=error,
+                    provider_job_name=provider_job.name,
+                )
+
+    if not workflow_run:
+        return
+    current_workflow_status_value = frappe.db.get_value("AI Workflow Run", workflow_run, "status")
+    if not current_workflow_status_value:
+        return
+    current_workflow_status = WorkflowRunStatus(current_workflow_status_value)
+    if current_workflow_status in WORKFLOW_TERMINAL_STATUSES:
+        return
+    if current_workflow_status == WorkflowRunStatus.WAITING_PROVIDER:
+        repository.set_workflow_status(workflow_run, WorkflowRunStatus.EXPIRED, error)
+        return
+    if current_workflow_status in {WorkflowRunStatus.QUEUED, WorkflowRunStatus.RUNNING}:
+        repository.set_workflow_status(workflow_run, WorkflowRunStatus.FAILED, error)
 
 
 def _recover_terminal_provider_job(
@@ -257,3 +361,13 @@ def _loads_json(value: str | None, default):
     if not value:
         return default
     return json.loads(value)
+
+
+def _as_non_negative_int(value, default: int) -> int:
+    if value in (None, ""):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default

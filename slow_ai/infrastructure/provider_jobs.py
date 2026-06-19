@@ -18,6 +18,11 @@ from slow_ai.infrastructure.realtime import publish_provider_job_update
 from slow_ai.providers.contracts import NormalizedProviderResult, ProviderJobRequest
 
 
+DEFAULT_MAX_POLL_ATTEMPTS = 120
+DEFAULT_PROVIDER_JOB_TIMEOUT_SECONDS = 3600
+DEFAULT_MAX_RETRIES = 0
+
+
 class ProviderJobRepository:
     def create_queued_job(self, request: ProviderJobRequest) -> str:
         if request.idempotency_key:
@@ -41,6 +46,11 @@ class ProviderJobRepository:
                 "status": ProviderJobStatus.QUEUED.value,
                 "idempotency_key": request.idempotency_key,
                 "estimated_cost_usd": estimated_cost_usd,
+                "poll_attempts": 0,
+                "max_poll_attempts": DEFAULT_MAX_POLL_ATTEMPTS,
+                "timeout_seconds": DEFAULT_PROVIDER_JOB_TIMEOUT_SECONDS,
+                "retry_count": 0,
+                "max_retries": DEFAULT_MAX_RETRIES,
                 "request_json": canonical_json(request.input_data),
             }
         ).insert(ignore_permissions=True)
@@ -150,6 +160,39 @@ class ProviderJobRepository:
             values["response_json"] = canonical_json(raw_response)
         frappe.db.set_value("AI Provider Job", provider_job_name, values)
         publish_provider_job_update(provider_job_name, target.value)
+
+    def record_poll_attempt(self, provider_job_name: str) -> int:
+        doc = self.get(provider_job_name)
+        poll_attempts = int(doc.poll_attempts or 0) + 1
+        frappe.db.set_value(
+            "AI Provider Job",
+            provider_job_name,
+            {
+                "poll_attempts": poll_attempts,
+                "last_polled_at": now_datetime(),
+            },
+        )
+        return poll_attempts
+
+    def mark_expired(self, provider_job_name: str, error: Mapping[str, Any]) -> None:
+        doc = self.get(provider_job_name)
+        current = ProviderJobStatus(doc.status)
+        if current in PROVIDER_JOB_TERMINAL_STATUSES:
+            return
+        target = ProviderJobStatus.EXPIRED
+        for next_status in self._transition_path(current, target):
+            transition_provider_job(current, next_status)
+            current = next_status
+        frappe.db.set_value(
+            "AI Provider Job",
+            provider_job_name,
+            {
+                "status": target.value,
+                "completed_at": now_datetime(),
+                "raw_error_json": canonical_json(error),
+            },
+        )
+        publish_provider_job_update(provider_job_name, target.value, {"error": error})
 
     def _transition_path(
         self,

@@ -118,3 +118,12 @@ The executor skips `SUCCEEDED` node runs and reuses their persisted
 `output_json`. It does not re-execute terminal node runs. A `WAITING_PROVIDER`
 node run returns the workflow to `WAITING_PROVIDER` until provider polling and a
 resume worker continue the run.
+
+## Provider timeout behavior
+
+Provider jobs can reach `EXPIRED` through worker-side timeout policy when
+`poll_attempts >= max_poll_attempts` or `submitted_at + timeout_seconds` has
+passed. Timeout expiry marks the waiting `AI Node Run` as `FAILED` with a safe
+structured error and marks the parent `AI Workflow Run` as `EXPIRED` when the
+run is waiting on the provider. If the workflow run is already terminal,
+including `CANCELLED`, provider timeout logic must not progress it.

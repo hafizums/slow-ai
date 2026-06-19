@@ -95,6 +95,9 @@ response_json for provider responses
 raw_error_json for normalized provider errors
 cost_usd for actual normalized provider cost when available
 debit_cost_usd and debit_cost_source after materialization
+last_polled_at, poll_attempts, and max_poll_attempts for bounded polling
+timeout_seconds for worker-side provider job expiration
+retry_count and max_retries for explicit bounded retry policy metadata
 submitted_at and completed_at lifecycle timestamps
 ```
 
@@ -102,6 +105,21 @@ Billing is provider-agnostic. Providers report normalized actual `cost_usd`
 when available. `ProviderOutputService` creates one debit using actual cost when
 non-zero, otherwise `AI Provider Job.estimated_cost_usd`. Failed, cancelled,
 expired, and known zero-cost jobs do not create debits.
+
+## Timeout and retry policy
+
+Provider polling is bounded by persisted `AI Provider Job` policy fields.
+`workers/poll_provider_job.py` increments `poll_attempts`, writes
+`last_polled_at`, and stops polling when `poll_attempts >= max_poll_attempts`
+or when `submitted_at + timeout_seconds` has passed. Expired jobs are marked
+`EXPIRED`, their waiting node run is marked `FAILED` with a safe structured
+error, and the parent workflow run is marked `EXPIRED` or `FAILED` depending on
+the current workflow state.
+
+Automatic provider retry is not enabled by default. `retry_count` and
+`max_retries` are persisted so future retry actions can be explicit and
+bounded. No worker may retry forever or create unbounded provider-job rows for
+the same node/run idempotency key.
 
 ## Normalized provider result
 

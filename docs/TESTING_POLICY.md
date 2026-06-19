@@ -170,6 +170,20 @@ idempotency key, repeated provider polling creates no duplicate assets or
 debits, terminal runs remain terminal, and public run detail payloads do not
 expose raw provider request/response/error data or provider account names.
 
+Provider job timeout and retry policy coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_provider_job_timeout_retry_policy.py
+```
+
+This test creates real workflows, node runs, provider jobs, provider accounts,
+models, and credit rows, then invokes the real provider poll worker. It verifies
+max-poll-attempt expiration, timeout expiration before provider polling, safe
+node/workflow timeout errors, no asset/ledger/resume side effects after expiry,
+cancellation winning over timeout policy, and public run detail payloads hiding
+raw provider response/error data, provider account names, secrets, and raw
+provider URLs.
+
 Task 10 adds canvas placeholder coverage with:
 
 ```txt

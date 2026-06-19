@@ -33,6 +33,8 @@ def save_template(
     normalized_status = status.upper()
     if normalized_status not in TEMPLATE_STATUSES:
         frappe.throw(f"Unsupported AI Workflow Template status: {status}")
+    if normalized_status == "PUBLISHED":
+        _require_system_manager("Publishing AI Workflow Templates requires System Manager.")
     validate_workflow({"nodes": parsed_nodes, "edges": parsed_edges})
 
     values = {
@@ -114,3 +116,10 @@ def _loads_json(value: Any, default: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return list(value)
     return value
+
+
+def _require_system_manager(message: str) -> None:
+    if frappe.session.user == "Administrator":
+        return
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw(message, frappe.PermissionError)

@@ -12,7 +12,11 @@ const API = {
 	listTemplates: "slow_ai.api.templates.list_templates",
 	getTemplate: "slow_ai.api.templates.get_template",
 	createWorkflowFromTemplate: "slow_ai.api.templates.create_workflow_from_template",
+	publicListTemplates: "slow_ai.api.public_tools.list_templates",
+	publicGetTemplate: "slow_ai.api.public_tools.get_template",
+	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
 	modelMetadata: "slow_ai.api.models.get_model_metadata",
+	billingBalance: "slow_ai.api.billing.get_balance",
 	listProviderAccounts: "slow_ai.api.provider_accounts.list_accounts",
 	getProviderAccount: "slow_ai.api.provider_accounts.get_account",
 	createProviderAccount: "slow_ai.api.provider_accounts.create_account",
@@ -111,7 +115,7 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	const providerRequests = [];
 	page.on("request", (request) => {
 		const url = request.url();
-		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api")) {
+		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
 			providerRequests.push(url);
 		}
 	});
@@ -366,4 +370,131 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 
 	const instance = await canvas(page);
 	expect(await instance.evaluate((value) => Boolean(value.workflowRun))).toBe(true);
+});
+
+test("Slow AI public tool page runs published templates through backend APIs", async ({ page }) => {
+	const providerRequests = [];
+	page.on("request", (request) => {
+		const url = request.url();
+		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
+			providerRequests.push(url);
+		}
+	});
+
+	await page.request.post("/api/method/login", {
+		form: {
+			usr: fixtures.public_tool_user,
+			pwd: fixtures.public_tool_password,
+		},
+	});
+
+	const templateListResponse = page.waitForResponse(apiPredicate(API.publicListTemplates));
+	await page.goto("/app/slow-ai-tools");
+	await expect.poll(() => page.evaluate(() => window.frappe && window.frappe.session.user)).toBe(
+		fixtures.public_tool_user
+	);
+	await expect(page.locator("[data-page='slow-ai-tools']")).toBeVisible();
+
+	const templates = await apiJson(await templateListResponse);
+	expect(templates.message.templates.some((template) => template.name === fixtures.public_tool_template)).toBe(true);
+	await expect(page.locator("[data-role='template-list']")).toContainText(fixtures.public_tool_template_label);
+
+	await page.locator("[data-role='project']").fill(fixtures.public_tool_project);
+	const balanceResponse = page.waitForResponse(apiPredicate(API.billingBalance));
+	await page.locator("[data-action='refresh-balance']").click();
+	const balance = await apiJson(await balanceResponse);
+	expect(balance.message.project).toBe(fixtures.public_tool_project);
+	await expect(page.locator("[data-role='balance']")).toContainText("Balance");
+
+	const templateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
+	await page
+		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)
+		.getByRole("button", { name: "Select" })
+		.click();
+	const template = await apiJson(await templateResponse);
+	expect(template.message.name).toBe(fixtures.public_tool_template);
+	await expect(page.locator("[data-role='template-detail']")).toContainText(fixtures.public_tool_template_label);
+	await page.locator("[data-node-id='prompt_1'][data-config-field='text']").fill(fixtures.public_tool_prompt);
+
+	const createWorkflowResponse = page.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
+	const saveWorkflowResponse = page.waitForResponse(apiPredicate(API.saveWorkflow));
+	const startRunResponse = page.waitForResponse(apiPredicate(API.startRun));
+	const statusResponse = page.waitForResponse(apiPredicate(API.runStatus));
+	const historyResponse = page.waitForResponse(apiPredicate(API.history));
+	await page.locator("[data-action='run-tool']").click();
+	await createWorkflowResponse;
+	const saved = await apiJson(await saveWorkflowResponse);
+	const promptNode = saved.message.nodes.find((node) => node.id === "prompt_1");
+	expect(promptNode.config.text).toBe(fixtures.public_tool_prompt);
+	const started = await apiJson(await startRunResponse);
+	expect(started.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+	const status = await apiJson(await statusResponse);
+	expect(status.message.workflow_run).toBe(started.message.workflow_run);
+	const history = await apiJson(await historyResponse);
+	expect(history.message.run.workflow_run).toBe(started.message.workflow_run);
+	await expect(page.locator("[data-role='run-summary']")).toContainText("Status");
+	await expect(page.locator("[data-role='run-history']")).toContainText("Nodes");
+
+	const uploadTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
+	await page
+		.locator(`[data-template-name="${fixtures.public_upload_template}"]`)
+		.getByRole("button", { name: "Select" })
+		.click();
+	const uploadTemplate = await apiJson(await uploadTemplateResponse);
+	expect(uploadTemplate.message.name).toBe(fixtures.public_upload_template);
+	await expect(page.locator("[data-role='template-detail']")).toContainText(fixtures.public_upload_template_label);
+	await page.locator("[data-node-id='asset_1'][data-config-field='asset']").fill(fixtures.public_selected_asset);
+
+	const selectedAssetViewResponse = page.waitForResponse(apiPredicate(API.assetView));
+	await page.getByRole("button", { name: "Preview Asset" }).click();
+	const selectedAsset = await apiJson(await selectedAssetViewResponse);
+	expect(selectedAsset.message.name).toBe(fixtures.public_selected_asset);
+	await expect(page.locator(`[data-asset-name="${fixtures.public_selected_asset}"]`)).toContainText(
+		fixtures.public_selected_asset
+	);
+
+	await page.locator("[data-upload-url='asset_1']").fill(fixtures.public_upload_url);
+	await page.locator("[data-upload-mime='asset_1']").fill("image/png");
+	const uploadResponse = page.waitForResponse(apiPredicate(API.assetUpload));
+	await page.getByRole("button", { name: "Create Asset" }).click();
+	const uploaded = await apiJson(await uploadResponse);
+	expect(uploaded.message.url).toBe(fixtures.public_upload_url);
+
+	const createUploadWorkflowResponse = page.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
+	const saveUploadWorkflowResponse = page.waitForResponse(apiPredicate(API.saveWorkflow));
+	const startUploadRunResponse = page.waitForResponse(apiPredicate(API.startRun));
+	await page.locator("[data-action='run-tool']").click();
+	await createUploadWorkflowResponse;
+	const savedUpload = await apiJson(await saveUploadWorkflowResponse);
+	const assetNode = savedUpload.message.nodes.find((node) => node.id === "asset_1");
+	expect(assetNode.config.asset).toBe(uploaded.message.name);
+	expect(assetNode.config.asset_type).toBe("IMAGE");
+	await startUploadRunResponse;
+
+	await page.evaluate(async (workflowRun) => {
+		const wrappers = window.$(".page-container, .page-wrapper").toArray();
+		let instance = null;
+		for (const wrapper of wrappers) {
+			const data = window.$(wrapper).data();
+			instance = data.slowAiTools || data["slow-ai-tools"];
+			if (instance) {
+				break;
+			}
+		}
+		instance.workflowRun = workflowRun;
+		await instance.refreshRun();
+	}, fixtures.public_asset_workflow_run);
+	await expect(page.locator("[data-role='asset-output'] .slow-ai-tools__asset-card")).toContainText(
+		fixtures.public_history_asset
+	);
+	await expect(page.locator("[data-role='asset-output']")).toContainText("Open Asset");
+
+	const pageSource = await page.locator("html").innerHTML();
+	expect(pageSource).not.toContain("WAVESPEED_API_KEY");
+	expect(pageSource).not.toContain("REPLICATE_API_KEY");
+	expect(pageSource).not.toContain("api_key_secret");
+	expect(pageSource).not.toContain("api.wavespeed.ai");
+	expect(pageSource).not.toContain("api.replicate.com");
+	expect(pageSource).not.toContain("Authorization: Bearer");
+	expect(providerRequests).toEqual([]);
 });

@@ -1,0 +1,46 @@
+<div class="slow-ai-tools" data-page="slow-ai-tools">
+	<header class="slow-ai-tools__header">
+		<div>
+			<div class="slow-ai-tools__eyebrow">Slow AI</div>
+			<h2>Tools</h2>
+		</div>
+		<div class="slow-ai-tools__project">
+			<label>
+				<span>Project</span>
+				<input class="form-control" type="text" data-role="project" placeholder="AI Project">
+			</label>
+			<button class="btn btn-default" type="button" data-action="refresh-balance">Refresh Balance</button>
+		</div>
+		<div class="slow-ai-tools__balance" data-role="balance">Balance not loaded</div>
+	</header>
+	<main class="slow-ai-tools__grid">
+		<section class="slow-ai-tools__panel slow-ai-tools__templates">
+			<div class="slow-ai-tools__panel-head">
+				<h3>Published Templates</h3>
+				<button class="btn btn-xs btn-default" type="button" data-action="refresh-templates">Refresh</button>
+			</div>
+			<div data-role="template-list" class="slow-ai-tools__template-list"></div>
+		</section>
+		<section class="slow-ai-tools__panel slow-ai-tools__runner">
+			<div class="slow-ai-tools__panel-head">
+				<h3>Run Tool</h3>
+			</div>
+			<div data-role="template-detail" class="slow-ai-tools__template-detail"></div>
+			<div data-role="tool-form" class="slow-ai-tools__form"></div>
+			<div data-role="provider-warning" class="slow-ai-tools__provider-warning"></div>
+			<div class="slow-ai-tools__actions">
+				<button class="btn btn-primary" type="button" data-action="run-tool">Run</button>
+			</div>
+			<div data-role="status" class="slow-ai-tools__status">Idle</div>
+		</section>
+		<section class="slow-ai-tools__panel slow-ai-tools__monitor">
+			<div class="slow-ai-tools__panel-head">
+				<h3>Run Status</h3>
+				<button class="btn btn-xs btn-default" type="button" data-action="refresh-run">Refresh Run</button>
+			</div>
+			<div data-role="run-summary" class="slow-ai-tools__summary"></div>
+			<div data-role="run-history" class="slow-ai-tools__history"></div>
+			<div data-role="asset-output" class="slow-ai-tools__assets"></div>
+		</section>
+	</main>
+</div>

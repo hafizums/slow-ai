@@ -12,13 +12,17 @@ from frappe.utils.password import update_password
 
 E2E_USER = "slow.ai.e2e@example.test"
 E2E_PASSWORD = "SlowAiE2E!2345"
+PUBLIC_TOOL_USER = "slow.ai.public.e2e@example.test"
+PUBLIC_TOOL_PASSWORD = "SlowAiPublicE2E!2345"
 
 
 def setup_canvas_e2e() -> dict:
     """Create real Frappe documents used by the browser test suite."""
 
     user = _ensure_user()
+    public_tool_user = _ensure_public_tool_user()
     project = _create_project()
+    public_tool_project = _create_project(owner=public_tool_user)
     placeholder_asset = frappe.call(
         "slow_ai.api.assets.upload",
         project=project.name,
@@ -35,14 +39,40 @@ def setup_canvas_e2e() -> dict:
         mime_type="image/png",
         metadata=json.dumps({"origin": "browser-e2e-selected"}),
     )
+    public_tool_asset = frappe.call(
+        "slow_ai.api.assets.upload",
+        project=public_tool_project.name,
+        asset_type="IMAGE",
+        url="https://example.invalid/e2e-public-tool-selected.png",
+        mime_type="image/png",
+        metadata=json.dumps({"origin": "browser-e2e-public-tool-selected"}),
+    )
     tool_template = _create_tool_template()
     upload_template = _create_upload_template(placeholder_asset["name"])
+    public_tool_template = _create_tool_template(prefix="Browser E2E Public Text Tool")
+    public_upload_template = _create_upload_template(
+        public_tool_asset["name"],
+        prefix="Browser E2E Public Upload Tool",
+    )
     catalog_model = _create_catalog_model()
     asset_run = _create_history_asset_run(project.name)
+    public_asset_run = _create_history_asset_run(public_tool_project.name)
     frappe.db.commit()
     return {
         "user": user,
         "password": E2E_PASSWORD,
+        "public_tool_user": public_tool_user,
+        "public_tool_password": PUBLIC_TOOL_PASSWORD,
+        "public_tool_project": public_tool_project.name,
+        "public_tool_template": public_tool_template["name"],
+        "public_tool_template_label": public_tool_template["template_name"],
+        "public_tool_prompt": f"Public Tool Prompt {uuid4().hex[:8]}",
+        "public_upload_template": public_upload_template["name"],
+        "public_upload_template_label": public_upload_template["template_name"],
+        "public_selected_asset": public_tool_asset["name"],
+        "public_upload_url": f"https://example.invalid/e2e-public-created-{uuid4().hex[:8]}.png",
+        "public_asset_workflow_run": public_asset_run["workflow_run"],
+        "public_history_asset": public_asset_run["asset"],
         "project": project.name,
         "canvas_title": f"Browser E2E Canvas {uuid4().hex[:8]}",
         "tool_template": tool_template["name"],
@@ -90,20 +120,54 @@ def _ensure_user() -> str:
     return E2E_USER
 
 
-def _create_project():
-    return frappe.get_doc(
+def _ensure_public_tool_user() -> str:
+    if frappe.db.exists("User", PUBLIC_TOOL_USER):
+        user = frappe.get_doc("User", PUBLIC_TOOL_USER)
+        user.enabled = 1
+        user.user_type = "System User"
+        user.save(ignore_permissions=True)
+    else:
+        user = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": PUBLIC_TOOL_USER,
+                "first_name": "Slow AI",
+                "last_name": "Public E2E",
+                "enabled": 1,
+                "user_type": "System User",
+                "send_welcome_email": 0,
+                "roles": [{"role": "Desk User"}],
+            }
+        ).insert(ignore_permissions=True)
+    existing_roles = {row.role for row in user.get("roles", [])}
+    if "Desk User" not in existing_roles:
+        user.append("roles", {"role": "Desk User"})
+        user.save(ignore_permissions=True)
+    if "System Manager" in existing_roles:
+        user.set("roles", [{"role": row.role} for row in user.get("roles", []) if row.role != "System Manager"])
+        user.save(ignore_permissions=True)
+    update_password(PUBLIC_TOOL_USER, PUBLIC_TOOL_PASSWORD)
+    return PUBLIC_TOOL_USER
+
+
+def _create_project(owner: str | None = None):
+    project = frappe.get_doc(
         {
             "doctype": "AI Project",
             "project_name": _unique("Browser E2E Project"),
             "status": "Open",
         }
     ).insert(ignore_permissions=True)
+    if owner:
+        frappe.db.set_value("AI Project", project.name, "owner", owner)
+        project.reload()
+    return project
 
 
-def _create_tool_template() -> dict:
+def _create_tool_template(prefix: str = "Browser E2E Text Tool") -> dict:
     return frappe.call(
         "slow_ai.api.templates.save_template",
-        template_name=_unique("Browser E2E Text Tool"),
+        template_name=_unique(prefix),
         status="PUBLISHED",
         category="Browser E2E",
         description="Browser E2E text prompt Tool Mode template",
@@ -144,10 +208,10 @@ def _create_tool_template() -> dict:
     )
 
 
-def _create_upload_template(asset_name: str) -> dict:
+def _create_upload_template(asset_name: str, prefix: str = "Browser E2E Upload Tool") -> dict:
     return frappe.call(
         "slow_ai.api.templates.save_template",
-        template_name=_unique("Browser E2E Upload Tool"),
+        template_name=_unique(prefix),
         status="PUBLISHED",
         category="Browser E2E",
         description="Browser E2E upload_asset Tool Mode template",

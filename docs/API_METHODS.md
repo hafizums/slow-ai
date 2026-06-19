@@ -33,6 +33,7 @@ slow_ai.api.public_tools.get_template
 slow_ai.api.public_tools.create_workflow_from_template
 slow_ai.api.public_tools.prepare_workflow_from_template
 slow_ai.api.public_tools.prepare_rerun_from_run
+slow_ai.api.public_tools.update_rerun_draft_values
 slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
@@ -157,6 +158,29 @@ not change the rerun draft source.
 Prefill values are extracted only through declared `input_schema_json` target
 fields from the previous workflow draft and are revalidated by the same backend
 template input service before the new draft is saved.
+
+The method must not call providers, enqueue workers, create `AI Workflow
+Version`, `AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`, or
+`AI Credit Ledger` rows.
+
+### slow_ai.api.public_tools.update_rerun_draft_values
+
+```txt
+Arguments: workflow, values
+Application service: slow_ai.application.public_tools.update_rerun_draft_values
+Writes: existing rerun AI Workflow draft JSON only
+Returns: updated workflow draft payload
+```
+
+`update_rerun_draft_values` requires logged-in project edit access, a rerun
+draft with valid template-version lineage, and no existing `AI Workflow Run` for
+that workflow. It reloads the recorded immutable template version, then applies
+submitted values only through that version's `input_schema_json`.
+
+Unknown fields and unsafe targets such as provider, model, provider account,
+API key, raw request, raw response, or raw error fields must be rejected by the
+same backend template input validation used by
+`prepare_workflow_from_template`.
 
 The method must not call providers, enqueue workers, create `AI Workflow
 Version`, `AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`, or

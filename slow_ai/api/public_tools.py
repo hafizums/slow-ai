@@ -15,6 +15,7 @@ from slow_ai.application.public_tools import list_my_runs as list_my_runs_servic
 from slow_ai.application.public_tools import list_templates as list_templates_service
 from slow_ai.application.public_tools import prepare_rerun_from_run as prepare_rerun_from_run_service
 from slow_ai.application.public_tools import prepare_workflow_from_template as prepare_workflow_from_template_service
+from slow_ai.application.public_tools import update_rerun_draft_values as update_rerun_draft_values_service
 
 
 @frappe.whitelist()
@@ -40,6 +41,11 @@ def prepare_workflow_from_template(template: str, project: str, title: str | Non
 @frappe.whitelist()
 def prepare_rerun_from_run(workflow_run: str, title: str | None = None) -> dict:
     return prepare_rerun_from_run_service(workflow_run=workflow_run, title=title)
+
+
+@frappe.whitelist()
+def update_rerun_draft_values(workflow: str, values=None) -> dict:
+    return update_rerun_draft_values_service(workflow=workflow, values=values)
 
 
 @frappe.whitelist()

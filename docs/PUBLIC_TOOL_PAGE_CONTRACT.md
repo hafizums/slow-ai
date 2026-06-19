@@ -26,6 +26,7 @@ slow_ai.api.public_tools.list_templates
 slow_ai.api.public_tools.get_template
 slow_ai.api.public_tools.prepare_workflow_from_template
 slow_ai.api.public_tools.prepare_rerun_from_run
+slow_ai.api.public_tools.update_rerun_draft_values
 slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
@@ -221,7 +222,22 @@ run internals, ledger data, or arbitrary node config.
 Rerun preparation creates only an editable workflow draft. It must not create
 immutable workflow versions, workflow runs, node runs, provider jobs, assets,
 credit ledger rows, enqueue workers, or call providers. Starting the rerun must
-still go through:
+first persist any user edits through:
+
+```txt
+slow_ai.api.public_tools.update_rerun_draft_values
+```
+
+The rerun draft update API may update only schema-allowed fields on the
+prepared rerun draft. Unknown fields and provider/model/provider account/API
+key/raw request/raw response/raw error fields must be rejected. It must use the
+same backend `input_schema_json` validation and asset/project access checks as
+normal public tool preparation.
+
+Rerun draft updates must not create immutable workflow versions, workflow runs,
+node runs, provider jobs, assets, credit ledger rows, enqueue workers, or call
+providers. After the rerun draft has been updated, starting the rerun must still
+go through:
 
 ```txt
 slow_ai.api.runs.start_run

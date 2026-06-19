@@ -24,6 +24,7 @@ const API = {
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
 	publicPrepareWorkflowFromTemplate: "slow_ai.api.public_tools.prepare_workflow_from_template",
 	publicPrepareRerunFromRun: "slow_ai.api.public_tools.prepare_rerun_from_run",
+	publicUpdateRerunDraftValues: "slow_ai.api.public_tools.update_rerun_draft_values",
 	publicListMyRuns: "slow_ai.api.public_tools.list_my_runs",
 	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
 	publicGetRunOutputGallery: "slow_ai.api.public_tools.get_run_output_gallery",
@@ -598,6 +599,22 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(rerunDraft.message.prefilled_values.prompt).toBe(fixtures.public_tool_prompt);
 	await expect(page.locator("[data-role='status']")).toContainText("Rerun draft ready");
 	await expect(page.locator("[data-input-id='prompt']")).toHaveValue(fixtures.public_tool_prompt);
+	const editedRerunPrompt = `${fixtures.public_tool_prompt} edited rerun`;
+	await page.locator("[data-input-id='prompt']").fill(editedRerunPrompt);
+	await page.locator("[data-input-id='style']").selectOption("natural");
+	await page.locator("[data-input-id='steps']").fill("9");
+	const updateRerunResponse = page.waitForResponse(apiPredicate(API.publicUpdateRerunDraftValues));
+	const startRerunResponse = page.waitForResponse(apiPredicate(API.startRun));
+	await page.locator("[data-action='run-tool']").click();
+	const updatedRerun = await apiJson(await updateRerunResponse);
+	const updatedRerunPrompt = updatedRerun.message.nodes.find((node) => node.id === "prompt_1");
+	expect(updatedRerun.message.name).toBe(rerunDraft.message.workflow.name);
+	expect(updatedRerun.message.source_template_version).toBe(template.message.template_version);
+	expect(updatedRerunPrompt.config.text).toBe(editedRerunPrompt);
+	expect(updatedRerunPrompt.config.text_style).toBe("natural");
+	expect(updatedRerunPrompt.config.steps).toBe(9);
+	const rerunStarted = await apiJson(await startRerunResponse);
+	expect(rerunStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
 
 	const uploadTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page

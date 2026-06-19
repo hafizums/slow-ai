@@ -233,7 +233,9 @@ templates are rejected, persists submitted form values into real workflow draft
 JSON, starts runs only through the normal run API, verifies insufficient balance
 rejects provider templates before ProviderJob creation, verifies rerun
 preparation creates a new editable draft from the original recorded immutable
-template version while copying only schema-safe prefilled values, and verifies upload
+template version while copying only schema-safe prefilled values, verifies rerun
+draft edits persist only through schema-allowed backend fields before
+`start_run`, and verifies upload
 asset inputs and previews use real persisted `AI Asset` records. It
 also covers the Tool Run Library by proving normal users see only owned-project
 runs, System Managers can see all runs, run detail payloads strip provider

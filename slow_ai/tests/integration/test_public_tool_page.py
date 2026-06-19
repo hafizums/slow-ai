@@ -18,6 +18,7 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.get_template",
     "slow_ai.api.public_tools.prepare_workflow_from_template",
     "slow_ai.api.public_tools.prepare_rerun_from_run",
+    "slow_ai.api.public_tools.update_rerun_draft_values",
     "slow_ai.api.public_tools.list_my_runs",
     "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.public_tools.get_run_output_gallery",
@@ -392,6 +393,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.get_template", page.script)
         self.assertIn("slow_ai.api.public_tools.prepare_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.prepare_rerun_from_run", page.script)
+        self.assertIn("slow_ai.api.public_tools.update_rerun_draft_values", page.script)
         self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
@@ -662,6 +664,34 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertNotIn("provider-account-should-not-copy", encoded)
         self.assertNotIn("raw-error-should-not-copy", encoded)
 
+        counts_before_update = lineage_side_effect_counts()
+        updated = frappe.call(
+            "slow_ai.api.public_tools.update_rerun_draft_values",
+            workflow=draft["name"],
+            values={"prompt": "Edited rerun prompt", "style": "natural", "steps": 9},
+        )
+        updated_node = next(node for node in updated["nodes"] if node["id"] == "prompt_1")
+
+        self.assertEqual(updated_node["config"]["text"], "Edited rerun prompt")
+        self.assertEqual(updated_node["config"]["text_style"], "natural")
+        self.assertEqual(updated_node["config"]["steps"], 9)
+        self.assertEqual(updated["source_template_version"], published["template_version"])
+        for doctype, count in counts_before_update.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.update_rerun_draft_values",
+                workflow=draft["name"],
+                values={"prompt": "Valid", "provider_account": "forbidden"},
+            )
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.update_rerun_draft_values",
+                workflow=draft["name"],
+                values={"prompt": "Valid", "unknown_field": "nope"},
+            )
+
         started = frappe.call("slow_ai.api.runs.start_run", workflow=draft["name"])
         rerun_version_lineage = frappe.db.get_value(
             "AI Workflow Version",
@@ -681,6 +711,18 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(rerun_version_lineage.source_template_version, published["template_version"])
         self.assertEqual(rerun_run_lineage.source_template, template["name"])
         self.assertEqual(rerun_run_lineage.source_template_version, published["template_version"])
+        version_nodes = json.loads(frappe.db.get_value("AI Workflow Version", started["workflow_version"], "nodes_json"))
+        version_prompt_node = next(node for node in version_nodes if node["id"] == "prompt_1")
+        self.assertEqual(version_prompt_node["config"]["text"], "Edited rerun prompt")
+        self.assertEqual(version_prompt_node["config"]["text_style"], "natural")
+        self.assertEqual(version_prompt_node["config"]["steps"], 9)
+
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.update_rerun_draft_values",
+                workflow=draft["name"],
+                values={"prompt": "Too late", "style": "natural", "steps": 2},
+            )
 
     def test_run_library_scopes_normal_users_to_owned_project_runs(self):
         other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")

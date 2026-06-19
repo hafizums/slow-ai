@@ -510,17 +510,27 @@ class SlowAiToolsPage {
 			}
 			if (this.rerunWorkflow) {
 				const workflow = this.rerunWorkflow;
-				this.rerunWorkflow = null;
-				this.workflow = workflow;
-				this.setStatus(__("Starting rerun"));
-				return frappe.call("slow_ai.api.runs.start_run", { workflow }).then((response) => {
-					const result = response.message;
-					this.workflowRun = result.workflow_run;
-					this.setStatus(__("Queued {0}", [result.workflow_run]));
-					this.startPolling();
-					this.loadMyRuns();
-					return this.refreshRun();
-				});
+				const values = this.collectFormValues();
+				this.setStatus(__("Saving rerun draft"));
+				return frappe
+					.call("slow_ai.api.public_tools.update_rerun_draft_values", {
+						workflow,
+						values,
+					})
+					.then((response) => {
+						this.workflow = response.message.name;
+						this.setStatus(__("Starting rerun"));
+						return frappe.call("slow_ai.api.runs.start_run", { workflow: this.workflow });
+					})
+					.then((response) => {
+						const result = response.message;
+						this.workflowRun = result.workflow_run;
+						this.rerunWorkflow = null;
+						this.setStatus(__("Queued {0}", [result.workflow_run]));
+						this.startPolling();
+						this.loadMyRuns();
+						return this.refreshRun();
+					});
 			}
 			const values = this.collectFormValues();
 			const title = `${this.template.template_name || this.template.name} Run`;

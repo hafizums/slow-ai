@@ -142,6 +142,50 @@ def prepare_rerun_from_run(
     }
 
 
+def update_rerun_draft_values(
+    *,
+    workflow: str,
+    values: Any | None = None,
+) -> dict[str, Any]:
+    _require_logged_in_user()
+    doc = frappe.get_doc("AI Workflow", workflow)
+    assert_can_edit_project(doc.project)
+    if frappe.db.exists("AI Workflow Run", {"workflow": doc.name}):
+        frappe.throw("Rerun draft values cannot be updated after a run has started.", frappe.ValidationError)
+
+    source_template = str(getattr(doc, "source_template", None) or "").strip()
+    source_template_version = str(getattr(doc, "source_template_version", None) or "").strip()
+    if not source_template or not source_template_version:
+        frappe.throw("This workflow has no template version lineage for rerun.", frappe.ValidationError)
+
+    payload = get_template_version_payload(source_template, source_template_version)
+    input_schema = payload.get("input_schema") or []
+    submitted = _loads_json(values, {})
+    if not input_schema:
+        if submitted:
+            frappe.throw("This rerun draft has no schema fields to update.", frappe.ValidationError)
+        nodes = _loads_json(doc.draft_nodes_json, [])
+    else:
+        nodes = apply_input_values(
+            nodes=_loads_json(doc.draft_nodes_json, []),
+            input_schema=input_schema,
+            values=submitted,
+            project=doc.project,
+        )
+
+    return save_workflow(
+        workflow=doc.name,
+        project=doc.project,
+        title=doc.title,
+        nodes=nodes,
+        edges=_loads_json(doc.draft_edges_json, []),
+        layout=_loads_json(doc.layout_json, {}),
+        status=doc.status,
+        source_template=payload["template"],
+        source_template_version=payload["template_version"],
+    )
+
+
 def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str, Any]:
     _require_logged_in_user()
     filters = _run_filters(project)

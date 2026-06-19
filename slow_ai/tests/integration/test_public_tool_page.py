@@ -767,6 +767,7 @@ class TestPublicToolPage(FrappeTestCase):
             "AI Credit Ledger": frappe.db.count("AI Credit Ledger"),
             "AI Workflow Version": frappe.db.count("AI Workflow Version"),
             "AI Workflow Run": frappe.db.count("AI Workflow Run"),
+            "AI Node Run": frappe.db.count("AI Node Run"),
         }
 
         frappe.set_user(self.user)
@@ -790,6 +791,14 @@ class TestPublicToolPage(FrappeTestCase):
             share["share_token"],
             {row["share"]["share_token"] for row in listed["runs"] if row.get("share")},
         )
+        counts_after_share = {
+            "AI Provider Job": frappe.db.count("AI Provider Job"),
+            "AI Asset": frappe.db.count("AI Asset"),
+            "AI Credit Ledger": frappe.db.count("AI Credit Ledger"),
+            "AI Workflow Version": frappe.db.count("AI Workflow Version"),
+            "AI Workflow Run": frappe.db.count("AI Workflow Run"),
+            "AI Node Run": frappe.db.count("AI Node Run"),
+        }
 
         frappe.set_user("Guest")
         payload = frappe.call(
@@ -802,14 +811,33 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(payload["run"]["status"], "SUCCEEDED")
         self.assertIn(created["asset"].name, {row["name"] for row in payload["assets"]})
         self.assertNotIn(created["other_asset"].name, {row["name"] for row in payload["assets"]})
+        self.assertEqual({row["name"] for row in payload["output_gallery"]["assets"]}, {created["asset"].name})
+        grouped_asset_names = {
+            asset["name"]
+            for group in payload["output_gallery"]["groups"]
+            for asset in group.get("assets", [])
+        }
+        self.assertEqual(grouped_asset_names, {created["asset"].name})
         self.assertEqual(payload["assets"][0]["url"], "https://example.invalid/shared-public-output.png")
         self.assertIn("cost_summary", payload)
         self.assertNotIn("project", payload["run"])
+        self.assertNotIn("project", payload["output_gallery"]["run"])
+        self.assertNotIn("workflow", payload["output_gallery"]["run"])
+        self.assertNotIn('"project"', encoded)
+        self.assertNotIn('"workflow"', encoded)
+        self.assertNotIn("draft_nodes_json", encoded)
+        self.assertNotIn("draft_edges_json", encoded)
+        self.assertNotIn('"nodes"', encoded)
+        self.assertNotIn('"edges"', encoded)
+        self.assertNotIn('"layout"', encoded)
+        self.assertNotIn(created["project"].name, encoded)
         self.assertNotIn("provider_account", encoded)
         self.assertNotIn("request_json", encoded)
         self.assertNotIn("response_json", encoded)
         self.assertNotIn("raw_error_json", encoded)
         self.assertNotIn("api_key_secret", encoded)
+        for doctype, count in counts_after_share.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
 
     def test_share_rejects_unknown_other_run_and_empty_selected_assets(self):
         created = create_shareable_asset_run(self.user, title="Selected Shareable Run")

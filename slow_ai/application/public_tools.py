@@ -206,6 +206,7 @@ def get_shared_run(share_token: str) -> dict[str, Any]:
         include_unselected=False,
         ignore_project_permissions=True,
     )
+    output_gallery = _public_output_gallery(output_gallery)
     return {
         "share": _public_share_summary(doc.as_dict()),
         "run": _public_run_summary(run.as_dict()),
@@ -276,6 +277,23 @@ def _public_run_summary(row) -> dict[str, Any]:
         "completed_at": row.get("completed_at"),
         "created": row.get("creation"),
         "modified": row.get("modified"),
+    }
+
+
+def _public_output_gallery(gallery: dict[str, Any]) -> dict[str, Any]:
+    run = gallery.get("run") or {}
+    return {
+        **gallery,
+        "run": {
+            "workflow_run": run.get("workflow_run"),
+            "workflow_title": run.get("workflow_title"),
+            "status": run.get("status"),
+            "queued_at": run.get("queued_at"),
+            "started_at": run.get("started_at"),
+            "completed_at": run.get("completed_at"),
+            "created": run.get("created"),
+            "modified": run.get("modified"),
+        },
     }
 
 

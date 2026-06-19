@@ -570,12 +570,25 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const sharedRunResponse = guestPage.waitForResponse(apiPredicate(API.publicGetSharedRun));
 	await guestPage.goto(shareUrl);
 	const sharedRun = await apiJson(await sharedRunResponse);
+	const sharedPayload = JSON.stringify(sharedRun.message);
 	expect(sharedRun.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
 	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_history_asset)).toBe(true);
 	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_unshared_history_asset)).toBe(false);
 	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_video_history_asset)).toBe(false);
 	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_audio_history_asset)).toBe(false);
+	expect(sharedRun.message.output_gallery.assets.map((asset) => asset.name)).toEqual([fixtures.public_history_asset]);
+	expect(sharedRun.message.output_gallery.groups.flatMap((group) => group.assets.map((asset) => asset.name))).toEqual([
+		fixtures.public_history_asset,
+	]);
 	expect(sharedRun.message.output_gallery.groups.length).toBeGreaterThan(0);
+	expect(sharedRun.message.output_gallery.run.project).toBeUndefined();
+	expect(sharedRun.message.output_gallery.run.workflow).toBeUndefined();
+	expect(sharedPayload).not.toContain('"project"');
+	expect(sharedPayload).not.toContain('"workflow"');
+	expect(sharedPayload).not.toContain(fixtures.public_tool_project);
+	expect(sharedPayload).not.toContain("request_json");
+	expect(sharedPayload).not.toContain("response_json");
+	expect(sharedPayload).not.toContain("raw_error_json");
 	await expect(guestPage.locator("[data-page='slow-ai-shared']")).toBeVisible();
 	await expect(guestPage.locator("[data-role='shared-assets']")).toContainText(fixtures.public_history_asset);
 	await expect(guestPage.locator("[data-role='shared-assets']")).not.toContainText(fixtures.public_unshared_history_asset);
@@ -587,6 +600,12 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(guestSource).not.toContain("WAVESPEED_API_KEY");
 	expect(guestSource).not.toContain("REPLICATE_API_KEY");
 	expect(guestSource).not.toContain("api_key_secret");
+	expect(guestSource).not.toContain(fixtures.public_tool_project);
+	expect(guestSource).not.toContain(fixtures.provider_account_label);
+	expect(guestSource).not.toContain(fixtures.provider_account_secret);
+	expect(guestSource).not.toContain("request_json");
+	expect(guestSource).not.toContain("response_json");
+	expect(guestSource).not.toContain("raw_error_json");
 	expect(guestSource).not.toContain("api.wavespeed.ai");
 	expect(guestSource).not.toContain("api.replicate.com");
 	expect(guestSource).not.toContain("Authorization: Bearer");

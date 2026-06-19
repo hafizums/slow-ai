@@ -219,10 +219,10 @@ def _create_project(owner: str | None = None):
 
 
 def _create_tool_template(prefix: str = "Browser E2E Text Tool", status: str = "PUBLISHED") -> dict:
-    return frappe.call(
+    template = frappe.call(
         "slow_ai.api.templates.save_template",
         template_name=_unique(prefix),
-        status=status,
+        status="DRAFT",
         category="Browser E2E",
         description="Browser E2E text prompt Tool Mode template",
         nodes=json.dumps(
@@ -293,13 +293,14 @@ def _create_tool_template(prefix: str = "Browser E2E Text Tool", status: str = "
             ]
         ),
     )
+    return _transition_template_fixture(template["name"], status)
 
 
 def _create_upload_template(asset_name: str, prefix: str = "Browser E2E Upload Tool") -> dict:
-    return frappe.call(
+    template = frappe.call(
         "slow_ai.api.templates.save_template",
         template_name=_unique(prefix),
-        status="PUBLISHED",
+        status="DRAFT",
         category="Browser E2E",
         description="Browser E2E upload_asset Tool Mode template",
         nodes=json.dumps(
@@ -350,6 +351,31 @@ def _create_upload_template(asset_name: str, prefix: str = "Browser E2E Upload T
             ]
         ),
     )
+    return _transition_template_fixture(template["name"], "PUBLISHED")
+
+
+def _transition_template_fixture(template: str, status: str) -> dict:
+    if status == "DRAFT":
+        return frappe.call("slow_ai.api.templates.get_template", template=template)
+    submitted = frappe.call("slow_ai.api.templates.submit_template_for_review", template=template)
+    if status == "IN_REVIEW":
+        return submitted
+    if status == "REJECTED":
+        return frappe.call(
+            "slow_ai.api.templates.reject_template",
+            template=template,
+            rejection_reason="Browser E2E rejected fixture.",
+        )
+    approved = frappe.call(
+        "slow_ai.api.templates.approve_template",
+        template=template,
+        review_notes="Browser E2E approved fixture.",
+    )
+    if status == "PUBLISHED":
+        return approved
+    if status == "ARCHIVED":
+        return frappe.call("slow_ai.api.templates.archive_template", template=template, reason="Browser E2E archived fixture.")
+    frappe.throw(f"Unsupported E2E template fixture status: {status}")
 
 
 def _create_catalog_model() -> dict:

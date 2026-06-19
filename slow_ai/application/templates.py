@@ -16,7 +16,7 @@ from slow_ai.domain.snapshots import canonical_json
 
 TEMPLATE_STATUSES = frozenset({"DRAFT", "IN_REVIEW", "PUBLISHED", "REJECTED", "ARCHIVED"})
 OWNER_EDITABLE_STATUSES = frozenset({"DRAFT", "REJECTED"})
-SYSTEM_ONLY_SAVE_STATUSES = frozenset({"IN_REVIEW", "PUBLISHED", "REJECTED", "ARCHIVED"})
+REVIEW_CONTROLLED_STATUSES = frozenset({"IN_REVIEW", "PUBLISHED", "ARCHIVED"})
 FORBIDDEN_TEMPLATE_FRAGMENTS = (
     "api_key_secret",
     "Authorization: Bearer",
@@ -52,8 +52,6 @@ def save_template(
     normalized_status = status.upper()
     if normalized_status not in TEMPLATE_STATUSES:
         frappe.throw(f"Unsupported AI Workflow Template status: {status}")
-    if normalized_status in SYSTEM_ONLY_SAVE_STATUSES:
-        _require_system_manager("Changing AI Workflow Template review status requires System Manager.")
     validate_workflow({"nodes": parsed_nodes, "edges": parsed_edges})
     normalized_input_schema = normalize_input_schema(
         input_schema if input_schema is not None else input_schema_json,
@@ -74,13 +72,11 @@ def save_template(
     if template:
         doc = frappe.get_doc("AI Workflow Template", template)
         _assert_can_edit_template(doc)
+        _assert_save_status_allowed(normalized_status, doc)
         doc.update(values)
-        if normalized_status == "PUBLISHED" and not getattr(doc, "published_at", None):
-            doc.published_at = now_datetime()
         doc.save(ignore_permissions=True)
     else:
-        if normalized_status == "PUBLISHED":
-            values["published_at"] = now_datetime()
+        _assert_save_status_allowed(normalized_status, None)
         doc = frappe.get_doc({"doctype": "AI Workflow Template", **values}).insert(ignore_permissions=True)
     return get_template(doc.name)
 
@@ -238,12 +234,30 @@ def _loads_json(value: Any, default: Any) -> Any:
 
 
 def _assert_can_edit_template(doc) -> None:
+    if doc.status not in OWNER_EDITABLE_STATUSES:
+        frappe.throw("Only DRAFT or REJECTED templates can be edited through save_template.", frappe.PermissionError)
     if _is_system_manager():
         return
     if doc.owner != frappe.session.user:
         frappe.throw("You can only edit your own templates.", frappe.PermissionError)
-    if doc.status not in OWNER_EDITABLE_STATUSES:
-        frappe.throw("Only DRAFT or REJECTED templates can be edited by their owner.", frappe.PermissionError)
+
+
+def _assert_save_status_allowed(status: str, doc) -> None:
+    if status in REVIEW_CONTROLLED_STATUSES:
+        frappe.throw(
+            f"Template status {status} can only be set through the dedicated review APIs.",
+            frappe.ValidationError,
+        )
+    if status == "REJECTED" and (doc is None or doc.status != "REJECTED"):
+        frappe.throw(
+            "REJECTED status can only be preserved while editing an already rejected template.",
+            frappe.ValidationError,
+        )
+    if doc is not None and doc.status == "REJECTED" and status != "REJECTED":
+        frappe.throw(
+            "Rejected templates must remain REJECTED until submitted for review.",
+            frappe.ValidationError,
+        )
 
 
 def _assert_can_submit_template(doc) -> None:

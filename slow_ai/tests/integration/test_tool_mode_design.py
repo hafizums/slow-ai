@@ -93,12 +93,18 @@ class TestToolModeDesign(FrappeTestCase):
         template = frappe.call(
             "slow_ai.api.templates.save_template",
             template_name=unique("Tool Template"),
-            status="PUBLISHED",
+            status="DRAFT",
             category="Tool",
             description="Template API integration test",
             nodes=json.dumps(tool_nodes("From template")),
             edges=json.dumps(tool_edges()),
             layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 10, "y": 20}]}),
+        )
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=template["name"])
+        template = frappe.call(
+            "slow_ai.api.templates.approve_template",
+            template=template["name"],
+            review_notes="Tool mode approved fixture.",
         )
         listed = frappe.call("slow_ai.api.templates.list_templates", status="PUBLISHED", category="Tool")
         loaded = frappe.call("slow_ai.api.templates.get_template", template=template["name"])

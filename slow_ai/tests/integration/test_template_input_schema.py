@@ -204,10 +204,10 @@ def save_template(name: str, nodes, edges, input_schema=None, status: str = "PUB
     previous_user = frappe.session.user
     frappe.set_user("Administrator")
     try:
-        return frappe.call(
+        template = frappe.call(
             "slow_ai.api.templates.save_template",
             template_name=name,
-            status=status,
+            status="DRAFT",
             category="Template Schema Test",
             description="Template schema fixture",
             nodes=json.dumps(nodes),
@@ -215,6 +215,27 @@ def save_template(name: str, nodes, edges, input_schema=None, status: str = "PUB
             layout=json.dumps({"nodes": [{"id": nodes[0]["id"], "x": 96, "y": 128}]}),
             input_schema_json=json.dumps(input_schema or []),
         )
+        if status == "DRAFT":
+            return template
+        submitted = frappe.call("slow_ai.api.templates.submit_template_for_review", template=template["name"])
+        if status == "IN_REVIEW":
+            return submitted
+        if status == "REJECTED":
+            return frappe.call(
+                "slow_ai.api.templates.reject_template",
+                template=template["name"],
+                rejection_reason="Template schema rejected fixture.",
+            )
+        approved = frappe.call(
+            "slow_ai.api.templates.approve_template",
+            template=template["name"],
+            review_notes="Template schema approved fixture.",
+        )
+        if status == "PUBLISHED":
+            return approved
+        if status == "ARCHIVED":
+            return frappe.call("slow_ai.api.templates.archive_template", template=template["name"], reason="Template schema archived fixture.")
+        frappe.throw(f"Unsupported template fixture status: {status}")
     finally:
         frappe.set_user(previous_user)
 

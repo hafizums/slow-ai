@@ -970,7 +970,7 @@ class SlowAiCanvasPlaceholder {
 				label: __("Status"),
 				fieldname: "status",
 				fieldtype: "Select",
-				options: "DRAFT\nPUBLISHED\nARCHIVED",
+				options: "DRAFT",
 				default: "DRAFT",
 			},
 		];

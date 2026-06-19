@@ -233,16 +233,41 @@ def provider_tool_edges():
 
 
 def save_template(template_name: str, status: str, nodes, edges):
-    return frappe.call(
+    template = frappe.call(
         "slow_ai.api.templates.save_template",
         template_name=template_name,
-        status=status,
+        status="DRAFT",
         category="Public Tool Test",
         description=f"{status} public tool fixture",
         nodes=json.dumps(nodes),
         edges=json.dumps(edges),
         layout=json.dumps({"nodes": [{"id": nodes[0]["id"], "x": 96, "y": 128}]}),
     )
+    return transition_template_status(template["name"], status)
+
+
+def transition_template_status(template: str, status: str):
+    if status == "DRAFT":
+        return frappe.call("slow_ai.api.templates.get_template", template=template)
+    submitted = frappe.call("slow_ai.api.templates.submit_template_for_review", template=template)
+    if status == "IN_REVIEW":
+        return submitted
+    if status == "REJECTED":
+        return frappe.call(
+            "slow_ai.api.templates.reject_template",
+            template=template,
+            rejection_reason="Public tool rejected fixture.",
+        )
+    approved = frappe.call(
+        "slow_ai.api.templates.approve_template",
+        template=template,
+        review_notes="Public tool approved fixture.",
+    )
+    if status == "PUBLISHED":
+        return approved
+    if status == "ARCHIVED":
+        return frappe.call("slow_ai.api.templates.archive_template", template=template, reason="Public tool archived fixture.")
+    frappe.throw(f"Unsupported template fixture status: {status}")
 
 
 def create_text_tool_run(user: str, title: str = "Public Tool Run"):
@@ -385,7 +410,7 @@ class TestPublicToolPage(FrappeTestCase):
             layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
         )
 
-        with self.assertRaises(frappe.PermissionError):
+        with self.assertRaises(frappe.ValidationError):
             frappe.call(
                 "slow_ai.api.templates.save_template",
                 template=draft["name"],

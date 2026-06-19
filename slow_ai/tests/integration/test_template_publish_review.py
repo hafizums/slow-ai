@@ -194,6 +194,64 @@ class TestTemplatePublishReview(FrappeTestCase):
         self.assertEqual(prepared["nodes"][0]["config"]["text"], "Approved public prompt")
         self.assertEqual(before, side_effect_counts())
 
+    def test_save_template_cannot_directly_set_review_controlled_statuses(self):
+        before = side_effect_counts()
+
+        frappe.set_user("Administrator")
+        for status in ("IN_REVIEW", "PUBLISHED", "ARCHIVED"):
+            with self.assertRaises(frappe.ValidationError):
+                frappe.call(
+                    "slow_ai.api.templates.save_template",
+                    template_name=unique(f"Direct {status}"),
+                    status=status,
+                    category="Review",
+                    description="Direct lifecycle bypass fixture",
+                    nodes=json.dumps(text_nodes()),
+                    edges=json.dumps(text_edges()),
+                    layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+                    input_schema_json=json.dumps(safe_input_schema()),
+                )
+
+        draft = save_draft_template(unique("Review Direct Update"), self.owner)
+        for status in ("IN_REVIEW", "PUBLISHED", "ARCHIVED"):
+            with self.assertRaises(frappe.ValidationError):
+                frappe.call(
+                    "slow_ai.api.templates.save_template",
+                    template=draft["name"],
+                    template_name=draft["template_name"],
+                    status=status,
+                    category="Review",
+                    description="Direct lifecycle update bypass fixture",
+                    nodes=json.dumps(draft["nodes"]),
+                    edges=json.dumps(draft["edges"]),
+                    layout=json.dumps(draft["layout"]),
+                    input_schema_json=json.dumps(draft["input_schema"]),
+                )
+
+        self.assertEqual(before, side_effect_counts())
+
+    def test_owner_cannot_directly_save_non_draft_lifecycle_status(self):
+        draft = save_draft_template(unique("Owner Direct Review"), self.owner)
+        before = side_effect_counts()
+
+        frappe.set_user(self.owner)
+        for status in ("IN_REVIEW", "PUBLISHED", "ARCHIVED", "REJECTED"):
+            with self.assertRaises(frappe.ValidationError):
+                frappe.call(
+                    "slow_ai.api.templates.save_template",
+                    template=draft["name"],
+                    template_name=draft["template_name"],
+                    status=status,
+                    category="Review",
+                    description="Owner direct lifecycle bypass fixture",
+                    nodes=json.dumps(draft["nodes"]),
+                    edges=json.dumps(draft["edges"]),
+                    layout=json.dumps(draft["layout"]),
+                    input_schema_json=json.dumps(draft["input_schema"]),
+                )
+
+        self.assertEqual(before, side_effect_counts())
+
     def test_non_owner_cannot_submit_another_users_draft(self):
         draft = save_draft_template(unique("Review Ownership"), self.owner)
 

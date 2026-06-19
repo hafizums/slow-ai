@@ -320,6 +320,8 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("Reject", page.script)
         self.assertIn("Archive", page.script)
         self.assertIn("Save Current Workflow as Template", page.script)
+        self.assertIn('options: "DRAFT"', page.script)
+        self.assertNotIn('options: "DRAFT\\nPUBLISHED\\nARCHIVED"', page.script)
         self.assertIn("Load Template Preview", page.script)
         self.assertIn("Create Workflow from Template", page.script)
         self.assertIn("frappe.prompt", page.script)
@@ -468,14 +470,14 @@ class TestCanvasPlaceholder(FrappeTestCase):
         template = frappe.call(
             "slow_ai.api.templates.save_template",
             template_name=unique("Canvas Template"),
-            status="PUBLISHED",
+            status="DRAFT",
             category="Canvas",
             description="Canvas template library test",
             nodes=json.dumps(canvas_nodes()),
             edges=json.dumps(canvas_edges()),
             layout=json.dumps({"nodes": [{"id": "image_1", "x": 376, "y": 128}]}),
         )
-        listed = frappe.call("slow_ai.api.templates.list_templates", status="PUBLISHED", category="Canvas")
+        listed = frappe.call("slow_ai.api.templates.list_templates", status="DRAFT", category="Canvas")
         loaded = frappe.call("slow_ai.api.templates.get_template", template=template["name"])
         created = frappe.call(
             "slow_ai.api.templates.create_workflow_from_template",
@@ -522,7 +524,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
         template = frappe.call(
             "slow_ai.api.templates.save_template",
             template_name=unique("Canvas Tool Template"),
-            status="PUBLISHED",
+            status="DRAFT",
             category="Tool",
             description="Canvas Tool Mode template",
             nodes=json.dumps(tool_mode_nodes("Template prompt")),
@@ -562,7 +564,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
         template = frappe.call(
             "slow_ai.api.templates.save_template",
             template_name=unique("Canvas Tool Provider Template"),
-            status="PUBLISHED",
+            status="DRAFT",
             category="Tool",
             description="Provider template preflight test",
             nodes=json.dumps(
@@ -652,7 +654,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
         template = frappe.call(
             "slow_ai.api.templates.save_template",
             template_name=unique("Canvas Tool Upload Template"),
-            status="PUBLISHED",
+            status="DRAFT",
             category="Tool",
             description="Tool Mode upload asset template",
             nodes=json.dumps(tool_mode_upload_nodes(placeholder["name"])),

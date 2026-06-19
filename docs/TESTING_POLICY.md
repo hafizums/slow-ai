@@ -235,7 +235,8 @@ rejects provider templates before ProviderJob creation, verifies rerun
 preparation creates a new editable draft from the original recorded immutable
 template version while copying only schema-safe prefilled values, verifies rerun
 draft edits persist only through schema-allowed backend fields before
-`start_run`, and verifies upload
+`start_run`, verifies historical no-schema rerun edits use only the legacy
+public tool allow-list with asset project access checks, and verifies upload
 asset inputs and previews use real persisted `AI Asset` records. It
 also covers the Tool Run Library by proving normal users see only owned-project
 runs, System Managers can see all runs, run detail payloads strip provider

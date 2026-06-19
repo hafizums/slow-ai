@@ -229,10 +229,21 @@ slow_ai.api.public_tools.update_rerun_draft_values
 ```
 
 The rerun draft update API may update only schema-allowed fields on the
-prepared rerun draft. Unknown fields and provider/model/provider account/API
-key/raw request/raw response/raw error fields must be rejected. It must use the
-same backend `input_schema_json` validation and asset/project access checks as
-normal public tool preparation.
+prepared rerun draft. For historical template versions without
+`input_schema_json`, it may update only the existing legacy public tool
+allow-list:
+
+```txt
+text_prompt.text
+upload_asset.asset
+upload_asset.asset_type
+```
+
+Unknown fields and provider/model/provider account/API key/raw request/raw
+response/raw error fields must be rejected. Schema-based updates must use the
+same backend `input_schema_json` validation as normal public tool preparation.
+Legacy no-schema upload asset updates must resolve assets through the safe
+asset view path and enforce project access.
 
 Rerun draft updates must not create immutable workflow versions, workflow runs,
 node runs, provider jobs, assets, credit ledger rows, enqueue workers, or call

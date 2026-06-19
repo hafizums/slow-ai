@@ -162,9 +162,11 @@ def update_rerun_draft_values(
     input_schema = payload.get("input_schema") or []
     submitted = _loads_json(values, {})
     if not input_schema:
-        if submitted:
-            frappe.throw("This rerun draft has no schema fields to update.", frappe.ValidationError)
-        nodes = _loads_json(doc.draft_nodes_json, [])
+        nodes = apply_legacy_public_tool_values(
+            nodes=_loads_json(doc.draft_nodes_json, []),
+            values=submitted,
+            project=doc.project,
+        )
     else:
         nodes = apply_input_values(
             nodes=_loads_json(doc.draft_nodes_json, []),

@@ -724,6 +724,151 @@ class TestPublicToolPage(FrappeTestCase):
                 values={"prompt": "Too late", "style": "natural", "steps": 2},
             )
 
+    def test_legacy_no_schema_rerun_edit_uses_legacy_allow_list(self):
+        text_template = save_template(
+            unique("Legacy Text Rerun Tool"),
+            "PUBLISHED",
+            text_tool_nodes("Legacy default"),
+            text_tool_edges(),
+        )
+        project = create_project(self.user)
+
+        frappe.set_user(self.user)
+        text_saved = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
+            template=text_template["name"],
+            project=project.name,
+            title="Legacy Text Source",
+            values={"prompt_1": {"text": "Legacy source prompt"}},
+        )
+        text_run = frappe.call("slow_ai.api.runs.start_run", workflow=text_saved["name"])
+        run_workflow(text_run["workflow_run"])
+
+        text_counts_before_update = lineage_side_effect_counts()
+        text_rerun = frappe.call("slow_ai.api.public_tools.prepare_rerun_from_run", workflow_run=text_run["workflow_run"])
+        text_draft = text_rerun["workflow"]
+        updated_text = frappe.call(
+            "slow_ai.api.public_tools.update_rerun_draft_values",
+            workflow=text_draft["name"],
+            values={"prompt_1": {"text": "Edited legacy prompt"}},
+        )
+        text_prompt_node = next(node for node in updated_text["nodes"] if node["id"] == "prompt_1")
+
+        self.assertEqual(text_prompt_node["config"]["text"], "Edited legacy prompt")
+        self.assertEqual(updated_text["source_template"], text_template["name"])
+        self.assertEqual(updated_text["source_template_version"], text_rerun["template"]["template_version"])
+        for doctype, count in text_counts_before_update.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.update_rerun_draft_values",
+                workflow=text_draft["name"],
+                values={"prompt_1": {"provider_account": "forbidden-account"}},
+            )
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.update_rerun_draft_values",
+                workflow=text_draft["name"],
+                values={"prompt_1": {"model": "forbidden-model"}},
+            )
+
+        text_started = frappe.call("slow_ai.api.runs.start_run", workflow=text_draft["name"])
+        text_version_nodes = json.loads(frappe.db.get_value("AI Workflow Version", text_started["workflow_version"], "nodes_json"))
+        text_version_prompt = next(node for node in text_version_nodes if node["id"] == "prompt_1")
+        text_run_lineage = frappe.db.get_value(
+            "AI Workflow Run",
+            text_started["workflow_run"],
+            ["source_template", "source_template_version"],
+            as_dict=True,
+        )
+        self.assertEqual(text_version_prompt["config"]["text"], "Edited legacy prompt")
+        self.assertEqual(text_run_lineage.source_template, text_template["name"])
+        self.assertEqual(text_run_lineage.source_template_version, text_rerun["template"]["template_version"])
+
+        original_asset = frappe.call(
+            "slow_ai.api.assets.upload",
+            project=project.name,
+            asset_type="IMAGE",
+            url="https://example.invalid/legacy-rerun-original.png",
+            mime_type="image/png",
+            metadata={"origin": "legacy-rerun-original"},
+        )
+        replacement_asset = frappe.call(
+            "slow_ai.api.assets.upload",
+            project=project.name,
+            asset_type="IMAGE",
+            url="https://example.invalid/legacy-rerun-replacement.png",
+            mime_type="image/png",
+            metadata={"origin": "legacy-rerun-replacement"},
+        )
+
+        frappe.set_user(self.previous_user)
+        other_user = ensure_user(f"slow.ai.public.asset.other.{uuid4().hex[:8]}@example.test")
+        other_project = create_project(other_user)
+        frappe.set_user(other_user)
+        inaccessible_asset = frappe.call(
+            "slow_ai.api.assets.upload",
+            project=other_project.name,
+            asset_type="IMAGE",
+            url="https://example.invalid/legacy-rerun-inaccessible.png",
+            mime_type="image/png",
+            metadata={"origin": "legacy-rerun-inaccessible"},
+        )
+
+        frappe.set_user(self.previous_user)
+        upload_template = save_template(
+            unique("Legacy Upload Rerun Tool"),
+            "PUBLISHED",
+            upload_tool_nodes(original_asset["name"]),
+            upload_tool_edges(),
+        )
+
+        frappe.set_user(self.user)
+        upload_saved = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
+            template=upload_template["name"],
+            project=project.name,
+            title="Legacy Upload Source",
+            values={"asset_1": {"asset": original_asset["name"]}},
+        )
+        upload_run = frappe.call("slow_ai.api.runs.start_run", workflow=upload_saved["name"])
+        run_workflow(upload_run["workflow_run"])
+        upload_rerun = frappe.call("slow_ai.api.public_tools.prepare_rerun_from_run", workflow_run=upload_run["workflow_run"])
+        upload_draft = upload_rerun["workflow"]
+
+        upload_counts_before_update = lineage_side_effect_counts()
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call(
+                "slow_ai.api.public_tools.update_rerun_draft_values",
+                workflow=upload_draft["name"],
+                values={"asset_1": {"asset": inaccessible_asset["name"]}},
+            )
+        updated_upload = frappe.call(
+            "slow_ai.api.public_tools.update_rerun_draft_values",
+            workflow=upload_draft["name"],
+            values={"asset_1": {"asset": replacement_asset["name"], "asset_type": "IMAGE"}},
+        )
+        upload_asset_node = next(node for node in updated_upload["nodes"] if node["id"] == "asset_1")
+
+        self.assertEqual(upload_asset_node["config"]["asset"], replacement_asset["name"])
+        self.assertEqual(upload_asset_node["config"]["asset_type"], "IMAGE")
+        for doctype, count in upload_counts_before_update.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+
+        upload_started = frappe.call("slow_ai.api.runs.start_run", workflow=upload_draft["name"])
+        upload_version_nodes = json.loads(frappe.db.get_value("AI Workflow Version", upload_started["workflow_version"], "nodes_json"))
+        upload_version_asset = next(node for node in upload_version_nodes if node["id"] == "asset_1")
+        upload_run_lineage = frappe.db.get_value(
+            "AI Workflow Run",
+            upload_started["workflow_run"],
+            ["source_template", "source_template_version"],
+            as_dict=True,
+        )
+        self.assertEqual(upload_version_asset["config"]["asset"], replacement_asset["name"])
+        self.assertEqual(upload_run_lineage.source_template, upload_template["name"])
+        self.assertEqual(upload_run_lineage.source_template_version, upload_rerun["template"]["template_version"])
+
     def test_run_library_scopes_normal_users_to_owned_project_runs(self):
         other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")
         own = create_text_tool_run(self.user, title="Own Public Tool Run")

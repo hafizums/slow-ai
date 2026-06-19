@@ -616,6 +616,45 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const rerunStarted = await apiJson(await startRerunResponse);
 	expect(rerunStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
 
+	const legacyTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
+	await page
+		.locator(`[data-template-name="${fixtures.public_legacy_template}"]`)
+		.getByRole("button", { name: "Select" })
+		.click();
+	const legacyTemplate = await apiJson(await legacyTemplateResponse);
+	expect(legacyTemplate.message.name).toBe(fixtures.public_legacy_template);
+	await expect(page.locator("[data-role='template-detail']")).toContainText(fixtures.public_legacy_template_label);
+	await page.locator("textarea[data-node-id='prompt_1'][data-config-field='text']").fill(fixtures.public_legacy_prompt);
+
+	const prepareLegacyResponse = page.waitForResponse(apiPredicate(API.publicPrepareWorkflowFromTemplate));
+	const startLegacyResponse = page.waitForResponse(apiPredicate(API.startRun));
+	const legacyRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
+	await page.locator("[data-action='run-tool']").click();
+	const preparedLegacy = await apiJson(await prepareLegacyResponse);
+	const preparedLegacyPrompt = preparedLegacy.message.nodes.find((node) => node.id === "prompt_1");
+	expect(preparedLegacyPrompt.config.text).toBe(fixtures.public_legacy_prompt);
+	const startedLegacy = await apiJson(await startLegacyResponse);
+	expect(startedLegacy.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+	await apiJson(await legacyRunDetailResponse);
+
+	const legacyRerunDraftResponse = page.waitForResponse(apiPredicate(API.publicPrepareRerunFromRun));
+	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Rerun" }).click();
+	const legacyRerunDraft = await apiJson(await legacyRerunDraftResponse);
+	expect(legacyRerunDraft.message.workflow.source_template_version).toBe(legacyTemplate.message.template_version);
+	await expect(page.locator("[data-role='status']")).toContainText("Rerun draft ready");
+	const editedLegacyPrompt = `${fixtures.public_legacy_prompt} edited`;
+	await page.locator("textarea[data-node-id='prompt_1'][data-config-field='text']").fill(editedLegacyPrompt);
+	const updateLegacyRerunResponse = page.waitForResponse(apiPredicate(API.publicUpdateRerunDraftValues));
+	const startLegacyRerunResponse = page.waitForResponse(apiPredicate(API.startRun));
+	await page.locator("[data-action='run-tool']").click();
+	const updatedLegacyRerun = await apiJson(await updateLegacyRerunResponse);
+	const updatedLegacyPrompt = updatedLegacyRerun.message.nodes.find((node) => node.id === "prompt_1");
+	expect(updatedLegacyRerun.message.name).toBe(legacyRerunDraft.message.workflow.name);
+	expect(updatedLegacyRerun.message.source_template_version).toBe(legacyTemplate.message.template_version);
+	expect(updatedLegacyPrompt.config.text).toBe(editedLegacyPrompt);
+	const legacyRerunStarted = await apiJson(await startLegacyRerunResponse);
+	expect(legacyRerunStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+
 	const uploadTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page
 		.locator(`[data-template-name="${fixtures.public_upload_template}"]`)

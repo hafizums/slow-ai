@@ -174,13 +174,22 @@ Returns: updated workflow draft payload
 
 `update_rerun_draft_values` requires logged-in project edit access, a rerun
 draft with valid template-version lineage, and no existing `AI Workflow Run` for
-that workflow. It reloads the recorded immutable template version, then applies
-submitted values only through that version's `input_schema_json`.
+that workflow. It reloads the recorded immutable template version. When the
+version has `input_schema_json`, submitted values are applied only through that
+schema. Historical no-schema versions use the existing legacy public tool
+allow-list only:
+
+```txt
+text_prompt.text
+upload_asset.asset
+upload_asset.asset_type
+```
 
 Unknown fields and unsafe targets such as provider, model, provider account,
 API key, raw request, raw response, or raw error fields must be rejected by the
 same backend template input validation used by
-`prepare_workflow_from_template`.
+`prepare_workflow_from_template`. Legacy no-schema upload asset edits must
+resolve through the safe asset view path and enforce project access.
 
 The method must not call providers, enqueue workers, create `AI Workflow
 Version`, `AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`, or

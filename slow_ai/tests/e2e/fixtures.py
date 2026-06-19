@@ -56,6 +56,7 @@ def setup_canvas_e2e() -> dict:
     tool_template = _create_tool_template()
     upload_template = _create_upload_template(placeholder_asset["name"])
     public_tool_template = _create_tool_template(prefix="Browser E2E Public Text Tool")
+    public_legacy_template = _create_legacy_tool_template(prefix="Browser E2E Public Legacy Text Tool")
     public_upload_template = _create_upload_template(
         public_tool_asset["name"],
         prefix="Browser E2E Public Upload Tool",
@@ -79,6 +80,9 @@ def setup_canvas_e2e() -> dict:
         "public_tool_project": public_tool_project.name,
         "public_tool_template": public_tool_template["name"],
         "public_tool_template_label": public_tool_template["template_name"],
+        "public_legacy_template": public_legacy_template["name"],
+        "public_legacy_template_label": public_legacy_template["template_name"],
+        "public_legacy_prompt": f"Public Legacy Prompt {uuid4().hex[:8]}",
         "public_review_template": review_template["name"],
         "public_review_template_label": review_template["template_name"],
         "public_rejected_template": rejected_template["name"],
@@ -292,6 +296,52 @@ def _create_tool_template(prefix: str = "Browser E2E Text Tool", status: str = "
                 },
             ]
         ),
+    )
+    return _transition_template_fixture(template["name"], status)
+
+
+def _create_legacy_tool_template(prefix: str = "Browser E2E Legacy Text Tool", status: str = "PUBLISHED") -> dict:
+    template = frappe.call(
+        "slow_ai.api.templates.save_template",
+        template_name=_unique(prefix),
+        status="DRAFT",
+        category="Browser E2E",
+        description="Browser E2E legacy no-schema text prompt Tool Mode template",
+        nodes=json.dumps(
+            [
+                {
+                    "id": "prompt_1",
+                    "type": "text_prompt",
+                    "label": "Prompt",
+                    "position": {"x": 96, "y": 128},
+                    "config": {"text": "Legacy template prompt"},
+                },
+                {
+                    "id": "tool_output_1",
+                    "type": "tool_output",
+                    "label": "Tool Output",
+                    "position": {"x": 376, "y": 128},
+                    "config": {
+                        "output_name": "answer",
+                        "description": "Legacy text output",
+                        "schema": {"type": "string"},
+                    },
+                },
+            ]
+        ),
+        edges=json.dumps(
+            [
+                {
+                    "id": "edge_1",
+                    "source": "prompt_1",
+                    "source_port": "text",
+                    "target": "tool_output_1",
+                    "target_port": "text",
+                }
+            ]
+        ),
+        layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+        input_schema_json=json.dumps([]),
     )
     return _transition_template_fixture(template["name"], status)
 

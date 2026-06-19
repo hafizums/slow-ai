@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
+
 import frappe
 
 from slow_ai.domain.status import (
     NODE_TERMINAL_STATUSES,
     PROVIDER_JOB_TERMINAL_STATUSES,
+    WORKFLOW_TERMINAL_STATUSES,
     NodeRunStatus,
     ProviderJobStatus,
     WorkflowRunStatus,
@@ -15,6 +18,7 @@ from slow_ai.infrastructure.provider_jobs import ProviderJobRepository
 from slow_ai.infrastructure.provider_outputs import ProviderOutputService
 from slow_ai.infrastructure.queue import FrappeWorkflowQueue
 from slow_ai.infrastructure.repositories import FrappeEngineRepository
+from slow_ai.providers.contracts import NormalizedProviderResult
 from slow_ai.providers.registry import ProviderRegistry, create_default_provider_registry
 
 
@@ -81,10 +85,32 @@ def poll_provider_job(
     provider_jobs = ProviderJobRepository()
     provider_job = provider_jobs.get(provider_job_name)
     workflow_run = frappe.db.get_value("AI Node Run", provider_job.node_run, "workflow_run") if provider_job.node_run else None
-    if workflow_run and frappe.db.get_value("AI Workflow Run", workflow_run, "status") == WorkflowRunStatus.CANCELLED.value:
+    workflow_status = frappe.db.get_value("AI Workflow Run", workflow_run, "status") if workflow_run else None
+    if workflow_status == WorkflowRunStatus.CANCELLED.value:
         return _stop_polling_cancelled_run(provider_job, workflow_run, provider_jobs)
+    if workflow_status and WorkflowRunStatus(workflow_status) in WORKFLOW_TERMINAL_STATUSES:
+        return {
+            "provider_job": provider_job_name,
+            "status": provider_job.status,
+            "external_job_id": provider_job.external_job_id,
+            "queue_job_id": None,
+        }
 
     registry = provider_registry or create_default_provider_registry()
+    if ProviderJobStatus(provider_job.status) in PROVIDER_JOB_TERMINAL_STATUSES:
+        queue_job_id = _recover_terminal_provider_job(
+            provider_job,
+            workflow_run,
+            registry,
+            enqueue_resume=enqueue_resume,
+        )
+        return {
+            "provider_job": provider_job_name,
+            "status": provider_job.status,
+            "external_job_id": provider_job.external_job_id,
+            "queue_job_id": queue_job_id,
+        }
+
     result = registry.get(provider_job.provider).poll_job(provider_job.name)
     provider_job = provider_jobs.get(provider_job_name)
 
@@ -93,7 +119,12 @@ def poll_provider_job(
         _update_waiting_node_from_provider_result(provider_job, result, workflow_run)
 
     target_status = ProviderJobStatus(result.status)
-    if enqueue_resume and target_status in PROVIDER_JOB_TERMINAL_STATUSES and provider_job.node_run:
+    if (
+        enqueue_resume
+        and target_status in PROVIDER_JOB_TERMINAL_STATUSES
+        and provider_job.node_run
+        and _workflow_can_resume(workflow_run)
+    ):
         if workflow_run:
             queue_job_id = FrappeWorkflowQueue().enqueue_workflow_run(workflow_run)
         else:
@@ -107,6 +138,50 @@ def poll_provider_job(
         "external_job_id": result.external_job_id,
         "queue_job_id": queue_job_id,
     }
+
+
+def _recover_terminal_provider_job(
+    provider_job,
+    workflow_run: str | None,
+    registry: ProviderRegistry,
+    *,
+    enqueue_resume: bool,
+) -> str | None:
+    if not provider_job.node_run or not workflow_run:
+        return None
+    node_status = frappe.db.get_value("AI Node Run", provider_job.node_run, "status")
+    if node_status != NodeRunStatus.WAITING_PROVIDER.value:
+        return None
+
+    result = _result_from_terminal_provider_job(provider_job, registry)
+    _update_waiting_node_from_provider_result(provider_job, result, workflow_run)
+    if enqueue_resume and ProviderJobStatus(provider_job.status) in PROVIDER_JOB_TERMINAL_STATUSES:
+        if _workflow_can_resume(workflow_run):
+            return FrappeWorkflowQueue().enqueue_workflow_run(workflow_run)
+    return None
+
+
+def _result_from_terminal_provider_job(provider_job, registry: ProviderRegistry) -> NormalizedProviderResult:
+    raw_response = _loads_json(provider_job.response_json, {})
+    if raw_response:
+        result = registry.get(provider_job.provider).normalize_result(raw_response)
+        if result.status == provider_job.status:
+            return result
+    return NormalizedProviderResult(
+        status=provider_job.status,
+        external_job_id=provider_job.external_job_id,
+        cost_usd=float(provider_job.cost_usd or 0),
+        error=_loads_json(provider_job.raw_error_json, None),
+    )
+
+
+def _workflow_can_resume(workflow_run: str | None) -> bool:
+    if not workflow_run:
+        return False
+    status = frappe.db.get_value("AI Workflow Run", workflow_run, "status")
+    if not status:
+        return False
+    return WorkflowRunStatus(status) not in WORKFLOW_TERMINAL_STATUSES
 
 
 def _stop_polling_cancelled_run(provider_job, workflow_run: str, provider_jobs: ProviderJobRepository) -> dict:
@@ -176,3 +251,9 @@ def _update_waiting_node_from_provider_result(provider_job, result, workflow_run
             error=result.error or {"message": f"Provider job ended with status {result.status}."},
             provider_job_name=provider_job.name,
         )
+
+
+def _loads_json(value: str | None, default):
+    if not value:
+        return default
+    return json.loads(value)

@@ -156,6 +156,20 @@ provider job through the worker entrypoint, verifies idempotent `AI Asset` and
 outputs. It uses a deterministic provider adapter inside the provider contract
 boundary and does not make external provider calls in the normal suite.
 
+Run idempotency and recovery coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_idempotency_recovery.py
+```
+
+This test creates real workflows, runs, node runs, provider jobs, provider
+accounts, assets, and ledger rows. It verifies duplicate `start_run` calls reuse
+a recent active run for an unchanged draft, worker/node/resume retries do not
+duplicate side-effect records, provider-node retries reuse the provider-job
+idempotency key, repeated provider polling creates no duplicate assets or
+debits, terminal runs remain terminal, and public run detail payloads do not
+expose raw provider request/response/error data or provider account names.
+
 Task 10 adds canvas placeholder coverage with:
 
 ```txt

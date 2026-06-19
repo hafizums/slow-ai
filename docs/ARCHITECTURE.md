@@ -281,7 +281,10 @@ normalized provider result reaches `SUCCEEDED`. The service creates or reuses
 when the provider result has a non-zero cost.
 
 The service is idempotent by persisted source links. Re-polling a completed
-provider job must not duplicate assets or ledger rows.
+provider job must not duplicate assets or ledger rows. Provider output assets
+are reused per `AI Provider Job` and `provider_output_index`, so partial retry
+recovery can create only missing output assets. Provider debits are reused per
+`AI Provider Job` `DEBIT` ledger row.
 
 ## Task 10 canvas placeholder
 

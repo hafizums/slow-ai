@@ -20,6 +20,10 @@ from slow_ai.providers.contracts import NormalizedProviderResult, ProviderJobReq
 
 class ProviderJobRepository:
     def create_queued_job(self, request: ProviderJobRequest) -> str:
+        if request.idempotency_key:
+            existing = self.get_by_idempotency_key(request.idempotency_key)
+            if existing:
+                return existing
         provider_account_name = self._resolve_provider_account(
             request.provider,
             request.provider_account_name,

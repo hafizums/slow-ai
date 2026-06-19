@@ -20,6 +20,7 @@
 | Worker execution | Worker + engine | Yes | No | Yes | No | Node Runs, Assets | bench --site saas run-tests --app slow_ai |
 | Workers + realtime | Worker entrypoints + Frappe realtime log | Yes | No | Yes | No | Run/Node/Provider status events, scheduled provider polling batch | bench --site saas run-tests --app slow_ai |
 | Asset and ledger pipeline | Provider poll worker + output materialization | Yes | No | Yes | No | Provider Job with estimate, Asset, actual-or-estimated Ledger, resumed downstream output | bench --site saas run-tests --app slow_ai |
+| Run idempotency recovery | start_run + worker/resume/poller retry boundaries | Yes | Yes | Yes | No | Recent duplicate starts reuse Version/Run/Node Runs, provider retries reuse Provider Job idempotency key, repeated polls reuse Assets and Ledger DEBIT, terminal runs remain terminal, public payloads stay safe | bench --site saas run-tests --app slow_ai |
 | Canvas placeholder | Frappe Desk Page + API-only workflow flow | Yes | Yes | No | No | Page asset, Workflow, Version, Run, Node Runs, Asset view | bench --site saas run-tests --app slow_ai |
 | Canvas run safety | Frappe Desk Page + safe model metadata API | Yes | Yes | No | No | Provider-node confirmation text, public model pricing metadata, backend-only start_run path | bench --site saas run-tests --app slow_ai |
 | Object info node palette | Frappe Desk Page + object_info metadata | Yes | Yes | No | No | Metadata categories, schema summaries, Add Node action, backend preflight on provider run | bench --site saas run-tests --app slow_ai |

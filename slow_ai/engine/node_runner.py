@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Mapping
 
-from slow_ai.domain.status import NodeRunStatus
+from slow_ai.domain.status import NODE_TERMINAL_STATUSES, NodeRunStatus
 from slow_ai.domain.workflow_graph import WorkflowNode
 from slow_ai.engine.state_machine import transition_node_run
 from slow_ai.infrastructure.repositories import FrappeEngineRepository
@@ -33,6 +34,12 @@ class NodeRunner:
         definition = self.node_registry.get(node.type)
         runtime_inputs = _merge_configured_inputs(definition.input_schema(), node.config, inputs)
         current_status = NodeRunStatus(node_run.status)
+        if current_status in NODE_TERMINAL_STATUSES:
+            return NodeExecutionResult(
+                outputs=_loads_json(node_run.output_json, {}),
+                cost_usd=float(node_run.cost_usd or 0),
+                provider_job_name=node_run.provider_job,
+            )
         if current_status == NodeRunStatus.PENDING:
             ready_status = transition_node_run(current_status, NodeRunStatus.READY)
             self.repository.set_node_status(node_run.name, ready_status, inputs=runtime_inputs)
@@ -93,3 +100,9 @@ def _merge_configured_inputs(
         if port_name not in runtime_inputs and port_name in config:
             runtime_inputs[port_name] = config[port_name]
     return runtime_inputs
+
+
+def _loads_json(value: str | None, default: Any) -> Any:
+    if not value:
+        return default
+    return json.loads(value)

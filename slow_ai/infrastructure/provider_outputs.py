@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
@@ -73,12 +74,16 @@ class AssetWriter:
         provider_job_name: str,
         outputs: tuple[NormalizedProviderOutput, ...],
     ) -> tuple[str, ...]:
-        existing = self.get_provider_assets(provider_job_name)
-        if existing:
-            return existing
+        existing_by_index = self.get_provider_assets_by_output_index(provider_job_name)
+        if existing_by_index is None:
+            return self.get_provider_assets(provider_job_name)
 
         asset_names: list[str] = []
         for index, output in enumerate(outputs, start=1):
+            existing_asset = existing_by_index.get(index)
+            if existing_asset:
+                asset_names.append(existing_asset)
+                continue
             metadata: dict[str, Any] = dict(output.metadata)
             metadata["provider_output_index"] = index
             asset_names.append(
@@ -115,6 +120,26 @@ class AssetWriter:
             order_by="creation asc",
         )
         return tuple(row.name for row in rows)
+
+    def get_provider_assets_by_output_index(self, provider_job_name: str) -> dict[int, str] | None:
+        rows = frappe.get_all(
+            "AI Asset",
+            filters={"source_provider_job": provider_job_name},
+            fields=["name", "metadata_json"],
+            order_by="creation asc",
+        )
+        assets_by_index: dict[int, str] = {}
+        for row in rows:
+            metadata = _loads_json(row.metadata_json, {})
+            output_index = metadata.get("provider_output_index")
+            if output_index in (None, ""):
+                return None
+            try:
+                index = int(output_index)
+            except (TypeError, ValueError):
+                return None
+            assets_by_index.setdefault(index, row.name)
+        return assets_by_index
 
 
 class CreditLedgerService:
@@ -344,6 +369,12 @@ def _as_decimal_or_zero(value: Any | None) -> Decimal:
     except (InvalidOperation, ValueError):
         return Decimal("0")
     return amount if amount > 0 else Decimal("0")
+
+
+def _loads_json(value: str | None, default: Any) -> Any:
+    if not value:
+        return default
+    return json.loads(value)
 
 
 def _primary_asset_name(

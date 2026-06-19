@@ -23,13 +23,24 @@ Do not keep one worker sleeping for many minutes.
 
 ## Idempotency policy
 
-Before submitting an external job:
+Run creation and worker execution must tolerate retries:
 
 ```txt
-Check if provider job already exists for node_run and attempt
-If submitted, poll instead of resubmitting
-If unknown, recover from persisted provider job state
+start_run reuses a recent active run for the same unchanged workflow draft
+node run creation reuses existing node rows for the same workflow run/node id
+terminal workflow runs are worker no-ops
+terminal node runs are node-worker no-ops
+provider job creation reuses the node-run idempotency key
+terminal provider job polling returns persisted state and does not call providers
+asset materialization reuses existing provider output assets by output index
+ledger debit creation reuses the existing provider-job DEBIT row
 ```
+
+This policy prevents duplicate `AI Workflow Version`, `AI Workflow Run`,
+`AI Node Run`, `AI Provider Job`, `AI Asset`, and `AI Credit Ledger` records
+when queue jobs, resume jobs, provider polls, or direct worker invocations are
+retried. A terminal `AI Workflow Run` remains terminal even when worker or
+resume entrypoints are called again.
 
 ## Failure policy
 

@@ -121,6 +121,14 @@ Returns: workflow_version, workflow_run, node_runs, queue_job_id
 enqueueing a worker, it runs server-side preflight policy through
 `slow_ai.application.run_preflight` for provider-node workflows.
 
+If the same unchanged workflow draft is submitted again within the short
+server-side idempotency window while a matching run is still `QUEUED`,
+`RUNNING`, or `WAITING_PROVIDER`, `start_run` returns the existing immutable
+workflow version, workflow run, and node run names instead of creating duplicate
+records. A queued duplicate may re-enqueue the same workflow-run job id for
+recovery. Terminal runs are not reused, so an intentional later rerun can create
+a new immutable version/run through the same API.
+
 Preflight rejection must happen before creating `AI Workflow Version`,
 `AI Workflow Run`, `AI Node Run`, or `AI Provider Job` records. It must not call
 providers.

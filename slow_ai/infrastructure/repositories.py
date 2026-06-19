@@ -97,8 +97,18 @@ class FrappeWorkflowRunRepository:
 class FrappeNodeRunRepository:
     def create_node_runs(self, workflow_run_name: str, graph: WorkflowGraph) -> tuple[str, ...]:
         nodes = graph.node_by_id()
+        existing_rows = frappe.get_all(
+            "AI Node Run",
+            filters={"workflow_run": workflow_run_name},
+            fields=["name", "node_id"],
+            order_by="creation asc",
+        )
+        existing_by_node_id = {row.node_id: row.name for row in existing_rows}
         node_run_names: list[str] = []
         for node_id in topological_sort(graph):
+            if node_id in existing_by_node_id:
+                node_run_names.append(existing_by_node_id[node_id])
+                continue
             node = nodes[node_id]
             node_run = frappe.get_doc(
                 {

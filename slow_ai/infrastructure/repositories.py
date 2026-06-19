@@ -28,6 +28,8 @@ class FrappeWorkflowDraftRepository:
             nodes=tuple(nodes),
             edges=tuple(edges),
             layout=layout,
+            source_template=getattr(workflow, "source_template", None),
+            source_template_version=getattr(workflow, "source_template_version", None),
         )
 
 
@@ -40,20 +42,23 @@ class FrappeWorkflowVersionRepository:
             "nodes": [node for node in draft.nodes],
             "edges": [edge for edge in draft.edges],
             "layout": draft.layout,
+            "source_template": draft.source_template,
+            "source_template_version": draft.source_template_version,
         }
-        version = frappe.get_doc(
-            {
-                "doctype": "AI Workflow Version",
-                "workflow": draft.name,
-                "version_no": version_no,
-                "snapshot_hash": snapshot_hash(snapshot),
-                "created_by": frappe.session.user,
-                "created_at": now_datetime(),
-                "nodes_json": canonical_json([node for node in draft.nodes]),
-                "edges_json": canonical_json([edge for edge in draft.edges]),
-                "layout_json": canonical_json(draft.layout),
-            }
-        ).insert(ignore_permissions=True)
+        values = {
+            "doctype": "AI Workflow Version",
+            "workflow": draft.name,
+            "version_no": version_no,
+            "snapshot_hash": snapshot_hash(snapshot),
+            "created_by": frappe.session.user,
+            "created_at": now_datetime(),
+            "source_template": draft.source_template,
+            "source_template_version": draft.source_template_version,
+            "nodes_json": canonical_json([node for node in draft.nodes]),
+            "edges_json": canonical_json([edge for edge in draft.edges]),
+            "layout_json": canonical_json(draft.layout),
+        }
+        version = frappe.get_doc(values).insert(ignore_permissions=True)
         frappe.db.set_value("AI Workflow", draft.name, "current_version", version.name)
         return version.name
 
@@ -80,6 +85,8 @@ class FrappeWorkflowRunRepository:
                 "project": workflow.project,
                 "workflow": workflow.name,
                 "workflow_version": version.name,
+                "source_template": getattr(version, "source_template", None),
+                "source_template_version": getattr(version, "source_template_version", None),
                 "status": WorkflowRunStatus.QUEUED.value,
                 "queued_at": now_datetime(),
             }

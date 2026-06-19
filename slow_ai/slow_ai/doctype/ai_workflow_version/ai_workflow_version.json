@@ -10,6 +10,9 @@
   "snapshot_hash",
   "created_by",
   "created_at",
+  "lineage_section",
+  "source_template",
+  "source_template_version",
   "nodes_json",
   "edges_json",
   "layout_json"
@@ -49,6 +52,25 @@
    "fieldname": "created_at",
    "fieldtype": "Datetime",
    "label": "Created At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lineage_section",
+   "fieldtype": "Section Break",
+   "label": "Template Lineage"
+  },
+  {
+   "fieldname": "source_template",
+   "fieldtype": "Link",
+   "label": "Source Template",
+   "options": "AI Workflow Template",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_template_version",
+   "fieldtype": "Link",
+   "label": "Source Template Version",
+   "options": "AI Workflow Template Version",
    "read_only": 1
   },
   {

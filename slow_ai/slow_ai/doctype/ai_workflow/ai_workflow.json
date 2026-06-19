@@ -10,6 +10,9 @@
   "project",
   "status",
   "current_version",
+  "lineage_section",
+  "source_template",
+  "source_template_version",
   "draft_nodes_json",
   "draft_edges_json",
   "layout_json"
@@ -46,6 +49,25 @@
    "fieldtype": "Link",
    "label": "Current Version",
    "options": "AI Workflow Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lineage_section",
+   "fieldtype": "Section Break",
+   "label": "Template Lineage"
+  },
+  {
+   "fieldname": "source_template",
+   "fieldtype": "Link",
+   "label": "Source Template",
+   "options": "AI Workflow Template",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_template_version",
+   "fieldtype": "Link",
+   "label": "Source Template Version",
+   "options": "AI Workflow Template Version",
    "read_only": 1
   },
   {

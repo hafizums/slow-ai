@@ -15,6 +15,8 @@ class WorkflowDraft:
     nodes: tuple[Mapping[str, Any], ...]
     edges: tuple[Mapping[str, Any], ...]
     layout: Mapping[str, Any]
+    source_template: str | None = None
+    source_template_version: str | None = None
 
     def as_workflow_json(self) -> dict[str, Any]:
         return {"nodes": list(self.nodes), "edges": list(self.edges)}

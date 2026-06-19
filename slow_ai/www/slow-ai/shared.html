@@ -208,10 +208,18 @@
 	function render(payload) {
 		const run = payload.run || {};
 		const cost = payload.cost_summary || {};
+		const lineage = run.template_lineage || {};
+		const templateName = lineage.template_name || lineage.source_template || "";
+		const versionLabel = [
+			lineage.version_no ? `Version ${lineage.version_no}` : null,
+			lineage.source_template_version || null,
+		].filter(Boolean).join(" · ");
 		status.textContent = run.status || "Unavailable";
 		title.textContent = run.workflow_title || "Shared Run";
 		meta.innerHTML = `<div class="slow-ai-shared__row"><span>Run</span><strong>${escape(run.workflow_run || "")}</strong></div>
 			<div class="slow-ai-shared__row"><span>Status</span><strong>${escape(run.status || "")}</strong></div>
+			${templateName ? `<div class="slow-ai-shared__row"><span>Template</span><strong>${escape(templateName)}</strong></div>` : ""}
+			${versionLabel ? `<div class="slow-ai-shared__row"><span>Template Version</span><strong>${escape(versionLabel)}</strong></div>` : ""}
 			<div class="slow-ai-shared__row"><span>Completed</span><strong>${escape(run.completed_at || "-")}</strong></div>
 			<div class="slow-ai-shared__row"><span>Cost</span><strong>${escape(money(cost))}</strong></div>`;
 		const gallery = payload.output_gallery || {};

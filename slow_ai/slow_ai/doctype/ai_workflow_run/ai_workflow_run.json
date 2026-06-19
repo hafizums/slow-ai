@@ -8,6 +8,8 @@
   "project",
   "workflow",
   "workflow_version",
+  "source_template",
+  "source_template_version",
   "status",
   "queued_at",
   "started_at",
@@ -40,6 +42,20 @@
    "label": "Workflow Version",
    "options": "AI Workflow Version",
    "reqd": 1
+  },
+  {
+   "fieldname": "source_template",
+   "fieldtype": "Link",
+   "label": "Source Template",
+   "options": "AI Workflow Template",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_template_version",
+   "fieldtype": "Link",
+   "label": "Source Template Version",
+   "options": "AI Workflow Template Version",
+   "read_only": 1
   },
   {
    "default": "QUEUED",

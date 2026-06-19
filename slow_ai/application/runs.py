@@ -9,6 +9,7 @@ import frappe
 
 from slow_ai.application.project_access import assert_can_view_project
 from slow_ai.application.run_service import RunService
+from slow_ai.application.template_lineage import safe_template_lineage
 
 
 def start_run(workflow: str) -> dict[str, Any]:
@@ -40,6 +41,10 @@ def get_run_status(workflow_run: str) -> dict[str, Any]:
         "started_at": run.started_at,
         "completed_at": run.completed_at,
         "error": _loads_json(run.error_json, None),
+        "template_lineage": safe_template_lineage(
+            getattr(run, "source_template", None),
+            getattr(run, "source_template_version", None),
+        ),
         "node_runs": [_row_dict(row) for row in node_runs],
     }
 

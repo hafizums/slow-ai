@@ -24,6 +24,7 @@ from slow_ai.application.project_access import (
 from slow_ai.application.templates import get_published_template
 from slow_ai.application.templates import list_published_templates
 from slow_ai.application.run_outputs import get_run_output_gallery as get_run_output_gallery_service
+from slow_ai.application.template_lineage import safe_template_lineage
 from slow_ai.application.template_inputs import apply_input_values
 from slow_ai.application.template_inputs import apply_legacy_public_tool_values
 from slow_ai.application.workflows import save_workflow
@@ -55,6 +56,8 @@ def create_workflow_from_template(
         edges=payload["edges"],
         layout=payload["layout"],
         status="DRAFT",
+        source_template=payload["template"],
+        source_template_version=payload["template_version"],
     )
 
 
@@ -85,6 +88,8 @@ def prepare_workflow_from_template(
         edges=payload["edges"],
         layout=payload["layout"],
         status="DRAFT",
+        source_template=payload["template"],
+        source_template_version=payload["template_version"],
     )
 
 
@@ -101,6 +106,8 @@ def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str,
             "name",
             "workflow",
             "project",
+            "source_template",
+            "source_template_version",
             "status",
             "queued_at",
             "started_at",
@@ -265,6 +272,10 @@ def _run_summary(row) -> dict[str, Any]:
         "cost_summary": _cost_summary(_ledger_summaries(row.get("name"))),
         "asset_count": frappe.db.count("AI Asset", {"source_workflow_run": row.get("name")}) if row.get("name") else 0,
         "share": _share_summary_for_run(row.get("name")),
+        "template_lineage": safe_template_lineage(
+            row.get("source_template"),
+            row.get("source_template_version"),
+        ),
     }
 
 
@@ -279,6 +290,10 @@ def _public_run_summary(row) -> dict[str, Any]:
         "completed_at": row.get("completed_at"),
         "created": row.get("creation"),
         "modified": row.get("modified"),
+        "template_lineage": safe_template_lineage(
+            row.get("source_template"),
+            row.get("source_template_version"),
+        ),
     }
 
 
@@ -295,6 +310,7 @@ def _public_output_gallery(gallery: dict[str, Any]) -> dict[str, Any]:
             "completed_at": run.get("completed_at"),
             "created": run.get("created"),
             "modified": run.get("modified"),
+            "template_lineage": run.get("template_lineage"),
         },
     }
 

@@ -320,6 +320,17 @@ def create_shareable_asset_run(user: str, title: str = "Shareable Public Tool Ru
     return {**created, "asset": asset, "other_asset": other_asset}
 
 
+def lineage_side_effect_counts():
+    return {
+        "AI Provider Job": frappe.db.count("AI Provider Job"),
+        "AI Asset": frappe.db.count("AI Asset"),
+        "AI Credit Ledger": frappe.db.count("AI Credit Ledger"),
+        "AI Workflow Version": frappe.db.count("AI Workflow Version"),
+        "AI Workflow Run": frappe.db.count("AI Workflow Run"),
+        "AI Node Run": frappe.db.count("AI Node Run"),
+    }
+
+
 class TestPublicToolPage(FrappeTestCase):
     def setUp(self):
         self.previous_user = frappe.session.user
@@ -429,6 +440,7 @@ class TestPublicToolPage(FrappeTestCase):
         provider_jobs_before = frappe.db.count("AI Provider Job")
 
         frappe.set_user(self.user)
+        published = frappe.call("slow_ai.api.public_tools.get_template", template=template["name"])
         saved = frappe.call(
             "slow_ai.api.public_tools.prepare_workflow_from_template",
             template=template["name"],
@@ -440,9 +452,91 @@ class TestPublicToolPage(FrappeTestCase):
         status = frappe.call("slow_ai.api.runs.get_run_status", workflow_run=run["workflow_run"])
 
         self.assertEqual(saved["nodes"][0]["config"]["text"], "Prompt entered on public tool page")
+        self.assertEqual(saved["source_template"], template["name"])
+        self.assertEqual(saved["source_template_version"], published["template_version"])
+        self.assertEqual(saved["template_lineage"]["source_template"], template["name"])
+        self.assertEqual(saved["template_lineage"]["source_template_version"], published["template_version"])
+        self.assertEqual(saved["template_lineage"]["version_no"], published["version_no"])
+        self.assertEqual(saved["template_lineage"]["snapshot_hash"], published["snapshot_hash"])
         self.assertTrue(frappe.db.exists("AI Workflow Version", run["workflow_version"]))
+        version_lineage = frappe.db.get_value(
+            "AI Workflow Version",
+            run["workflow_version"],
+            ["source_template", "source_template_version"],
+            as_dict=True,
+        )
+        run_lineage = frappe.db.get_value(
+            "AI Workflow Run",
+            run["workflow_run"],
+            ["source_template", "source_template_version"],
+            as_dict=True,
+        )
+        self.assertEqual(version_lineage.source_template, template["name"])
+        self.assertEqual(version_lineage.source_template_version, published["template_version"])
+        self.assertEqual(run_lineage.source_template, template["name"])
+        self.assertEqual(run_lineage.source_template_version, published["template_version"])
         self.assertEqual(status["workflow_run"], run["workflow_run"])
+        self.assertEqual(status["template_lineage"]["source_template_version"], published["template_version"])
         self.assertEqual(frappe.db.count("AI Provider Job"), provider_jobs_before)
+
+    def test_template_version_lineage_is_immutable_after_template_edit_and_rollback(self):
+        template = save_template(unique("Lineage Public Tool"), "PUBLISHED", text_tool_nodes("First"), text_tool_edges())
+        project = create_project(self.user)
+
+        frappe.set_user(self.user)
+        published = frappe.call("slow_ai.api.public_tools.get_template", template=template["name"])
+        saved = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
+            template=template["name"],
+            project=project.name,
+            title="Lineage Public Tool Draft",
+            values={"prompt_1": {"text": "Lineage prompt"}},
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
+        run_workflow(run["workflow_run"])
+
+        frappe.set_user(self.previous_user)
+        edited = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template=template["name"],
+            template_name=template["template_name"],
+            status="DRAFT",
+            category=template["category"],
+            description="Edited lineage fixture",
+            nodes=json.dumps(text_tool_nodes("Second")),
+            edges=json.dumps(text_tool_edges()),
+            layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+        )
+        submitted = frappe.call("slow_ai.api.templates.submit_template_for_review", template=edited["name"])
+        approved = frappe.call(
+            "slow_ai.api.templates.approve_template",
+            template=submitted["name"],
+            review_notes="Lineage edit approved.",
+        )
+        rolled_back = frappe.call(
+            "slow_ai.api.templates.rollback_template_to_version",
+            template=template["name"],
+            template_version=published["template_version"],
+            review_notes="Lineage rollback fixture.",
+        )
+        latest_published = frappe.call("slow_ai.api.public_tools.get_template", template=template["name"])
+
+        self.assertNotEqual(approved["published_version"], published["template_version"])
+        self.assertNotEqual(rolled_back["published_version"], published["template_version"])
+        self.assertEqual(latest_published["template_version"], rolled_back["published_version"])
+
+        frappe.set_user(self.user)
+        listed = frappe.call("slow_ai.api.public_tools.list_my_runs", project=project.name)
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=run["workflow_run"])
+        lineage = detail["run"]["template_lineage"]
+
+        self.assertIn(run["workflow_run"], {row["workflow_run"] for row in listed["runs"]})
+        listed_lineage = next(row["template_lineage"] for row in listed["runs"] if row["workflow_run"] == run["workflow_run"])
+        self.assertEqual(lineage["source_template"], template["name"])
+        self.assertEqual(lineage["source_template_version"], published["template_version"])
+        self.assertEqual(lineage["version_no"], published["version_no"])
+        self.assertEqual(lineage["snapshot_hash"], published["snapshot_hash"])
+        self.assertEqual(listed_lineage["source_template_version"], published["template_version"])
 
     def test_run_library_scopes_normal_users_to_owned_project_runs(self):
         other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")
@@ -812,9 +906,22 @@ class TestPublicToolPage(FrappeTestCase):
             if doctype == "AI Tool Run Share":
                 continue
             self.assertEqual(frappe.db.count(doctype), count, doctype)
+        counts_after_create = lineage_side_effect_counts()
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=created["run"]["workflow_run"])
+        gallery = frappe.call("slow_ai.api.public_tools.get_run_output_gallery", workflow_run=created["run"]["workflow_run"])
+        for doctype, count in counts_after_create.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
         self.assertIn(
             share["share_token"],
             {row["share"]["share_token"] for row in listed["runs"] if row.get("share")},
+        )
+        self.assertEqual(
+            detail["run"]["template_lineage"]["source_template_version"],
+            created["workflow"]["source_template_version"],
+        )
+        self.assertEqual(
+            gallery["run"]["template_lineage"]["source_template_version"],
+            created["workflow"]["source_template_version"],
         )
         counts_after_share = {
             "AI Provider Job": frappe.db.count("AI Provider Job"),
@@ -834,6 +941,14 @@ class TestPublicToolPage(FrappeTestCase):
 
         self.assertEqual(payload["run"]["workflow_run"], created["run"]["workflow_run"])
         self.assertEqual(payload["run"]["status"], "SUCCEEDED")
+        self.assertEqual(
+            payload["run"]["template_lineage"]["source_template_version"],
+            created["workflow"]["source_template_version"],
+        )
+        self.assertEqual(
+            payload["output_gallery"]["run"]["template_lineage"]["source_template_version"],
+            created["workflow"]["source_template_version"],
+        )
         self.assertIn(created["asset"].name, {row["name"] for row in payload["assets"]})
         self.assertNotIn(created["other_asset"].name, {row["name"] for row in payload["assets"]})
         self.assertEqual({row["name"] for row in payload["output_gallery"]["assets"]}, {created["asset"].name})
@@ -852,6 +967,10 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertNotIn('"workflow"', encoded)
         self.assertNotIn("draft_nodes_json", encoded)
         self.assertNotIn("draft_edges_json", encoded)
+        self.assertNotIn("nodes_json", encoded)
+        self.assertNotIn("edges_json", encoded)
+        self.assertNotIn("layout_json", encoded)
+        self.assertNotIn("input_schema_json", encoded)
         self.assertNotIn('"nodes"', encoded)
         self.assertNotIn('"edges"', encoded)
         self.assertNotIn('"layout"', encoded)

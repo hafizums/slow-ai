@@ -9,6 +9,7 @@ import frappe
 
 from slow_ai.application.assets import view as view_asset
 from slow_ai.application.project_access import assert_can_view_project
+from slow_ai.application.template_lineage import safe_template_lineage
 
 
 def get_run_output_gallery(
@@ -70,6 +71,10 @@ def _run_metadata(row) -> dict[str, Any]:
         "completed_at": row.get("completed_at"),
         "created": row.get("creation"),
         "modified": row.get("modified"),
+        "template_lineage": safe_template_lineage(
+            row.get("source_template"),
+            row.get("source_template_version"),
+        ),
     }
 
 

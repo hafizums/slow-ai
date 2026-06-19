@@ -678,6 +678,7 @@ class SlowAiToolsPage {
 			const detail = response.message;
 			this.renderRunStatus(detail.run || {});
 			this.renderHistory(detail);
+			this.renderRunDetail(detail);
 			if (detail.run && this.isTerminal(detail.run.status)) {
 				this.stopPolling();
 			}
@@ -762,10 +763,12 @@ class SlowAiToolsPage {
 					const cost = run.cost_summary || {};
 					const provider = run.provider_summary || {};
 					const shareActions = this.renderShareActions(run, false);
+					const lineageRows = this.renderTemplateLineageRows(run.template_lineage);
 					return `<article class="slow-ai-tools__run-card" data-run-id="${this.escape(run.workflow_run)}">
 						<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Project")}</span><strong>${this.escape(run.project)}</strong></div>
+						${lineageRows}
 						<div class="slow-ai-tools__row"><span>${__("Status")}</span><strong>${this.escape(run.status)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
@@ -859,12 +862,14 @@ class SlowAiToolsPage {
 		const provider = detail.provider_summary || {};
 		const cost = detail.cost_summary || {};
 		const shareActions = this.renderShareActions(run, true);
+		const lineageRows = this.renderTemplateLineageRows(run.template_lineage);
 		const assetCount = detail.output_gallery
 			? (detail.output_gallery.assets || []).length
 			: (detail.assets || []).length;
 		this.$runDetail.html(`<div class="slow-ai-tools__run-card">
 			<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
+			${lineageRows}
 			<div class="slow-ai-tools__row"><span>${__("Status")}</span><strong>${this.escape(run.status)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Queued")}</span><strong>${this.escape(run.queued_at || "-")}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Started")}</span><strong>${this.escape(run.started_at || "-")}</strong></div>
@@ -875,6 +880,21 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__inline-actions">${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
+	}
+
+	renderTemplateLineageRows(lineage) {
+		if (!lineage || !lineage.source_template_version) {
+			return "";
+		}
+		const template = lineage.template_name || lineage.source_template || "";
+		const versionLabel = [
+			lineage.version_no ? `${__("Version")} ${lineage.version_no}` : null,
+			lineage.source_template_version,
+		]
+			.filter(Boolean)
+			.join(" · ");
+		return `<div class="slow-ai-tools__row"><span>${__("Template")}</span><strong>${this.escape(template)}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Template Version")}</span><strong>${this.escape(versionLabel)}</strong></div>`;
 	}
 
 	renderShareAssetSelection(run, assets) {

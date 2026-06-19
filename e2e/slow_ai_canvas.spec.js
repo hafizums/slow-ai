@@ -583,8 +583,12 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(started.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
 	const runDetail = await apiJson(await runDetailResponse);
 	expect(runDetail.message.run.workflow_run).toBe(started.message.workflow_run);
+	expect(runDetail.message.run.template_lineage.source_template_version).toBe(template.message.template_version);
+	expect(runDetail.message.run.template_lineage.version_no).toBe(template.message.version_no);
 	await expect(page.locator("[data-role='run-summary']")).toContainText("Status");
 	await expect(page.locator("[data-role='run-history']")).toContainText("Nodes");
+	await expect(page.locator("[data-role='run-detail']")).toContainText("Template Version");
+	await expect(page.locator("[data-role='run-detail']")).toContainText(template.message.template_version);
 
 	const uploadTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page

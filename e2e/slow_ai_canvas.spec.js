@@ -15,6 +15,8 @@ const API = {
 	publicListTemplates: "slow_ai.api.public_tools.list_templates",
 	publicGetTemplate: "slow_ai.api.public_tools.get_template",
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
+	publicListMyRuns: "slow_ai.api.public_tools.list_my_runs",
+	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
 	modelMetadata: "slow_ai.api.models.get_model_metadata",
 	billingBalance: "slow_ai.api.billing.get_balance",
 	listProviderAccounts: "slow_ai.api.provider_accounts.list_accounts",
@@ -389,6 +391,7 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	});
 
 	const templateListResponse = page.waitForResponse(apiPredicate(API.publicListTemplates));
+	const initialRunsResponse = page.waitForResponse(apiPredicate(API.publicListMyRuns));
 	await page.goto("/app/slow-ai-tools");
 	await expect.poll(() => page.evaluate(() => window.frappe && window.frappe.session.user)).toBe(
 		fixtures.public_tool_user
@@ -397,6 +400,8 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 
 	const templates = await apiJson(await templateListResponse);
 	expect(templates.message.templates.some((template) => template.name === fixtures.public_tool_template)).toBe(true);
+	const initialRuns = await apiJson(await initialRunsResponse);
+	expect(Array.isArray(initialRuns.message.runs)).toBe(true);
 	await expect(page.locator("[data-role='template-list']")).toContainText(fixtures.public_tool_template_label);
 
 	await page.locator("[data-role='project']").fill(fixtures.public_tool_project);
@@ -419,8 +424,7 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const createWorkflowResponse = page.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
 	const saveWorkflowResponse = page.waitForResponse(apiPredicate(API.saveWorkflow));
 	const startRunResponse = page.waitForResponse(apiPredicate(API.startRun));
-	const statusResponse = page.waitForResponse(apiPredicate(API.runStatus));
-	const historyResponse = page.waitForResponse(apiPredicate(API.history));
+	const runDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
 	await page.locator("[data-action='run-tool']").click();
 	await createWorkflowResponse;
 	const saved = await apiJson(await saveWorkflowResponse);
@@ -428,10 +432,8 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(promptNode.config.text).toBe(fixtures.public_tool_prompt);
 	const started = await apiJson(await startRunResponse);
 	expect(started.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
-	const status = await apiJson(await statusResponse);
-	expect(status.message.workflow_run).toBe(started.message.workflow_run);
-	const history = await apiJson(await historyResponse);
-	expect(history.message.run.workflow_run).toBe(started.message.workflow_run);
+	const runDetail = await apiJson(await runDetailResponse);
+	expect(runDetail.message.run.workflow_run).toBe(started.message.workflow_run);
 	await expect(page.locator("[data-role='run-summary']")).toContainText("Status");
 	await expect(page.locator("[data-role='run-history']")).toContainText("Nodes");
 
@@ -471,23 +473,27 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(assetNode.config.asset_type).toBe("IMAGE");
 	await startUploadRunResponse;
 
-	await page.evaluate(async (workflowRun) => {
-		const wrappers = window.$(".page-container, .page-wrapper").toArray();
-		let instance = null;
-		for (const wrapper of wrappers) {
-			const data = window.$(wrapper).data();
-			instance = data.slowAiTools || data["slow-ai-tools"];
-			if (instance) {
-				break;
-			}
-		}
-		instance.workflowRun = workflowRun;
-		await instance.refreshRun();
-	}, fixtures.public_asset_workflow_run);
+	const runListResponse = page.waitForResponse(apiPredicate(API.publicListMyRuns));
+	await page.locator("[data-action='refresh-my-runs']").click();
+	const runList = await apiJson(await runListResponse);
+	expect(runList.message.runs.some((run) => run.workflow_run === fixtures.public_asset_workflow_run)).toBe(true);
+	await expect(page.locator("[data-role='run-library']")).toContainText(fixtures.public_asset_workflow_run);
+
+	const historyRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
+	const historyAssetViewResponse = page.waitForResponse(apiPredicate(API.assetView));
+	await page
+		.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)
+		.getByRole("button", { name: "Open Detail" })
+		.click();
+	const historyRunDetail = await apiJson(await historyRunDetailResponse);
+	expect(historyRunDetail.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
+	await historyAssetViewResponse;
+	await expect(page.locator("[data-role='run-detail']")).toContainText(fixtures.public_asset_workflow_run);
 	await expect(page.locator("[data-role='asset-output'] .slow-ai-tools__asset-card")).toContainText(
 		fixtures.public_history_asset
 	);
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Open Asset");
+	await expect(page.locator("[data-role='asset-output']")).toContainText("Copy URL");
 
 	const pageSource = await page.locator("html").innerHTML();
 	expect(pageSource).not.toContain("WAVESPEED_API_KEY");

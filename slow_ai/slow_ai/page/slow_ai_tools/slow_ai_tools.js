@@ -41,6 +41,8 @@ class SlowAiToolsPage {
 		this.$summary = this.$root.find("[data-role='run-summary']");
 		this.$history = this.$root.find("[data-role='run-history']");
 		this.$assets = this.$root.find("[data-role='asset-output']");
+		this.$runLibrary = this.$root.find("[data-role='run-library']");
+		this.$runDetail = this.$root.find("[data-role='run-detail']");
 	}
 
 	bindEvents() {
@@ -58,10 +60,18 @@ class SlowAiToolsPage {
 		});
 		this.$root.on("click", "[data-action='run-tool']", () => this.runTool());
 		this.$root.on("click", "[data-action='refresh-run']", () => this.refreshRun());
+		this.$root.on("click", "[data-action='refresh-my-runs']", () => this.loadMyRuns());
+		this.$root.on("click", "[data-action='open-run-detail']", (event) => {
+			this.openRunDetail($(event.currentTarget).attr("data-run-id"));
+		});
+		this.$root.on("click", "[data-action='copy-asset-url']", (event) => {
+			this.copyAssetUrl($(event.currentTarget).attr("data-asset-url"));
+		});
 	}
 
 	show() {
 		this.loadTemplates();
+		this.loadMyRuns();
 		this.refreshBalance();
 		if (this.workflowRun) {
 			this.refreshRun();
@@ -295,6 +305,7 @@ class SlowAiToolsPage {
 					this.workflowRun = result.workflow_run;
 					this.setStatus(__("Queued {0}", [result.workflow_run]));
 					this.startPolling();
+					this.loadMyRuns();
 					return this.refreshRun();
 				});
 		});
@@ -400,22 +411,19 @@ class SlowAiToolsPage {
 			this.$assets.empty();
 			return Promise.resolve();
 		}
-		return frappe.call("slow_ai.api.runs.get_run_status", { workflow_run: this.workflowRun }).then((response) => {
-			const status = response.message;
-			this.renderRunStatus(status);
-			if (this.isTerminal(status.status)) {
+		return frappe.call("slow_ai.api.public_tools.get_my_run", { workflow_run: this.workflowRun }).then((response) => {
+			const detail = response.message;
+			this.renderRunStatus(detail.run || {});
+			this.renderHistory(detail);
+			if (detail.run && this.isTerminal(detail.run.status)) {
 				this.stopPolling();
 			}
-			return this.refreshHistory();
+			return this.renderOutputAssets(detail);
 		});
 	}
 
 	refreshHistory() {
-		return frappe.call("slow_ai.api.runs.get_history", { workflow_run: this.workflowRun }).then((response) => {
-			const history = response.message;
-			this.renderHistory(history);
-			return this.renderOutputAssets(history);
-		});
+		return this.refreshRun();
 	}
 
 	renderRunStatus(status) {
@@ -435,10 +443,12 @@ class SlowAiToolsPage {
 	renderHistory(history) {
 		const jobs = history.provider_jobs || [];
 		const ledger = history.ledger || [];
+		const cost = history.cost_summary || {};
 		this.$history.html(`<div class="slow-ai-tools__run-card">
 			<div class="slow-ai-tools__row"><span>${__("Nodes")}</span><strong>${(history.node_runs || []).length}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${jobs.length}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost Entries")}</span><strong>${ledger.length}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 			${this.renderSafeErrors(history)}
 		</div>`);
 	}
@@ -480,6 +490,83 @@ class SlowAiToolsPage {
 		});
 	}
 
+	loadMyRuns() {
+		const project = this.projectName();
+		this.$runLibrary.html(`<div class="slow-ai-tools__empty">${__("Loading runs")}</div>`);
+		return frappe
+			.call("slow_ai.api.public_tools.list_my_runs", {
+				project: project || null,
+				limit: 25,
+			})
+			.then((response) => {
+				const runs = (response.message && response.message.runs) || [];
+				this.renderRunLibrary(runs);
+			});
+	}
+
+	renderRunLibrary(runs) {
+		if (!runs.length) {
+			this.$runLibrary.html(`<div class="slow-ai-tools__empty">${__("No tool runs yet")}</div>`);
+			return;
+		}
+		this.$runLibrary.html(
+			runs
+				.map((run) => {
+					const cost = run.cost_summary || {};
+					const provider = run.provider_summary || {};
+					return `<article class="slow-ai-tools__run-card" data-run-id="${this.escape(run.workflow_run)}">
+						<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
+						<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
+						<div class="slow-ai-tools__row"><span>${__("Project")}</span><strong>${this.escape(run.project)}</strong></div>
+						<div class="slow-ai-tools__row"><span>${__("Status")}</span><strong>${this.escape(run.status)}</strong></div>
+						<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
+						<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
+						<div class="slow-ai-tools__row"><span>${__("Outputs")}</span><strong>${this.escape(run.asset_count || 0)}</strong></div>
+						<div class="slow-ai-tools__muted">${this.escape(run.created || run.queued_at || "")}</div>
+						<div class="slow-ai-tools__inline-actions">
+							<button class="btn btn-xs btn-default" type="button" data-action="open-run-detail" data-run-id="${this.escape(run.workflow_run)}">${__("Open Detail")}</button>
+							<a class="btn btn-xs btn-default" href="/app/slow-ai-tools">${__("Rerun Tool")}</a>
+						</div>
+					</article>`;
+				})
+				.join("")
+		);
+	}
+
+	openRunDetail(runId) {
+		if (!runId) {
+			return Promise.resolve();
+		}
+		this.workflowRun = runId;
+		this.$runDetail.html(`<div class="slow-ai-tools__empty">${__("Loading run detail")}</div>`);
+		return frappe.call("slow_ai.api.public_tools.get_my_run", { workflow_run: runId }).then((response) => {
+			const detail = response.message;
+			this.renderRunStatus(detail.run || {});
+			this.renderHistory(detail);
+			this.renderRunDetail(detail);
+			return this.renderOutputAssets(detail);
+		});
+	}
+
+	renderRunDetail(detail) {
+		const run = detail.run || {};
+		const provider = detail.provider_summary || {};
+		const cost = detail.cost_summary || {};
+		const assetNames = this.assetNamesFromHistory(detail);
+		this.$runDetail.html(`<div class="slow-ai-tools__run-card">
+			<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Status")}</span><strong>${this.escape(run.status)}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Queued")}</span><strong>${this.escape(run.queued_at || "-")}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Started")}</span><strong>${this.escape(run.started_at || "-")}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Completed")}</span><strong>${this.escape(run.completed_at || "-")}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
+			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetNames.length)}</strong></div>
+			${this.renderSafeErrors(detail)}
+		</div>`);
+	}
+
 	assetNamesFromHistory(history) {
 		const names = new Set();
 		(history.assets || []).forEach((asset) => {
@@ -488,6 +575,7 @@ class SlowAiToolsPage {
 			}
 		});
 		(history.node_runs || []).forEach((nodeRun) => {
+			(nodeRun.asset_names || []).forEach((assetName) => names.add(assetName));
 			this.collectAssetNames(nodeRun.output, names);
 		});
 		return Array.from(names);
@@ -513,13 +601,16 @@ class SlowAiToolsPage {
 		const open = url
 			? `<a class="btn btn-xs btn-default" href="${this.escape(url)}" target="_blank" rel="noopener">${__("Open Asset")}</a>`
 			: "";
+		const copy = url
+			? `<button class="btn btn-xs btn-default" type="button" data-action="copy-asset-url" data-asset-url="${this.escape(url)}">${__("Copy URL")}</button>`
+			: "";
 		return `<article class="slow-ai-tools__asset-card" data-asset-name="${this.escape(asset.name)}">
 			<div class="slow-ai-tools__asset-preview">${preview}</div>
 			<div>
 				<h4>${this.escape(asset.name)}</h4>
 				<div class="slow-ai-tools__muted">${this.escape(asset.asset_type || "")} · ${this.escape(asset.mime_type || "")}</div>
 				<div class="slow-ai-tools__muted">${__("Source Run")}: ${this.escape(asset.source_workflow_run || "-")}</div>
-				${open}
+				<div class="slow-ai-tools__inline-actions">${open}${copy}</div>
 			</div>
 		</article>`;
 	}
@@ -563,6 +654,17 @@ class SlowAiToolsPage {
 
 	assetUrl(asset) {
 		return (asset && (asset.file || asset.url)) || "";
+	}
+
+	copyAssetUrl(url) {
+		if (!url) {
+			return Promise.resolve();
+		}
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			return navigator.clipboard.writeText(url).then(() => this.setStatus(__("Asset URL copied")));
+		}
+		window.prompt(__("Copy asset URL"), url);
+		return Promise.resolve();
 	}
 
 	money(value, currency) {

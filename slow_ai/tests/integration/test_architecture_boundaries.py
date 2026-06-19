@@ -47,6 +47,8 @@ API_ALLOWED_CLIENT_METHODS = {
     "slow_ai.api.public_tools.list_templates",
     "slow_ai.api.public_tools.get_template",
     "slow_ai.api.public_tools.create_workflow_from_template",
+    "slow_ai.api.public_tools.list_my_runs",
+    "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.queue.get_queue_status",
     "slow_ai.api.runs.start_run",
     "slow_ai.api.runs.get_run_status",

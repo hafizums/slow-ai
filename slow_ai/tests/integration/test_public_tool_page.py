@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from frappe.utils import now_datetime
 from frappe.utils.password import update_password
 
 from slow_ai.domain.exceptions import RunPreflightError
@@ -14,10 +15,10 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.list_templates",
     "slow_ai.api.public_tools.get_template",
     "slow_ai.api.public_tools.create_workflow_from_template",
+    "slow_ai.api.public_tools.list_my_runs",
+    "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.workflows.save_workflow",
     "slow_ai.api.runs.start_run",
-    "slow_ai.api.runs.get_run_status",
-    "slow_ai.api.runs.get_history",
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
     "slow_ai.api.billing.get_balance",
@@ -223,6 +224,21 @@ def save_template(template_name: str, status: str, nodes, edges):
     )
 
 
+def create_text_tool_run(user: str, title: str = "Public Tool Run"):
+    frappe.set_user("Administrator")
+    template = save_template(unique("Run Library Template"), "PUBLISHED", text_tool_nodes(), text_tool_edges())
+    project = create_project(user)
+    frappe.set_user(user)
+    draft = frappe.call(
+        "slow_ai.api.public_tools.create_workflow_from_template",
+        template=template["name"],
+        project=project.name,
+        title=title,
+    )
+    run = frappe.call("slow_ai.api.runs.start_run", workflow=draft["name"])
+    return {"project": project, "workflow": draft, "run": run}
+
+
 class TestPublicToolPage(FrappeTestCase):
     def setUp(self):
         self.previous_user = frappe.session.user
@@ -244,10 +260,10 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.list_templates", page.script)
         self.assertIn("slow_ai.api.public_tools.get_template", page.script)
         self.assertIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
+        self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
+        self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
         self.assertIn("slow_ai.api.workflows.save_workflow", page.script)
         self.assertIn("slow_ai.api.runs.start_run", page.script)
-        self.assertIn("slow_ai.api.runs.get_run_status", page.script)
-        self.assertIn("slow_ai.api.runs.get_history", page.script)
         self.assertIn("slow_ai.api.assets.upload", page.script)
         self.assertIn("slow_ai.api.assets.view", page.script)
         self.assertIn("slow_ai.api.billing.get_balance", page.script)
@@ -349,6 +365,137 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(saved["nodes"][0]["config"]["text"], "Prompt entered on public tool page")
         self.assertTrue(frappe.db.exists("AI Workflow Version", run["workflow_version"]))
         self.assertEqual(status["workflow_run"], run["workflow_run"])
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_jobs_before)
+
+    def test_run_library_scopes_normal_users_to_owned_project_runs(self):
+        other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")
+        own = create_text_tool_run(self.user, title="Own Public Tool Run")
+        other = create_text_tool_run(other_user, title="Other Public Tool Run")
+
+        frappe.set_user(self.user)
+        listed = frappe.call("slow_ai.api.public_tools.list_my_runs")
+        listed_names = {row["workflow_run"] for row in listed["runs"]}
+
+        self.assertIn(own["run"]["workflow_run"], listed_names)
+        self.assertNotIn(other["run"]["workflow_run"], listed_names)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=other["run"]["workflow_run"])
+
+    def test_run_library_system_manager_can_view_all_runs(self):
+        other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")
+        own = create_text_tool_run(self.user, title="Own Public Tool Run")
+        other = create_text_tool_run(other_user, title="Other Public Tool Run")
+
+        frappe.set_user(self.previous_user)
+        listed = frappe.call("slow_ai.api.public_tools.list_my_runs")
+        listed_names = {row["workflow_run"] for row in listed["runs"]}
+
+        self.assertIn(own["run"]["workflow_run"], listed_names)
+        self.assertIn(other["run"]["workflow_run"], listed_names)
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=other["run"]["workflow_run"])
+        self.assertEqual(detail["run"]["workflow_run"], other["run"]["workflow_run"])
+
+    def test_run_library_detail_returns_safe_history_and_asset_names_only(self):
+        created = create_text_tool_run(self.user, title="Safe Public Tool Run")
+        workflow_run = created["run"]["workflow_run"]
+        node_run = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": workflow_run, "node_id": "tool_output_1"},
+            "name",
+        )
+        secret = "raw-provider-secret-token"
+        raw_provider_url = "https://provider.example.invalid/private-output.png"
+        model = insert_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": "safe-provider/model",
+                "model_name": "Safe Provider Model",
+                "provider": "safe-provider",
+                "status": "ENABLED",
+                "node_type": "provider_text_to_image",
+                "category": "provider",
+                "modality": "TEXT_TO_IMAGE",
+                "pricing_json": json.dumps({"unit": "run", "amount_usd": "0.25"}),
+            }
+        )
+        provider_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run,
+                "provider": "safe-provider",
+                "model": model.name,
+                "status": "FAILED",
+                "request_json": json.dumps({"Authorization": f"Bearer {secret}"}),
+                "response_json": json.dumps({"output": raw_provider_url, "api_key_secret": secret}),
+                "raw_error_json": json.dumps({"message": f"Provider failed Authorization={secret}"}),
+            }
+        )
+        timestamp = now_datetime()
+        frappe.db.set_value(
+            "AI Workflow Run",
+            workflow_run,
+            {
+                "status": "FAILED",
+                "started_at": timestamp,
+                "completed_at": timestamp,
+                "error_json": json.dumps({"message": f"Run failed Bearer {secret}"}),
+            },
+        )
+        frappe.db.set_value(
+            "AI Node Run",
+            node_run,
+            {
+                "status": "FAILED",
+                "provider_job": provider_job.name,
+                "error_json": json.dumps({"message": f"Node failed token={secret}"}),
+            },
+        )
+        asset = insert_doc(
+            {
+                "doctype": "AI Asset",
+                "project": created["project"].name,
+                "asset_type": "IMAGE",
+                "url": "https://example.invalid/safe-library-output.png",
+                "mime_type": "image/png",
+                "source_workflow_run": workflow_run,
+                "source_node_run": node_run,
+                "source_provider_job": provider_job.name,
+                "metadata_json": json.dumps({"origin": "run-library-test"}),
+            }
+        )
+        insert_doc(
+            {
+                "doctype": "AI Credit Ledger",
+                "project": created["project"].name,
+                "workflow_run": workflow_run,
+                "node_run": node_run,
+                "provider_job": provider_job.name,
+                "ledger_type": "DEBIT",
+                "amount_usd": "0.25",
+                "currency": "USD",
+                "description": "Run library test debit",
+            }
+        )
+        provider_jobs_before = frappe.db.count("AI Provider Job")
+
+        frappe.set_user(self.user)
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=workflow_run)
+        listed = frappe.call("slow_ai.api.public_tools.list_my_runs", project=created["project"].name)
+        preview = frappe.call("slow_ai.api.assets.view", asset=asset.name)
+        payload = json.dumps(detail, default=str)
+
+        self.assertIn(asset.name, {row["name"] for row in detail["assets"]})
+        self.assertEqual(preview["url"], "https://example.invalid/safe-library-output.png")
+        self.assertIn(workflow_run, {row["workflow_run"] for row in listed["runs"]})
+        self.assertEqual(detail["cost_summary"]["debits_usd"], "0.25")
+        self.assertEqual(detail["provider_summary"]["FAILED"], 1)
+        self.assertIn("[redacted]", payload)
+        self.assertNotIn(secret, payload)
+        self.assertNotIn(raw_provider_url, payload)
+        self.assertNotIn("provider_account", payload)
+        self.assertNotIn("request_json", payload)
+        self.assertNotIn("response_json", payload)
+        self.assertNotIn("raw_error_json", payload)
         self.assertEqual(frappe.db.count("AI Provider Job"), provider_jobs_before)
 
     def test_public_tool_provider_template_preflight_rejects_insufficient_balance_before_provider_job(self):

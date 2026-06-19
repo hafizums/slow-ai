@@ -523,7 +523,7 @@ class SlowAiToolsPage {
 				.map((run) => {
 					const cost = run.cost_summary || {};
 					const provider = run.provider_summary || {};
-					const shareActions = this.renderShareActions(run);
+					const shareActions = this.renderShareActions(run, false);
 					return `<article class="slow-ai-tools__run-card" data-run-id="${this.escape(run.workflow_run)}">
 						<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
@@ -544,7 +544,7 @@ class SlowAiToolsPage {
 		);
 	}
 
-	renderShareActions(run) {
+	renderShareActions(run, canCreate = true) {
 		if (run.status !== "SUCCEEDED") {
 			return `<span class="slow-ai-tools__muted">${__("Share available after success")}</span>`;
 		}
@@ -554,6 +554,9 @@ class SlowAiToolsPage {
 			return `<span class="slow-ai-tools__muted">${__("Share")}: ${this.escape(share.status)}</span>
 				<button class="btn btn-xs btn-default" type="button" data-action="copy-share-link" data-share-url="${this.escape(url)}">${__("Copy Share Link")}</button>
 				<button class="btn btn-xs btn-default" type="button" data-action="disable-run-share" data-share-token="${this.escape(share.share_token)}">${__("Disable Share")}</button>`;
+		}
+		if (!canCreate) {
+			return `<span class="slow-ai-tools__muted">${__("Open detail to select outputs")}</span>`;
 		}
 		if (share.status) {
 			return `<span class="slow-ai-tools__muted">${__("Share")}: ${this.escape(share.status)}</span>
@@ -566,8 +569,16 @@ class SlowAiToolsPage {
 		if (!runId) {
 			return Promise.resolve();
 		}
+		const selectedAssets = this.selectedShareAssets(runId);
+		if (!selectedAssets.length) {
+			frappe.msgprint(__("Select at least one output asset to share."));
+			return Promise.resolve();
+		}
 		return frappe
-			.call("slow_ai.api.public_tools.create_run_share", { workflow_run: runId })
+			.call("slow_ai.api.public_tools.create_run_share", {
+				workflow_run: runId,
+				selected_assets: selectedAssets,
+			})
 			.then((response) => {
 				const share = response.message && response.message.share;
 				if (share && share.share_url) {
@@ -610,7 +621,8 @@ class SlowAiToolsPage {
 		const provider = detail.provider_summary || {};
 		const cost = detail.cost_summary || {};
 		const assetNames = this.assetNamesFromHistory(detail);
-		const shareActions = this.renderShareActions(run);
+		const shareActions = this.renderShareActions(run, true);
+		const shareSelection = this.renderShareAssetSelection(run, assetNames);
 		this.$runDetail.html(`<div class="slow-ai-tools__run-card">
 			<div class="slow-ai-tools__row"><span>${__("Run")}</span><strong>${this.escape(run.workflow_run)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
@@ -621,9 +633,31 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetNames.length)}</strong></div>
+			${shareSelection}
 			<div class="slow-ai-tools__inline-actions">${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
+	}
+
+	renderShareAssetSelection(run, assetNames) {
+		if (!run || run.status !== "SUCCEEDED") {
+			return "";
+		}
+		if (!assetNames.length) {
+			return `<div class="slow-ai-tools__empty">${__("No output assets are available to share")}</div>`;
+		}
+		const options = assetNames
+			.map((assetName) => {
+				return `<label class="slow-ai-tools__share-option">
+					<input type="checkbox" data-share-asset="${this.escape(assetName)}" data-run-id="${this.escape(run.workflow_run)}" checked>
+					<span>${this.escape(assetName)}</span>
+				</label>`;
+			})
+			.join("");
+		return `<div class="slow-ai-tools__share-assets" data-share-assets-run="${this.escape(run.workflow_run)}">
+			<div class="slow-ai-tools__muted">${__("Select output assets to include in the share link")}</div>
+			${options}
+		</div>`;
 	}
 
 	assetNamesFromHistory(history) {
@@ -713,6 +747,15 @@ class SlowAiToolsPage {
 
 	assetUrl(asset) {
 		return (asset && (asset.file || asset.url)) || "";
+	}
+
+	selectedShareAssets(runId) {
+		const selector = `[data-share-assets-run="${this.escapeSelector(runId)}"] [data-share-asset]:checked`;
+		return this.$runDetail
+			.find(selector)
+			.toArray()
+			.map((element) => $(element).attr("data-share-asset"))
+			.filter((assetName) => assetName);
 	}
 
 	copyAssetUrl(url) {

@@ -40,8 +40,8 @@ def get_my_run(workflow_run: str) -> dict:
 
 
 @frappe.whitelist()
-def create_run_share(workflow_run: str, expires_at: str | None = None) -> dict:
-    return create_run_share_service(workflow_run=workflow_run, expires_at=expires_at)
+def create_run_share(workflow_run: str, selected_assets=None, expires_at: str | None = None) -> dict:
+    return create_run_share_service(workflow_run=workflow_run, selected_assets=selected_assets, expires_at=expires_at)
 
 
 @frappe.whitelist()

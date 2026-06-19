@@ -9,6 +9,7 @@
   "project",
   "share_token",
   "status",
+  "selected_assets_json",
   "expires_at"
  ],
  "fields": [
@@ -48,6 +49,12 @@
    "label": "Status",
    "options": "ACTIVE\nDISABLED",
    "reqd": 1
+  },
+  {
+   "fieldname": "selected_assets_json",
+   "fieldtype": "Code",
+   "label": "Selected Assets JSON",
+   "options": "JSON"
   },
   {
    "fieldname": "expires_at",

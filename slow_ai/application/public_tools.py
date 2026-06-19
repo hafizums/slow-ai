@@ -105,13 +105,18 @@ def get_my_run(workflow_run: str) -> dict[str, Any]:
     }
 
 
-def create_run_share(workflow_run: str, expires_at: str | None = None) -> dict[str, Any]:
+def create_run_share(
+    workflow_run: str,
+    selected_assets: Any | None = None,
+    expires_at: str | None = None,
+) -> dict[str, Any]:
     _require_logged_in_user()
     run = frappe.get_doc("AI Workflow Run", workflow_run)
     _assert_project_access(run.project)
     _assert_shareable_run(run)
+    selected_asset_names = _validate_selected_assets(run.name, selected_assets)
 
-    existing = _get_existing_share_for_user(run.name)
+    existing = _get_existing_share_for_user(run.name, selected_asset_names)
     if existing:
         return {"share": _share_summary(existing)}
 
@@ -122,6 +127,7 @@ def create_run_share(workflow_run: str, expires_at: str | None = None) -> dict[s
             "project": run.project,
             "share_token": _new_share_token(),
             "status": "ACTIVE",
+            "selected_assets_json": json.dumps(selected_asset_names),
             "expires_at": expires_at,
         }
     ).insert(ignore_permissions=True)
@@ -146,7 +152,7 @@ def get_shared_run(share_token: str) -> dict[str, Any]:
     return {
         "share": _public_share_summary(doc.as_dict()),
         "run": _public_run_summary(run.as_dict()),
-        "assets": _shared_asset_views(run.name),
+        "assets": _shared_asset_views(_selected_assets_for_share(doc)),
         "cost_summary": _cost_summary(ledger),
     }
 
@@ -317,8 +323,7 @@ def _asset_summaries(workflow_run: str) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def _shared_asset_views(workflow_run: str) -> list[dict[str, Any]]:
-    names = _asset_names_for_run(workflow_run)
+def _shared_asset_views(names: list[str]) -> list[dict[str, Any]]:
     assets = []
     for asset_name in names:
         if frappe.db.exists("AI Asset", asset_name):
@@ -337,6 +342,42 @@ def _asset_names_for_run(workflow_run: str) -> list[str]:
     for row in node_runs:
         names.update(_asset_names_from_value(_loads_json(row.output_json, {})))
     return sorted(names)
+
+
+def _validate_selected_assets(workflow_run: str, selected_assets: Any | None) -> list[str]:
+    selected = _normalize_selected_assets(selected_assets)
+    if not selected:
+        frappe.throw("Select at least one output asset to share.", frappe.ValidationError)
+
+    run_assets = set(_asset_names_for_run(workflow_run))
+    for asset_name in selected:
+        if not frappe.db.exists("AI Asset", asset_name):
+            frappe.throw(f"Selected asset does not exist: {asset_name}.", frappe.ValidationError)
+        if asset_name not in run_assets:
+            frappe.throw(f"Selected asset does not belong to this workflow run: {asset_name}.", frappe.PermissionError)
+    return selected
+
+
+def _normalize_selected_assets(value: Any | None) -> list[str]:
+    parsed = _loads_json(value, value)
+    if isinstance(parsed, str):
+        parsed = [parsed]
+    if not isinstance(parsed, (list, tuple)):
+        return []
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for item in parsed:
+        asset_name = str(item or "").strip()
+        if not asset_name or asset_name in seen:
+            continue
+        selected.append(asset_name)
+        seen.add(asset_name)
+    return selected
+
+
+def _selected_assets_for_share(share_doc) -> list[str]:
+    return _normalize_selected_assets(share_doc.selected_assets_json)
 
 
 def _safe_shared_asset(asset: dict[str, Any]) -> dict[str, Any]:
@@ -508,15 +549,28 @@ def _get_share_doc(share_token: str | None = None, share: str | None = None):
     return frappe.get_doc("AI Tool Run Share", name)
 
 
-def _get_existing_share_for_user(workflow_run: str):
+def _get_existing_share_for_user(workflow_run: str, selected_assets: list[str]):
     rows = frappe.get_all(
         "AI Tool Run Share",
         filters={"workflow_run": workflow_run, "owner": frappe.session.user, "status": "ACTIVE"},
-        fields=["name", "workflow_run", "project", "share_token", "status", "expires_at", "owner", "creation", "modified"],
+        fields=[
+            "name",
+            "workflow_run",
+            "project",
+            "share_token",
+            "status",
+            "selected_assets_json",
+            "expires_at",
+            "owner",
+            "creation",
+            "modified",
+        ],
         order_by="modified desc",
-        limit=1,
     )
-    return rows[0] if rows else None
+    for row in rows:
+        if _normalize_selected_assets(row.get("selected_assets_json")) == selected_assets:
+            return row
+    return None
 
 
 def _share_summary_for_run(workflow_run: str | None) -> dict[str, Any] | None:
@@ -528,7 +582,18 @@ def _share_summary_for_run(workflow_run: str | None) -> dict[str, Any] | None:
     rows = frappe.get_all(
         "AI Tool Run Share",
         filters=filters,
-        fields=["name", "workflow_run", "project", "share_token", "status", "expires_at", "owner", "creation", "modified"],
+        fields=[
+            "name",
+            "workflow_run",
+            "project",
+            "share_token",
+            "status",
+            "selected_assets_json",
+            "expires_at",
+            "owner",
+            "creation",
+            "modified",
+        ],
         order_by="modified desc",
         limit=1,
     )
@@ -547,6 +612,7 @@ def _share_summary(row) -> dict[str, Any]:
         "expires_at": row.get("expires_at"),
         "created": row.get("creation"),
         "modified": row.get("modified"),
+        "selected_assets": _normalize_selected_assets(row.get("selected_assets_json")),
         "share_token": token if status == "ACTIVE" else None,
         "share_url": f"/slow-ai/shared/{token}" if token and status == "ACTIVE" else None,
     }

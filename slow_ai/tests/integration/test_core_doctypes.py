@@ -150,6 +150,7 @@ class TestCoreDocTypes(FrappeTestCase):
                 "project": project.name,
                 "share_token": unique("share-token"),
                 "status": "ACTIVE",
+                "selected_assets_json": json.dumps([asset.name]),
             }
         )
 

@@ -361,7 +361,7 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 		instance.workflowRun = workflowRun;
 		await instance.refreshRun();
 	}, fixtures.asset_workflow_run);
-	await expect(page.locator("[data-role='asset-output'] .slow-ai-canvas__asset-card")).toContainText(fixtures.history_asset);
+	await expect(page.locator(`[data-role='asset-output'] .slow-ai-canvas__asset-card[data-asset-name="${fixtures.history_asset}"]`)).toContainText(fixtures.history_asset);
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Open Asset");
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Refresh Asset");
 
@@ -492,21 +492,24 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(historyRunDetail.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
 	await historyAssetViewResponse;
 	await expect(page.locator("[data-role='run-detail']")).toContainText(fixtures.public_asset_workflow_run);
-	await expect(page.locator("[data-role='asset-output'] .slow-ai-tools__asset-card")).toContainText(
+	await expect(page.locator(`[data-role='asset-output'] [data-asset-name="${fixtures.public_history_asset}"]`)).toContainText(
 		fixtures.public_history_asset
+	);
+	await expect(page.locator(`[data-role='asset-output'] [data-asset-name="${fixtures.public_unshared_history_asset}"]`)).toContainText(
+		fixtures.public_unshared_history_asset
 	);
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Open Asset");
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Copy URL");
 
+	await expect(page.locator(`[data-share-asset="${fixtures.public_history_asset}"]`)).toBeChecked();
+	await page.locator(`[data-share-asset="${fixtures.public_unshared_history_asset}"]`).uncheck();
 	const createShareResponse = page.waitForResponse(apiPredicate(API.publicCreateRunShare));
-	await page
-		.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)
-		.getByRole("button", { name: "Create Share Link" })
-		.click();
+	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Create Share Link" }).click();
 	const createdShare = await apiJson(await createShareResponse);
 	expect(createdShare.message.share.status).toBe("ACTIVE");
+	expect(createdShare.message.share.selected_assets).toEqual([fixtures.public_history_asset]);
 	expect(createdShare.message.share.share_url).toContain("/slow-ai/shared/");
-	await expect(page.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)).toContainText("Share");
+	await expect(page.locator(`article.slow-ai-tools__run-card[data-run-id="${fixtures.public_asset_workflow_run}"]`)).toContainText("Share");
 
 	const guestContext = await browser.newContext();
 	const guestPage = await guestContext.newPage();
@@ -523,8 +526,10 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const sharedRun = await apiJson(await sharedRunResponse);
 	expect(sharedRun.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
 	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_history_asset)).toBe(true);
+	expect(sharedRun.message.assets.some((asset) => asset.name === fixtures.public_unshared_history_asset)).toBe(false);
 	await expect(guestPage.locator("[data-page='slow-ai-shared']")).toBeVisible();
 	await expect(guestPage.locator("[data-role='shared-assets']")).toContainText(fixtures.public_history_asset);
+	await expect(guestPage.locator("[data-role='shared-assets']")).not.toContainText(fixtures.public_unshared_history_asset);
 	await expect(guestPage.getByRole("button", { name: /^Run$/ })).toHaveCount(0);
 	const guestSource = await guestPage.locator("html").innerHTML();
 	expect(guestSource).not.toContain("slow_ai.api.runs.start_run");

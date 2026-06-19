@@ -194,6 +194,24 @@
 	font-size: 12px;
 }
 
+.slow-ai-tools__share-assets {
+	display: grid;
+	gap: 6px;
+	margin: 10px 0;
+	padding: 10px;
+	border: 1px solid #eef2f7;
+	border-radius: 6px;
+	background: #f8fafc;
+}
+
+.slow-ai-tools__share-option {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 0;
+	font-weight: 400;
+}
+
 .slow-ai-tools__error {
 	margin-top: 8px;
 	padding: 8px;

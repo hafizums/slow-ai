@@ -73,6 +73,7 @@ def setup_canvas_e2e() -> dict:
         "public_upload_url": f"https://example.invalid/e2e-public-created-{uuid4().hex[:8]}.png",
         "public_asset_workflow_run": public_asset_run["workflow_run"],
         "public_history_asset": public_asset_run["asset"],
+        "public_unshared_history_asset": public_asset_run["unshared_asset"],
         "project": project.name,
         "canvas_title": f"Browser E2E Canvas {uuid4().hex[:8]}",
         "tool_template": tool_template["name"],
@@ -350,7 +351,21 @@ def _create_history_asset_run(project: str) -> dict:
             "metadata_json": json.dumps({"origin": "browser-e2e-history"}),
         }
     ).insert(ignore_permissions=True)
-    return {"workflow_run": run["workflow_run"], "asset": asset.name}
+    unshared_asset = frappe.get_doc(
+        {
+            "doctype": "AI Asset",
+            "project": project,
+            "asset_type": "IMAGE",
+            "url": f"https://example.invalid/e2e-history-unshared-{uuid4().hex[:8]}.png",
+            "mime_type": "image/png",
+            "width": 320,
+            "height": 240,
+            "source_workflow_run": run["workflow_run"],
+            "source_node_run": node_run,
+            "metadata_json": json.dumps({"origin": "browser-e2e-history-unshared"}),
+        }
+    ).insert(ignore_permissions=True)
+    return {"workflow_run": run["workflow_run"], "asset": asset.name, "unshared_asset": unshared_asset.name}
 
 
 def _unique(prefix: str) -> str:

@@ -264,7 +264,19 @@ def create_shareable_asset_run(user: str, title: str = "Shareable Public Tool Ru
             "metadata_json": json.dumps({"origin": "tool-run-sharing-test"}),
         }
     )
-    return {**created, "asset": asset}
+    other_asset = insert_doc(
+        {
+            "doctype": "AI Asset",
+            "project": created["project"].name,
+            "asset_type": "IMAGE",
+            "url": "https://example.invalid/shared-public-unselected-output.png",
+            "mime_type": "image/png",
+            "source_workflow_run": created["run"]["workflow_run"],
+            "source_node_run": node_run,
+            "metadata_json": json.dumps({"origin": "tool-run-sharing-unselected-test"}),
+        }
+    )
+    return {**created, "asset": asset, "other_asset": other_asset}
 
 
 class TestPublicToolPage(FrappeTestCase):
@@ -292,6 +304,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.create_run_share", page.script)
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
+        self.assertIn("Select output assets to include in the share link", page.script)
         self.assertIn("slow_ai.api.workflows.save_workflow", page.script)
         self.assertIn("slow_ai.api.runs.start_run", page.script)
         self.assertIn("slow_ai.api.assets.upload", page.script)
@@ -623,7 +636,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(preview["name"], asset["name"])
         self.assertEqual(preview["url"], "https://example.invalid/public-tool-input.png")
 
-    def test_user_can_create_share_and_guest_can_read_safe_payload(self):
+    def test_user_can_create_share_with_selected_asset_and_guest_sees_only_selected_output(self):
         created = create_shareable_asset_run(self.user)
         counts_before = {
             "AI Tool Run Share": frappe.db.count("AI Tool Run Share"),
@@ -638,12 +651,14 @@ class TestPublicToolPage(FrappeTestCase):
         share = frappe.call(
             "slow_ai.api.public_tools.create_run_share",
             workflow_run=created["run"]["workflow_run"],
+            selected_assets=[created["asset"].name],
         )["share"]
         listed = frappe.call("slow_ai.api.public_tools.list_my_runs", project=created["project"].name)
 
         self.assertEqual(share["status"], "ACTIVE")
         self.assertTrue(share["share_token"])
         self.assertTrue(share["share_url"].startswith("/slow-ai/shared/"))
+        self.assertEqual(share["selected_assets"], [created["asset"].name])
         self.assertEqual(frappe.db.count("AI Tool Run Share"), counts_before["AI Tool Run Share"] + 1)
         for doctype, count in counts_before.items():
             if doctype == "AI Tool Run Share":
@@ -664,6 +679,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(payload["run"]["workflow_run"], created["run"]["workflow_run"])
         self.assertEqual(payload["run"]["status"], "SUCCEEDED")
         self.assertIn(created["asset"].name, {row["name"] for row in payload["assets"]})
+        self.assertNotIn(created["other_asset"].name, {row["name"] for row in payload["assets"]})
         self.assertEqual(payload["assets"][0]["url"], "https://example.invalid/shared-public-output.png")
         self.assertIn("cost_summary", payload)
         self.assertNotIn("project", payload["run"])
@@ -672,6 +688,30 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertNotIn("response_json", encoded)
         self.assertNotIn("raw_error_json", encoded)
         self.assertNotIn("api_key_secret", encoded)
+
+    def test_share_rejects_unknown_other_run_and_empty_selected_assets(self):
+        created = create_shareable_asset_run(self.user, title="Selected Shareable Run")
+        other = create_shareable_asset_run(self.user, title="Other Selected Shareable Run")
+
+        frappe.set_user(self.user)
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.create_run_share",
+                workflow_run=created["run"]["workflow_run"],
+                selected_assets=[],
+            )
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.public_tools.create_run_share",
+                workflow_run=created["run"]["workflow_run"],
+                selected_assets=["AI-ASSET-DOES-NOT-EXIST"],
+            )
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call(
+                "slow_ai.api.public_tools.create_run_share",
+                workflow_run=created["run"]["workflow_run"],
+                selected_assets=[other["asset"].name],
+            )
 
     def test_share_permissions_and_system_manager_disable(self):
         other_user = ensure_user(f"slow.ai.share.other.{uuid4().hex[:8]}@example.test")
@@ -688,6 +728,7 @@ class TestPublicToolPage(FrappeTestCase):
         share = frappe.call(
             "slow_ai.api.public_tools.create_run_share",
             workflow_run=other["run"]["workflow_run"],
+            selected_assets=[other["asset"].name],
         )["share"]
         disabled = frappe.call(
             "slow_ai.api.public_tools.disable_run_share",
@@ -704,6 +745,7 @@ class TestPublicToolPage(FrappeTestCase):
         share = frappe.call(
             "slow_ai.api.public_tools.create_run_share",
             workflow_run=created["run"]["workflow_run"],
+            selected_assets=[created["asset"].name],
         )["share"]
         frappe.call("slow_ai.api.public_tools.disable_run_share", share_token=share["share_token"])
 
@@ -719,6 +761,7 @@ class TestPublicToolPage(FrappeTestCase):
                 "project": created["project"].name,
                 "share_token": f"expired-{uuid4().hex}",
                 "status": "ACTIVE",
+                "selected_assets_json": json.dumps([created["asset"].name]),
                 "expires_at": add_days(now_datetime(), -1),
             }
         ).insert(ignore_permissions=True)

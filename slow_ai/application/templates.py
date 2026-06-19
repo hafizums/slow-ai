@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import frappe
 
 from slow_ai.application.workflow_validation import validate_workflow
+from slow_ai.application.template_inputs import normalize_input_schema
 from slow_ai.application.workflows import save_workflow
 from slow_ai.domain.snapshots import canonical_json
 
@@ -26,6 +27,8 @@ def save_template(
     category: str | None = None,
     description: str | None = None,
     preview_asset: str | None = None,
+    input_schema: Any | None = None,
+    input_schema_json: Any | None = None,
 ) -> dict[str, Any]:
     parsed_nodes = _loads_json(nodes, [])
     parsed_edges = _loads_json(edges, [])
@@ -36,6 +39,10 @@ def save_template(
     if normalized_status == "PUBLISHED":
         _require_system_manager("Publishing AI Workflow Templates requires System Manager.")
     validate_workflow({"nodes": parsed_nodes, "edges": parsed_edges})
+    normalized_input_schema = normalize_input_schema(
+        input_schema if input_schema is not None else input_schema_json,
+        parsed_nodes,
+    )
 
     values = {
         "template_name": template_name,
@@ -46,6 +53,7 @@ def save_template(
         "nodes_json": canonical_json(parsed_nodes),
         "edges_json": canonical_json(parsed_edges),
         "layout_json": canonical_json(parsed_layout),
+        "input_schema_json": canonical_json(normalized_input_schema),
     }
     if template:
         doc = frappe.get_doc("AI Workflow Template", template)
@@ -68,6 +76,7 @@ def get_template(template: str) -> dict[str, Any]:
         "nodes": _loads_json(doc.nodes_json, []),
         "edges": _loads_json(doc.edges_json, []),
         "layout": _loads_json(doc.layout_json, {}),
+        "input_schema": _loads_json(getattr(doc, "input_schema_json", None), []),
         "modified": doc.modified,
     }
 

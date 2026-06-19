@@ -16,13 +16,12 @@ from slow_ai.workers.run_workflow import run_workflow
 ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.list_templates",
     "slow_ai.api.public_tools.get_template",
-    "slow_ai.api.public_tools.create_workflow_from_template",
+    "slow_ai.api.public_tools.prepare_workflow_from_template",
     "slow_ai.api.public_tools.list_my_runs",
     "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.public_tools.create_run_share",
     "slow_ai.api.public_tools.disable_run_share",
     "slow_ai.api.public_tools.get_shared_run",
-    "slow_ai.api.workflows.save_workflow",
     "slow_ai.api.runs.start_run",
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
@@ -303,13 +302,14 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("This workflow may call an external provider and spend credits.", page.script)
         self.assertIn("slow_ai.api.public_tools.list_templates", page.script)
         self.assertIn("slow_ai.api.public_tools.get_template", page.script)
-        self.assertIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
+        self.assertIn("slow_ai.api.public_tools.prepare_workflow_from_template", page.script)
+        self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.create_run_share", page.script)
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
-        self.assertIn("slow_ai.api.workflows.save_workflow", page.script)
+        self.assertNotIn("slow_ai.api.workflows.save_workflow", page.script)
         self.assertIn("slow_ai.api.runs.start_run", page.script)
         self.assertIn("slow_ai.api.assets.upload", page.script)
         self.assertIn("slow_ai.api.assets.view", page.script)
@@ -390,21 +390,12 @@ class TestPublicToolPage(FrappeTestCase):
         provider_jobs_before = frappe.db.count("AI Provider Job")
 
         frappe.set_user(self.user)
-        draft = frappe.call(
-            "slow_ai.api.public_tools.create_workflow_from_template",
+        saved = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
             template=template["name"],
             project=project.name,
             title="Runnable Public Tool Draft",
-        )
-        draft["nodes"][0]["config"]["text"] = "Prompt entered on public tool page"
-        saved = frappe.call(
-            "slow_ai.api.workflows.save_workflow",
-            workflow=draft["name"],
-            project=project.name,
-            title=draft["title"],
-            nodes=json.dumps(draft["nodes"]),
-            edges=json.dumps(draft["edges"]),
-            layout=json.dumps(draft["layout"]),
+            values={"prompt_1": {"text": "Prompt entered on public tool page"}},
         )
         run = frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
         status = frappe.call("slow_ai.api.runs.get_run_status", workflow_run=run["workflow_run"])
@@ -581,10 +572,11 @@ class TestPublicToolPage(FrappeTestCase):
 
         frappe.set_user(self.user)
         draft = frappe.call(
-            "slow_ai.api.public_tools.create_workflow_from_template",
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
             template=template["name"],
             project=project.name,
             title="Paid Public Tool Draft",
+            values={},
         )
 
         with self.assertRaises(RunPreflightError):
@@ -614,21 +606,12 @@ class TestPublicToolPage(FrappeTestCase):
         )
 
         frappe.set_user(self.user)
-        draft = frappe.call(
-            "slow_ai.api.public_tools.create_workflow_from_template",
+        saved = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
             template=template["name"],
             project=project.name,
             title="Upload Public Tool Draft",
-        )
-        draft["nodes"][0]["config"]["asset"] = asset["name"]
-        saved = frappe.call(
-            "slow_ai.api.workflows.save_workflow",
-            workflow=draft["name"],
-            project=project.name,
-            title=draft["title"],
-            nodes=json.dumps(draft["nodes"]),
-            edges=json.dumps(draft["edges"]),
-            layout=json.dumps(draft["layout"]),
+            values={"asset_1": {"asset": asset["name"]}},
         )
         run = frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
         run_workflow(run["workflow_run"])

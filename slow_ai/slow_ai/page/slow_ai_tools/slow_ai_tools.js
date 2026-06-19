@@ -58,9 +58,19 @@ class SlowAiToolsPage {
 			this.loadMyRuns();
 		});
 		this.$root.on("click", "[data-action='preview-input-asset']", (event) => {
+			const inputId = $(event.currentTarget).attr("data-schema-input-id");
+			if (inputId) {
+				this.previewSchemaInputAsset(inputId);
+				return;
+			}
 			this.previewInputAsset($(event.currentTarget).attr("data-node-id"));
 		});
 		this.$root.on("click", "[data-action='create-input-asset']", (event) => {
+			const inputId = $(event.currentTarget).attr("data-schema-input-id");
+			if (inputId) {
+				this.createSchemaInputAsset(inputId);
+				return;
+			}
 			this.createInputAsset($(event.currentTarget).attr("data-node-id"));
 		});
 		this.$root.on("click", "[data-action='run-tool']", () => this.runTool());
@@ -163,8 +173,103 @@ class SlowAiToolsPage {
 	}
 
 	renderForm() {
-		const controls = (this.template.nodes || []).map((node) => this.renderNodeControl(node)).filter(Boolean).join("");
+		const controls = this.hasTemplateInputSchema()
+			? (this.template.input_schema || []).map((field) => this.renderSchemaInputControl(field)).filter(Boolean).join("")
+			: (this.template.nodes || []).map((node) => this.renderNodeControl(node)).filter(Boolean).join("");
 		this.$form.html(controls || `<div class="slow-ai-tools__empty">${__("This template has no editable fields")}</div>`);
+	}
+
+	hasTemplateInputSchema() {
+		return Boolean(this.template && Array.isArray(this.template.input_schema) && this.template.input_schema.length);
+	}
+
+	renderSchemaInputControl(field) {
+		const inputId = field.id || "";
+		const label = `${field.label || inputId}${field.required ? " *" : ""}`;
+		const help = [field.help, field.description, field.example ? __("Example: {0}", [field.example]) : ""]
+			.filter(Boolean)
+			.map((text) => `<div class="slow-ai-tools__muted">${this.escape(text)}</div>`)
+			.join("");
+		const defaultValue = field.default !== undefined && field.default !== null ? field.default : "";
+		if (field.input_type === "LONG_TEXT") {
+			return `<label class="slow-ai-tools__field" data-schema-field="${this.escape(inputId)}">
+				<span>${this.escape(label)}</span>
+				<textarea class="form-control" data-input-id="${this.escape(inputId)}" data-input-type="${this.escape(field.input_type)}" placeholder="${this.escape(field.placeholder || "")}">${this.escape(defaultValue)}</textarea>
+				${help}
+			</label>`;
+		}
+		if (field.input_type === "TEXT") {
+			return `<label class="slow-ai-tools__field" data-schema-field="${this.escape(inputId)}">
+				<span>${this.escape(label)}</span>
+				<input class="form-control" type="text" data-input-id="${this.escape(inputId)}" data-input-type="${this.escape(field.input_type)}" value="${this.escape(defaultValue)}" placeholder="${this.escape(field.placeholder || "")}">
+				${help}
+			</label>`;
+		}
+		if (field.input_type === "NUMBER") {
+			const min = field.min !== undefined ? `min="${this.escape(field.min)}"` : "";
+			const max = field.max !== undefined ? `max="${this.escape(field.max)}"` : "";
+			return `<label class="slow-ai-tools__field" data-schema-field="${this.escape(inputId)}">
+				<span>${this.escape(label)}</span>
+				<input class="form-control" type="number" ${min} ${max} data-input-id="${this.escape(inputId)}" data-input-type="${this.escape(field.input_type)}" value="${this.escape(defaultValue)}" placeholder="${this.escape(field.placeholder || "")}">
+				${help}
+			</label>`;
+		}
+		if (field.input_type === "SELECT") {
+			const options = (field.options || [])
+				.map((option) => {
+					const selected = String(option.value) === String(defaultValue) ? "selected" : "";
+					return `<option value="${this.escape(option.value)}" ${selected}>${this.escape(option.label || option.value)}</option>`;
+				})
+				.join("");
+			return `<label class="slow-ai-tools__field" data-schema-field="${this.escape(inputId)}">
+				<span>${this.escape(label)}</span>
+				<select class="form-control" data-input-id="${this.escape(inputId)}" data-input-type="${this.escape(field.input_type)}">${options}</select>
+				${help}
+			</label>`;
+		}
+		if (field.input_type === "BOOLEAN") {
+			const checked = defaultValue === true || defaultValue === "true" || defaultValue === "1" ? "checked" : "";
+			return `<label class="slow-ai-tools__field" data-schema-field="${this.escape(inputId)}">
+				<span><input type="checkbox" data-input-id="${this.escape(inputId)}" data-input-type="${this.escape(field.input_type)}" ${checked}> ${this.escape(label)}</span>
+				${help}
+			</label>`;
+		}
+		if (String(field.input_type || "").indexOf("ASSET") >= 0) {
+			const acceptedTypes = field.accepted_asset_types || ["IMAGE"];
+			const selectedType = acceptedTypes[0] || "IMAGE";
+			return `<div class="slow-ai-tools__asset-input" data-schema-asset-section="${this.escape(inputId)}" data-schema-field="${this.escape(inputId)}">
+				<h4>${this.escape(label)}</h4>
+				<label class="slow-ai-tools__field">
+					<span>${__("Existing Asset")}</span>
+					<input class="form-control" type="text" data-input-id="${this.escape(inputId)}" data-input-type="${this.escape(field.input_type)}" value="${this.escape(defaultValue)}" placeholder="AI-ASSET-00001">
+				</label>
+				<label class="slow-ai-tools__field">
+					<span>${__("Asset Type")}</span>
+					<select class="form-control" data-schema-asset-type="${this.escape(inputId)}">
+						${acceptedTypes.map((assetType) => this.assetTypeOption(assetType, selectedType)).join("")}
+					</select>
+				</label>
+				<label class="slow-ai-tools__field">
+					<span>${__("New Asset URL")}</span>
+					<input class="form-control" type="text" data-schema-upload-url="${this.escape(inputId)}" placeholder="https://example.invalid/input.png">
+				</label>
+				<label class="slow-ai-tools__field">
+					<span>${__("New Asset File Reference")}</span>
+					<input class="form-control" type="text" data-schema-upload-file="${this.escape(inputId)}" placeholder="/files/input.png">
+				</label>
+				<label class="slow-ai-tools__field">
+					<span>${__("MIME Type")}</span>
+					<input class="form-control" type="text" data-schema-upload-mime="${this.escape(inputId)}" placeholder="image/png">
+				</label>
+				<div class="slow-ai-tools__inline-actions">
+					<button class="btn btn-xs btn-default" type="button" data-action="preview-input-asset" data-schema-input-id="${this.escape(inputId)}">${__("Preview Asset")}</button>
+					<button class="btn btn-xs btn-default" type="button" data-action="create-input-asset" data-schema-input-id="${this.escape(inputId)}">${__("Create Asset")}</button>
+				</div>
+				${help}
+				<div data-schema-asset-preview="${this.escape(inputId)}"></div>
+			</div>`;
+		}
+		return "";
 	}
 
 	renderNodeControl(node) {
@@ -391,22 +496,11 @@ class SlowAiToolsPage {
 			const title = `${this.template.template_name || this.template.name} Run`;
 			this.setStatus(__("Creating workflow draft"));
 			return frappe
-				.call("slow_ai.api.public_tools.create_workflow_from_template", {
+				.call("slow_ai.api.public_tools.prepare_workflow_from_template", {
 					template: this.template.name,
 					project,
 					title,
-				})
-				.then((response) => {
-					const draft = response.message;
-					const nodes = this.applyFormValues(draft.nodes || [], values);
-					return frappe.call("slow_ai.api.workflows.save_workflow", {
-						workflow: draft.name,
-						project,
-						title: draft.title,
-						nodes,
-						edges: draft.edges || [],
-						layout: draft.layout || {},
-					});
+					values,
 				})
 				.then((response) => {
 					this.workflow = response.message.name;
@@ -440,6 +534,14 @@ class SlowAiToolsPage {
 
 	collectFormValues() {
 		const values = {};
+		if (this.hasTemplateInputSchema()) {
+			this.$form.find("[data-input-id][data-input-type]").each((index, element) => {
+				const inputId = $(element).attr("data-input-id");
+				const inputType = $(element).attr("data-input-type");
+				values[inputId] = inputType === "BOOLEAN" ? Boolean($(element).prop("checked")) : $(element).val();
+			});
+			return values;
+		}
 		this.$form.find("[data-node-id][data-config-field]").each((index, element) => {
 			const nodeId = $(element).attr("data-node-id");
 			const field = $(element).attr("data-config-field");
@@ -447,22 +549,6 @@ class SlowAiToolsPage {
 			values[nodeId][field] = $(element).val();
 		});
 		return values;
-	}
-
-	applyFormValues(nodes, values) {
-		return nodes.map((node) => {
-			const nodeValues = values[node.id];
-			if (!nodeValues) {
-				return node;
-			}
-			return {
-				...node,
-				config: {
-					...(node.config || {}),
-					...nodeValues,
-				},
-			};
-		});
 	}
 
 	previewInputAsset(nodeId) {
@@ -515,6 +601,59 @@ class SlowAiToolsPage {
 
 	assetSection(nodeId) {
 		return this.$form.find(`[data-asset-section="${this.escapeSelector(nodeId)}"]`);
+	}
+
+	previewSchemaInputAsset(inputId) {
+		const assetName = this.schemaAssetSection(inputId).find("[data-input-id]").val();
+		if (!assetName) {
+			frappe.msgprint(__("Enter an asset name before previewing."));
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.assets.view", { asset: assetName }).then((response) => {
+			this.renderSchemaInputAssetPreview(inputId, response.message);
+		});
+	}
+
+	createSchemaInputAsset(inputId) {
+		const project = this.projectName();
+		if (!project) {
+			frappe.msgprint(__("Enter an AI Project before creating an asset."));
+			return Promise.resolve();
+		}
+		const $section = this.schemaAssetSection(inputId);
+		const assetType = $section.find(`[data-schema-asset-type="${this.escapeSelector(inputId)}"]`).val() || "IMAGE";
+		const url = $section.find(`[data-schema-upload-url="${this.escapeSelector(inputId)}"]`).val() || "";
+		const file = $section.find(`[data-schema-upload-file="${this.escapeSelector(inputId)}"]`).val() || "";
+		const mimeType = $section.find(`[data-schema-upload-mime="${this.escapeSelector(inputId)}"]`).val() || "";
+		if (!url && !file) {
+			frappe.msgprint(__("Provide a URL or file reference."));
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.assets.upload", {
+				project,
+				asset_type: assetType,
+				url: url || null,
+				file: file || null,
+				mime_type: mimeType || null,
+				metadata: { source: "public_tool_page" },
+			})
+			.then((response) => {
+				const asset = response.message;
+				$section.find("[data-input-id]").val(asset.name);
+				this.renderSchemaInputAssetPreview(inputId, asset);
+				this.setStatus(__("Created asset {0}", [asset.name]));
+			});
+	}
+
+	renderSchemaInputAssetPreview(inputId, asset) {
+		this.schemaAssetSection(inputId)
+			.find(`[data-schema-asset-preview="${this.escapeSelector(inputId)}"]`)
+			.html(this.renderAssetCard(asset));
+	}
+
+	schemaAssetSection(inputId) {
+		return this.$form.find(`[data-schema-asset-section="${this.escapeSelector(inputId)}"]`);
 	}
 
 	refreshRun() {

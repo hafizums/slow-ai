@@ -24,6 +24,9 @@ from slow_ai.application.project_access import (
 from slow_ai.application.templates import create_workflow_from_template as create_template_workflow
 from slow_ai.application.templates import get_template as get_template_service
 from slow_ai.application.templates import list_templates as list_templates_service
+from slow_ai.application.template_inputs import apply_input_values
+from slow_ai.application.template_inputs import apply_legacy_public_tool_values
+from slow_ai.application.workflows import save_workflow
 
 
 def list_templates(category: str | None = None) -> dict[str, Any]:
@@ -49,6 +52,37 @@ def create_workflow_from_template(
     _assert_template_published(payload)
     assert_can_edit_project(project)
     return create_template_workflow(template=template, project=project, title=title)
+
+
+def prepare_workflow_from_template(
+    *,
+    template: str,
+    project: str,
+    title: str | None = None,
+    values: Any | None = None,
+) -> dict[str, Any]:
+    _require_logged_in_user()
+    payload = get_template_service(template)
+    _assert_template_published(payload)
+    assert_can_edit_project(project)
+    input_schema = payload.get("input_schema") or []
+    if input_schema:
+        nodes = apply_input_values(
+            nodes=payload["nodes"],
+            input_schema=input_schema,
+            values=values,
+            project=project,
+        )
+    else:
+        nodes = apply_legacy_public_tool_values(nodes=payload["nodes"], values=values, project=project)
+    return save_workflow(
+        project=project,
+        title=title or payload["template_name"],
+        nodes=nodes,
+        edges=payload["edges"],
+        layout=payload["layout"],
+        status="DRAFT",
+    )
 
 
 def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str, Any]:

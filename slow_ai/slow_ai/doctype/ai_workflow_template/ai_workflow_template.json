@@ -13,7 +13,8 @@
   "preview_asset",
   "nodes_json",
   "edges_json",
-  "layout_json"
+  "layout_json",
+  "input_schema_json"
  ],
  "fields": [
   {
@@ -70,6 +71,12 @@
    "fieldname": "layout_json",
    "fieldtype": "Code",
    "label": "Layout JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "input_schema_json",
+   "fieldtype": "Code",
+   "label": "Input Schema JSON",
    "options": "JSON"
   }
  ],

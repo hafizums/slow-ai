@@ -4,6 +4,7 @@ import frappe
 from frappe.desk.desktop import get_workspace_sidebar_items
 from frappe.tests.utils import FrappeTestCase
 
+from slow_ai.doctype.contracts import PERMANENT_DOCTYPES
 from slow_ai.infrastructure.workspace import (
     WORKSPACE_PAGE,
     WORKSPACE_TITLE,
@@ -57,6 +58,12 @@ class TestPrivateWorkspace(FrappeTestCase):
             ("Canvas", "Page", WORKSPACE_PAGE),
             {(link.label, link.link_type, link.link_to) for link in workspace.links if link.type == "Link"},
         )
+        workspace_doctypes = {
+            link.link_to
+            for link in workspace.links
+            if link.type == "Link" and link.link_type == "DocType"
+        }
+        self.assertTrue(set(PERMANENT_DOCTYPES).issubset(workspace_doctypes))
         self.assertEqual(set(workspace.charts), set())
         self.assertEqual(set(workspace.number_cards), set())
         self.assertFalse(any(fragment in source for fragment in FORBIDDEN_WORKSPACE_FRAGMENTS))

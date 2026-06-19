@@ -219,7 +219,7 @@ def _create_tool_template(prefix: str = "Browser E2E Text Tool") -> dict:
                     "type": "text_prompt",
                     "label": "Prompt",
                     "position": {"x": 96, "y": 128},
-                    "config": {"text": "Template prompt"},
+                    "config": {"text": "Template prompt", "text_style": "natural", "steps": 4},
                 },
                 {
                     "id": "tool_output_1",
@@ -246,6 +246,39 @@ def _create_tool_template(prefix: str = "Browser E2E Text Tool") -> dict:
             ]
         ),
         layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+        input_schema_json=json.dumps(
+            [
+                {
+                    "id": "prompt",
+                    "label": "Prompt",
+                    "input_type": "LONG_TEXT",
+                    "target_node_id": "prompt_1",
+                    "target_config_field": "text",
+                    "required": True,
+                    "help": "Describe the output.",
+                    "example": "A clean studio render",
+                },
+                {
+                    "id": "style",
+                    "label": "Style",
+                    "input_type": "SELECT",
+                    "target_node_id": "prompt_1",
+                    "target_config_field": "text_style",
+                    "default": "natural",
+                    "options": [{"value": "natural", "label": "Natural"}, {"value": "studio", "label": "Studio"}],
+                },
+                {
+                    "id": "steps",
+                    "label": "Steps",
+                    "input_type": "NUMBER",
+                    "target_node_id": "prompt_1",
+                    "target_config_field": "steps",
+                    "default": 4,
+                    "min": 1,
+                    "max": 10,
+                },
+            ]
+        ),
     )
 
 
@@ -290,6 +323,19 @@ def _create_upload_template(asset_name: str, prefix: str = "Browser E2E Upload T
             ]
         ),
         layout=json.dumps({"nodes": [{"id": "asset_1", "x": 96, "y": 128}]}),
+        input_schema_json=json.dumps(
+            [
+                {
+                    "id": "image",
+                    "label": "Image",
+                    "input_type": "IMAGE_ASSET",
+                    "target_node_id": "asset_1",
+                    "target_config_field": "asset",
+                    "required": True,
+                    "help": "Select or upload an image asset.",
+                }
+            ]
+        ),
     )
 
 

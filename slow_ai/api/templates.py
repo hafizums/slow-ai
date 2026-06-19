@@ -21,6 +21,8 @@ def save_template(
     category: str | None = None,
     description: str | None = None,
     preview_asset: str | None = None,
+    input_schema=None,
+    input_schema_json=None,
 ) -> dict:
     return save_template_service(
         template_name=template_name,
@@ -32,6 +34,8 @@ def save_template(
         category=category,
         description=description,
         preview_asset=preview_asset,
+        input_schema=input_schema,
+        input_schema_json=input_schema_json,
     )
 
 

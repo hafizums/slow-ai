@@ -15,6 +15,7 @@ const API = {
 	publicListTemplates: "slow_ai.api.public_tools.list_templates",
 	publicGetTemplate: "slow_ai.api.public_tools.get_template",
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
+	publicPrepareWorkflowFromTemplate: "slow_ai.api.public_tools.prepare_workflow_from_template",
 	publicListMyRuns: "slow_ai.api.public_tools.list_my_runs",
 	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
 	publicCreateRunShare: "slow_ai.api.public_tools.create_run_share",
@@ -456,17 +457,19 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const template = await apiJson(await templateResponse);
 	expect(template.message.name).toBe(fixtures.public_tool_template);
 	await expect(page.locator("[data-role='template-detail']")).toContainText(fixtures.public_tool_template_label);
-	await page.locator("[data-node-id='prompt_1'][data-config-field='text']").fill(fixtures.public_tool_prompt);
+	await page.locator("[data-input-id='prompt']").fill(fixtures.public_tool_prompt);
+	await page.locator("[data-input-id='style']").selectOption("studio");
+	await page.locator("[data-input-id='steps']").fill("7");
 
-	const createWorkflowResponse = page.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
-	const saveWorkflowResponse = page.waitForResponse(apiPredicate(API.saveWorkflow));
+	const prepareWorkflowResponse = page.waitForResponse(apiPredicate(API.publicPrepareWorkflowFromTemplate));
 	const startRunResponse = page.waitForResponse(apiPredicate(API.startRun));
 	const runDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
 	await page.locator("[data-action='run-tool']").click();
-	await createWorkflowResponse;
-	const saved = await apiJson(await saveWorkflowResponse);
-	const promptNode = saved.message.nodes.find((node) => node.id === "prompt_1");
+	const prepared = await apiJson(await prepareWorkflowResponse);
+	const promptNode = prepared.message.nodes.find((node) => node.id === "prompt_1");
 	expect(promptNode.config.text).toBe(fixtures.public_tool_prompt);
+	expect(promptNode.config.text_style).toBe("studio");
+	expect(promptNode.config.steps).toBe(7);
 	const started = await apiJson(await startRunResponse);
 	expect(started.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
 	const runDetail = await apiJson(await runDetailResponse);
@@ -482,7 +485,7 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const uploadTemplate = await apiJson(await uploadTemplateResponse);
 	expect(uploadTemplate.message.name).toBe(fixtures.public_upload_template);
 	await expect(page.locator("[data-role='template-detail']")).toContainText(fixtures.public_upload_template_label);
-	await page.locator("[data-node-id='asset_1'][data-config-field='asset']").fill(fixtures.public_selected_asset);
+	await page.locator("input[data-input-id='image']").fill(fixtures.public_selected_asset);
 
 	const selectedAssetViewResponse = page.waitForResponse(apiPredicate(API.assetView));
 	await page.getByRole("button", { name: "Preview Asset" }).click();
@@ -492,20 +495,18 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 		fixtures.public_selected_asset
 	);
 
-	await page.locator("[data-upload-url='asset_1']").fill(fixtures.public_upload_url);
-	await page.locator("[data-upload-mime='asset_1']").fill("image/png");
+	await page.locator("[data-schema-upload-url='image']").fill(fixtures.public_upload_url);
+	await page.locator("[data-schema-upload-mime='image']").fill("image/png");
 	const uploadResponse = page.waitForResponse(apiPredicate(API.assetUpload));
 	await page.getByRole("button", { name: "Create Asset" }).click();
 	const uploaded = await apiJson(await uploadResponse);
 	expect(uploaded.message.url).toBe(fixtures.public_upload_url);
 
-	const createUploadWorkflowResponse = page.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
-	const saveUploadWorkflowResponse = page.waitForResponse(apiPredicate(API.saveWorkflow));
+	const prepareUploadWorkflowResponse = page.waitForResponse(apiPredicate(API.publicPrepareWorkflowFromTemplate));
 	const startUploadRunResponse = page.waitForResponse(apiPredicate(API.startRun));
 	await page.locator("[data-action='run-tool']").click();
-	await createUploadWorkflowResponse;
-	const savedUpload = await apiJson(await saveUploadWorkflowResponse);
-	const assetNode = savedUpload.message.nodes.find((node) => node.id === "asset_1");
+	const preparedUpload = await apiJson(await prepareUploadWorkflowResponse);
+	const assetNode = preparedUpload.message.nodes.find((node) => node.id === "asset_1");
 	expect(assetNode.config.asset).toBe(uploaded.message.name);
 	expect(assetNode.config.asset_type).toBe("IMAGE");
 	await startUploadRunResponse;
@@ -598,13 +599,11 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 		.getByRole("button", { name: "Select" })
 		.click();
 	await editorTemplateResponse;
-	await editorPage.locator("[data-node-id='prompt_1'][data-config-field='text']").fill(`${fixtures.public_tool_prompt} editor`);
-	const editorCreateWorkflowResponse = editorPage.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
-	const editorSaveWorkflowResponse = editorPage.waitForResponse(apiPredicate(API.saveWorkflow));
+	await editorPage.locator("[data-input-id='prompt']").fill(`${fixtures.public_tool_prompt} editor`);
+	const editorPrepareWorkflowResponse = editorPage.waitForResponse(apiPredicate(API.publicPrepareWorkflowFromTemplate));
 	const editorStartRunResponse = editorPage.waitForResponse(apiPredicate(API.startRun));
 	await editorPage.locator("[data-action='run-tool']").click();
-	await editorCreateWorkflowResponse;
-	await editorSaveWorkflowResponse;
+	await editorPrepareWorkflowResponse;
 	const editorStarted = await apiJson(await editorStartRunResponse);
 	expect(editorStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
 	await editorContext.close();
@@ -637,8 +636,8 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 		.getByRole("button", { name: "Select" })
 		.click();
 	await viewerTemplateResponse;
-	await viewerPage.locator("[data-node-id='prompt_1'][data-config-field='text']").fill(`${fixtures.public_tool_prompt} viewer`);
-	const viewerCreateWorkflowResponse = viewerPage.waitForResponse(apiAnyStatusPredicate(API.publicCreateWorkflowFromTemplate));
+	await viewerPage.locator("[data-input-id='prompt']").fill(`${fixtures.public_tool_prompt} viewer`);
+	const viewerCreateWorkflowResponse = viewerPage.waitForResponse(apiAnyStatusPredicate(API.publicPrepareWorkflowFromTemplate));
 	await viewerPage.locator("[data-action='run-tool']").click();
 	const viewerCreateWorkflow = await viewerCreateWorkflowResponse;
 	expect(viewerCreateWorkflow.status()).toBeGreaterThanOrEqual(400);

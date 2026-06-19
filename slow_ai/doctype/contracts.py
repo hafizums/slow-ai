@@ -13,5 +13,6 @@ PERMANENT_DOCTYPES = (
     "AI Provider Account",
     "AI Credit Ledger",
     "AI Workflow Template",
+    "AI Workflow Template Version",
     "AI Tool Run Share",
 )

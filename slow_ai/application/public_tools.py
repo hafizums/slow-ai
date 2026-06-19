@@ -21,9 +21,8 @@ from slow_ai.application.project_access import (
     is_system_manager,
     list_accessible_project_names,
 )
-from slow_ai.application.templates import create_workflow_from_template as create_template_workflow
-from slow_ai.application.templates import get_template as get_template_service
-from slow_ai.application.templates import list_templates as list_templates_service
+from slow_ai.application.templates import get_published_template
+from slow_ai.application.templates import list_published_templates
 from slow_ai.application.run_outputs import get_run_output_gallery as get_run_output_gallery_service
 from slow_ai.application.template_inputs import apply_input_values
 from slow_ai.application.template_inputs import apply_legacy_public_tool_values
@@ -32,14 +31,12 @@ from slow_ai.application.workflows import save_workflow
 
 def list_templates(category: str | None = None) -> dict[str, Any]:
     _require_logged_in_user()
-    return list_templates_service(status="PUBLISHED", category=category)
+    return list_published_templates(category=category)
 
 
 def get_template(template: str) -> dict[str, Any]:
     _require_logged_in_user()
-    payload = get_template_service(template)
-    _assert_template_published(payload)
-    return payload
+    return get_published_template(template)
 
 
 def create_workflow_from_template(
@@ -49,10 +46,16 @@ def create_workflow_from_template(
     title: str | None = None,
 ) -> dict[str, Any]:
     _require_logged_in_user()
-    payload = get_template_service(template)
-    _assert_template_published(payload)
+    payload = get_published_template(template)
     assert_can_edit_project(project)
-    return create_template_workflow(template=template, project=project, title=title)
+    return save_workflow(
+        project=project,
+        title=title or payload["template_name"],
+        nodes=payload["nodes"],
+        edges=payload["edges"],
+        layout=payload["layout"],
+        status="DRAFT",
+    )
 
 
 def prepare_workflow_from_template(
@@ -63,8 +66,7 @@ def prepare_workflow_from_template(
     values: Any | None = None,
 ) -> dict[str, Any]:
     _require_logged_in_user()
-    payload = get_template_service(template)
-    _assert_template_published(payload)
+    payload = get_published_template(template)
     assert_can_edit_project(project)
     input_schema = payload.get("input_schema") or []
     if input_schema:

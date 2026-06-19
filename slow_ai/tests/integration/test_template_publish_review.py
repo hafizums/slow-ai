@@ -191,8 +191,160 @@ class TestTemplatePublishReview(FrappeTestCase):
 
         self.assertIn(draft["name"], {row["name"] for row in listed["templates"]})
         self.assertEqual(loaded["status"], "PUBLISHED")
+        self.assertTrue(loaded["template_version"])
+        self.assertEqual(loaded["version_no"], 1)
+        self.assertTrue(loaded["snapshot_hash"])
         self.assertEqual(prepared["nodes"][0]["config"]["text"], "Approved public prompt")
         self.assertEqual(before, side_effect_counts())
+
+    def test_approval_versions_public_payload_and_draft_edits_do_not_leak(self):
+        draft = save_draft_template(unique("Versioned Review"), self.owner)
+        before = side_effect_counts()
+
+        frappe.set_user(self.owner)
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=draft["name"])
+        frappe.set_user("Administrator")
+        first = frappe.call("slow_ai.api.templates.approve_template", template=draft["name"], review_notes="v1")
+
+        frappe.set_user(self.owner)
+        public_v1 = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])
+        self.assertEqual(public_v1["nodes"][0]["config"]["text"], "Review template prompt")
+        self.assertEqual(public_v1["version_no"], 1)
+        version_1 = public_v1["template_version"]
+
+        edited = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template=draft["name"],
+            template_name=draft["template_name"],
+            status="DRAFT",
+            category="Review",
+            description="Template review fixture",
+            nodes=json.dumps(text_nodes("Edited mutable draft prompt")),
+            edges=json.dumps(text_edges()),
+            layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+            input_schema_json=json.dumps(safe_input_schema()),
+        )
+        self.assertEqual(edited["status"], "PUBLISHED")
+
+        public_still_v1 = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])
+        prepared_v1 = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
+            template=draft["name"],
+            project=self.project.name,
+            values={"prompt": "Review template prompt"},
+        )
+        self.assertEqual(public_still_v1["template_version"], version_1)
+        self.assertEqual(public_still_v1["nodes"][0]["config"]["text"], "Review template prompt")
+        self.assertEqual(prepared_v1["nodes"][0]["config"]["text"], "Review template prompt")
+
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=draft["name"])
+        frappe.set_user("Administrator")
+        second = frappe.call("slow_ai.api.templates.approve_template", template=draft["name"], review_notes="v2")
+        public_v2 = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])
+        old_version = frappe.call("slow_ai.api.templates.get_template_version", template_version=version_1)
+
+        self.assertEqual(second["published_version"], public_v2["template_version"])
+        self.assertEqual(public_v2["version_no"], 2)
+        self.assertEqual(public_v2["nodes"][0]["config"]["text"], "Edited mutable draft prompt")
+        self.assertEqual(old_version["status"], "SUPERSEDED")
+        self.assertEqual(before, side_effect_counts())
+
+    def test_rollback_creates_new_active_version_from_historical_snapshot(self):
+        draft = save_draft_template(unique("Rollback Review"), self.owner)
+        frappe.set_user(self.owner)
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=draft["name"])
+        frappe.set_user("Administrator")
+        frappe.call("slow_ai.api.templates.approve_template", template=draft["name"], review_notes="v1")
+        version_1 = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])["template_version"]
+
+        frappe.set_user(self.owner)
+        frappe.call(
+            "slow_ai.api.templates.save_template",
+            template=draft["name"],
+            template_name=draft["template_name"],
+            status="DRAFT",
+            category="Review",
+            description="Template review fixture",
+            nodes=json.dumps(text_nodes("Rollback v2 prompt")),
+            edges=json.dumps(text_edges()),
+            layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+            input_schema_json=json.dumps(safe_input_schema()),
+        )
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=draft["name"])
+        frappe.set_user("Administrator")
+        frappe.call("slow_ai.api.templates.approve_template", template=draft["name"], review_notes="v2")
+        version_2 = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])["template_version"]
+        before = side_effect_counts()
+
+        rolled_back = frappe.call(
+            "slow_ai.api.templates.rollback_template_to_version",
+            template=draft["name"],
+            template_version=version_1,
+            review_notes="rollback to v1",
+        )
+        public_payload = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])
+        versions = frappe.call("slow_ai.api.templates.list_template_versions", template=draft["name"])["versions"]
+        statuses = {row["name"]: row["status"] for row in versions}
+
+        self.assertEqual(rolled_back["status"], "PUBLISHED")
+        self.assertEqual(public_payload["version_no"], 3)
+        self.assertEqual(public_payload["nodes"][0]["config"]["text"], "Review template prompt")
+        self.assertNotEqual(public_payload["template_version"], version_1)
+        self.assertEqual(statuses[version_2], "ROLLED_BACK")
+        self.assertEqual(before, side_effect_counts())
+
+    def test_rollback_requires_system_manager_and_matching_template(self):
+        first = save_draft_template(unique("Rollback Owner One"), self.owner)
+        second = save_draft_template(unique("Rollback Owner Two"), self.owner)
+        frappe.set_user(self.owner)
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=first["name"])
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=second["name"])
+        frappe.set_user("Administrator")
+        frappe.call("slow_ai.api.templates.approve_template", template=first["name"])
+        frappe.call("slow_ai.api.templates.approve_template", template=second["name"])
+        first_version = frappe.call("slow_ai.api.public_tools.get_template", template=first["name"])["template_version"]
+
+        frappe.set_user(self.owner)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call(
+                "slow_ai.api.templates.rollback_template_to_version",
+                template=first["name"],
+                template_version=first_version,
+            )
+
+        frappe.set_user("Administrator")
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(
+                "slow_ai.api.templates.rollback_template_to_version",
+                template=second["name"],
+                template_version=first_version,
+            )
+
+    def test_template_version_apis_return_safe_metadata(self):
+        draft = save_draft_template(unique("Safe Version API"), self.owner)
+        frappe.set_user(self.owner)
+        frappe.call("slow_ai.api.templates.submit_template_for_review", template=draft["name"])
+        frappe.set_user("Administrator")
+        frappe.call("slow_ai.api.templates.approve_template", template=draft["name"])
+        public_payload = frappe.call("slow_ai.api.public_tools.get_template", template=draft["name"])
+
+        frappe.set_user(self.owner)
+        versions = frappe.call("slow_ai.api.templates.list_template_versions", template=draft["name"])["versions"]
+        detail = frappe.call(
+            "slow_ai.api.templates.get_template_version",
+            template_version=public_payload["template_version"],
+        )
+        encoded = json.dumps({"versions": versions, "detail": detail}, default=str)
+
+        self.assertEqual(versions[0]["template"], draft["name"])
+        self.assertEqual(detail["snapshot_hash"], public_payload["snapshot_hash"])
+        self.assertNotIn("nodes_json", encoded)
+        self.assertNotIn("edges_json", encoded)
+        self.assertNotIn("layout_json", encoded)
+        self.assertNotIn("input_schema_json", encoded)
+        self.assertNotIn("provider_account", encoded)
+        self.assertNotIn("api_key_secret", encoded)
+        self.assertNotIn("request_json", encoded)
 
     def test_save_template_cannot_directly_set_review_controlled_statuses(self):
         before = side_effect_counts()

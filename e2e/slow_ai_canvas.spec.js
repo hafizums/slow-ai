@@ -11,11 +11,14 @@ const API = {
 	assetView: "slow_ai.api.assets.view",
 	listTemplates: "slow_ai.api.templates.list_templates",
 	getTemplate: "slow_ai.api.templates.get_template",
+	saveTemplate: "slow_ai.api.templates.save_template",
 	createWorkflowFromTemplate: "slow_ai.api.templates.create_workflow_from_template",
 	submitTemplateReview: "slow_ai.api.templates.submit_template_for_review",
 	approveTemplate: "slow_ai.api.templates.approve_template",
 	rejectTemplate: "slow_ai.api.templates.reject_template",
 	archiveTemplate: "slow_ai.api.templates.archive_template",
+	listTemplateVersions: "slow_ai.api.templates.list_template_versions",
+	rollbackTemplateVersion: "slow_ai.api.templates.rollback_template_to_version",
 	publicListTemplates: "slow_ai.api.public_tools.list_templates",
 	publicGetTemplate: "slow_ai.api.public_tools.get_template",
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
@@ -71,6 +74,13 @@ function apiAnyStatusPredicate(method) {
 
 async function apiJson(response) {
 	return response.json();
+}
+
+async function callApi(page, method, args = {}) {
+	const response = await page.request.post(`/api/method/${method}`, { form: args });
+	expect(response.status()).toBe(200);
+	const payload = await response.json();
+	return payload.message;
 }
 
 async function canvas(page) {
@@ -323,7 +333,71 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	const approvedReview = await apiJson(await approveReviewResponse);
 	await reloadAfterApproveReviewResponse;
 	expect(approvedReview.message.status).toBe("PUBLISHED");
+	expect(approvedReview.message.published_version).toBeTruthy();
 	await expect(reviewTemplateCard).toContainText("PUBLISHED");
+	const publicReviewV1 = await callApi(page, API.publicGetTemplate, {
+		template: fixtures.public_review_template,
+	});
+	const publicReviewV1Prompt = publicReviewV1.nodes.find((node) => node.id === "prompt_1").config.text;
+	expect(publicReviewV1.template_version).toBe(approvedReview.message.published_version);
+	expect(publicReviewV1.version_no).toBe(1);
+
+	const editedReviewNodes = approvedReview.message.nodes.map((node) =>
+		node.id === "prompt_1"
+			? { ...node, config: { ...node.config, text: "Browser mutable draft prompt" } }
+			: node
+	);
+	await callApi(page, API.saveTemplate, {
+		template: fixtures.public_review_template,
+		template_name: approvedReview.message.template_name,
+		status: "DRAFT",
+		category: approvedReview.message.category,
+		description: approvedReview.message.description,
+		nodes: JSON.stringify(editedReviewNodes),
+		edges: JSON.stringify(approvedReview.message.edges),
+		layout: JSON.stringify(approvedReview.message.layout),
+		input_schema_json: JSON.stringify(approvedReview.message.input_schema),
+	});
+	const publicReviewStillV1 = await callApi(page, API.publicGetTemplate, {
+		template: fixtures.public_review_template,
+	});
+	expect(publicReviewStillV1.template_version).toBe(publicReviewV1.template_version);
+	expect(publicReviewStillV1.nodes.find((node) => node.id === "prompt_1").config.text).toBe(publicReviewV1Prompt);
+
+	await callApi(page, API.submitTemplateReview, { template: fixtures.public_review_template });
+	const approvedReviewV2 = await callApi(page, API.approveTemplate, {
+		template: fixtures.public_review_template,
+		review_notes: "Browser E2E version 2.",
+	});
+	const publicReviewV2 = await callApi(page, API.publicGetTemplate, {
+		template: fixtures.public_review_template,
+	});
+	expect(publicReviewV2.template_version).toBe(approvedReviewV2.published_version);
+	expect(publicReviewV2.version_no).toBe(2);
+	expect(publicReviewV2.nodes.find((node) => node.id === "prompt_1").config.text).toBe(
+		"Browser mutable draft prompt"
+	);
+
+	const reviewVersions = await callApi(page, API.listTemplateVersions, {
+		template: fixtures.public_review_template,
+	});
+	expect(reviewVersions.versions.find((version) => version.name === publicReviewV1.template_version).status).toBe(
+		"SUPERSEDED"
+	);
+	expect(reviewVersions.versions.find((version) => version.name === publicReviewV2.template_version).status).toBe(
+		"ACTIVE"
+	);
+	const rollbackReview = await callApi(page, API.rollbackTemplateVersion, {
+		template: fixtures.public_review_template,
+		template_version: publicReviewV1.template_version,
+		review_notes: "Browser E2E rollback to version 1.",
+	});
+	const publicReviewV3 = await callApi(page, API.publicGetTemplate, {
+		template: fixtures.public_review_template,
+	});
+	expect(publicReviewV3.template_version).toBe(rollbackReview.published_version);
+	expect(publicReviewV3.version_no).toBe(3);
+	expect(publicReviewV3.nodes.find((node) => node.id === "prompt_1").config.text).toBe(publicReviewV1Prompt);
 
 	await expect(page.locator("[data-role='template-library']")).toContainText(fixtures.tool_template_label);
 	const templatePreviewResponse = page.waitForResponse(apiPredicate(API.getTemplate));

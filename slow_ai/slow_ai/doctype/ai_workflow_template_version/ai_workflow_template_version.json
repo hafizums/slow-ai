@@ -1,13 +1,15 @@
 {
  "actions": [],
- "allow_rename": 1,
- "autoname": "field:template_name",
- "creation": "2026-06-18 00:00:00.000000",
+ "autoname": "format:AI-WORKFLOW-TEMPLATE-VERSION-{#####}",
+ "creation": "2026-06-19 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "template_name",
+  "template",
+  "version_no",
   "status",
+  "snapshot_hash",
+  "template_name",
   "category",
   "description",
   "preview_asset",
@@ -15,34 +17,51 @@
   "edges_json",
   "layout_json",
   "input_schema_json",
-  "review_section",
-  "submitted_by",
-  "submitted_at",
-  "reviewed_by",
-  "reviewed_at",
-  "review_notes",
-  "rejection_reason",
-  "published_at",
-  "published_version"
+  "approval_section",
+  "approved_by",
+  "approved_at",
+  "source_template_modified",
+  "owner"
  ],
  "fields": [
   {
-   "fieldname": "template_name",
-   "fieldtype": "Data",
+   "fieldname": "template",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Template Name",
-   "reqd": 1,
-   "unique": 1
+   "label": "Template",
+   "options": "AI Workflow Template",
+   "reqd": 1
   },
   {
-   "default": "DRAFT",
+   "fieldname": "version_no",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Version No",
+   "reqd": 1
+  },
+  {
+   "default": "ACTIVE",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "DRAFT\nIN_REVIEW\nPUBLISHED\nREJECTED\nARCHIVED",
+   "options": "ACTIVE\nSUPERSEDED\nROLLED_BACK\nARCHIVED",
+   "reqd": 1
+  },
+  {
+   "fieldname": "snapshot_hash",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Snapshot Hash",
+   "reqd": 1
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Template Name",
    "reqd": 1
   },
   {
@@ -89,71 +108,47 @@
    "options": "JSON"
   },
   {
-   "fieldname": "review_section",
+   "fieldname": "approval_section",
    "fieldtype": "Section Break",
-   "label": "Review"
+   "label": "Approval"
   },
   {
-   "fieldname": "submitted_by",
+   "fieldname": "approved_by",
    "fieldtype": "Link",
-   "label": "Submitted By",
+   "label": "Approved By",
    "options": "User",
    "read_only": 1
   },
   {
-   "fieldname": "submitted_at",
+   "fieldname": "approved_at",
    "fieldtype": "Datetime",
-   "label": "Submitted At",
+   "label": "Approved At",
    "read_only": 1
   },
   {
-   "fieldname": "reviewed_by",
-   "fieldtype": "Link",
-   "label": "Reviewed By",
-   "options": "User",
-   "read_only": 1
-  },
-  {
-   "fieldname": "reviewed_at",
+   "fieldname": "source_template_modified",
    "fieldtype": "Datetime",
-   "label": "Reviewed At",
+   "label": "Source Template Modified",
    "read_only": 1
   },
   {
-   "fieldname": "review_notes",
-   "fieldtype": "Small Text",
-   "label": "Review Notes"
-  },
-  {
-   "fieldname": "rejection_reason",
-   "fieldtype": "Small Text",
-   "label": "Rejection Reason"
-  },
-  {
-   "fieldname": "published_at",
-   "fieldtype": "Datetime",
-   "label": "Published At",
-   "read_only": 1
-  },
-  {
-   "fieldname": "published_version",
-   "fieldtype": "Link",
-   "label": "Published Version",
-   "options": "AI Workflow Template Version",
+   "fieldname": "owner",
+   "fieldtype": "Data",
+   "label": "Owner",
    "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-06-19 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Slow Ai",
- "name": "AI Workflow Template",
- "naming_rule": "By fieldname",
+ "name": "AI Workflow Template Version",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
-   "delete": 1,
+   "delete": 0,
    "export": 1,
    "read": 1,
    "role": "System Manager",
@@ -161,7 +156,7 @@
    "write": 1
   }
  ],
- "sort_field": "modified",
+ "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
  "title_field": "template_name",

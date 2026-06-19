@@ -131,6 +131,12 @@ class SlowAiCanvasPlaceholder {
 		this.$templatePreview.on("click", "[data-action='create-workflow-from-template']", (event) => {
 			this.createWorkflowFromTemplate($(event.currentTarget).attr("data-template-name"));
 		});
+		this.$templatePreview.on("click", "[data-action='rollback-template-version']", (event) => {
+			this.rollbackTemplateToVersion(
+				$(event.currentTarget).attr("data-template-name"),
+				$(event.currentTarget).attr("data-template-version")
+			);
+		});
 		this.$toolMode.on("change", "[data-tool-template]", (event) => {
 			this.loadToolModeTemplate($(event.currentTarget).val());
 		});
@@ -1011,6 +1017,16 @@ class SlowAiCanvasPlaceholder {
 			this.selectedTemplate = response.message;
 			this.renderTemplatePreview();
 			this.setStatus(__("Loaded template preview {0}", [this.selectedTemplate.name]));
+			return this.loadTemplateVersions(templateName);
+		});
+	}
+
+	loadTemplateVersions(templateName) {
+		return frappe.call("slow_ai.api.templates.list_template_versions", { template: templateName }).then((response) => {
+			if (this.selectedTemplate && this.selectedTemplate.name === templateName) {
+				this.selectedTemplate.versions = (response.message && response.message.versions) || [];
+				this.renderTemplatePreview();
+			}
 		});
 	}
 
@@ -1025,21 +1041,72 @@ class SlowAiCanvasPlaceholder {
 		}
 		const nodes = template.nodes || [];
 		const edges = template.edges || [];
+		const versionRows = this.renderTemplateVersionRows(template);
 		const nodeRows = nodes
 			.map((node) => `<div class="slow-ai-canvas__template-preview-row">${this.escape(node.label || node.id)} · ${this.escape(node.type)}</div>`)
 			.join("");
 		this.$templatePreview.html(`<div class="slow-ai-canvas__template-preview-card">
 			<div class="slow-ai-canvas__template-title">${this.escape(template.template_name || template.name)}</div>
 			<div class="slow-ai-canvas__template-meta">${this.escape(template.category || __("Uncategorized"))} · ${this.escape(template.status || "")}</div>
+			${template.published_version ? `<div class="slow-ai-canvas__template-preview-row">${__("Active Version")}: ${this.escape(template.published_version)}</div>` : ""}
 			${template.description ? `<div class="slow-ai-canvas__template-description">${this.escape(template.description)}</div>` : ""}
 			<div class="slow-ai-canvas__template-preview-row">${__("Nodes")}: ${nodes.length}</div>
 			<div class="slow-ai-canvas__template-preview-row">${__("Edges")}: ${edges.length}</div>
 			${template.preview_asset ? `<div class="slow-ai-canvas__template-preview-row">${__("Preview Asset")}: ${this.escape(template.preview_asset)}</div>` : ""}
 			${nodeRows}
+			${versionRows}
 			<div class="slow-ai-canvas__template-card-actions">
 				<button class="btn btn-xs btn-primary" type="button" data-action="create-workflow-from-template" data-template-name="${this.escape(template.name)}">${__("Create Workflow from Template")}</button>
 			</div>
 		</div>`);
+	}
+
+	renderTemplateVersionRows(template) {
+		const versions = template.versions || [];
+		if (!versions.length) {
+			return `<div class="slow-ai-canvas__template-preview-row">${__("Versions")}: ${__("No approved versions")}</div>`;
+		}
+		const rows = versions
+			.map((version) => {
+				const hash = version.snapshot_hash ? String(version.snapshot_hash).slice(0, 12) : "";
+				const rollback =
+					version.status !== "ACTIVE"
+						? `<button class="btn btn-xs btn-default" type="button" data-action="rollback-template-version" data-template-name="${this.escape(template.name)}" data-template-version="${this.escape(version.name)}">${__("Rollback")}</button>`
+						: "";
+				return `<div class="slow-ai-canvas__template-version-row" data-template-version="${this.escape(version.name)}">
+					<span>${__("Version")} ${this.escape(version.version_no)} · ${this.escape(version.status)} · ${this.escape(hash)}</span>
+					${rollback}
+				</div>`;
+			})
+			.join("");
+		return `<div class="slow-ai-canvas__template-versions">${rows}</div>`;
+	}
+
+	rollbackTemplateToVersion(templateName, templateVersion) {
+		if (!templateName || !templateVersion) {
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			frappe.prompt(
+				[{ label: __("Review Notes"), fieldname: "review_notes", fieldtype: "Small Text" }],
+				(values) => {
+					frappe
+						.call("slow_ai.api.templates.rollback_template_to_version", {
+							template: templateName,
+							template_version: templateVersion,
+							review_notes: values.review_notes || "",
+						})
+						.then((response) => {
+							this.selectedTemplate = response.message;
+							this.setStatus(__("Rolled back template {0}", [response.message.name]));
+							this.loadTemplates();
+							this.loadTemplateVersions(response.message.name).then(resolve);
+						});
+				},
+				__("Rollback Template"),
+				__("Rollback")
+			);
+		});
 	}
 
 	createWorkflowFromTemplate(templateName) {

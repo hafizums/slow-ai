@@ -8,8 +8,11 @@ from slow_ai.application.templates import create_workflow_from_template as creat
 from slow_ai.application.templates import approve_template as approve_template_service
 from slow_ai.application.templates import archive_template as archive_template_service
 from slow_ai.application.templates import get_template as get_template_service
+from slow_ai.application.templates import get_template_version as get_template_version_service
 from slow_ai.application.templates import list_templates as list_templates_service
+from slow_ai.application.templates import list_template_versions as list_template_versions_service
 from slow_ai.application.templates import reject_template as reject_template_service
+from slow_ai.application.templates import rollback_template_to_version as rollback_template_to_version_service
 from slow_ai.application.templates import save_template as save_template_service
 from slow_ai.application.templates import submit_template_for_review as submit_template_for_review_service
 
@@ -76,3 +79,22 @@ def reject_template(template: str, rejection_reason: str) -> dict:
 @frappe.whitelist()
 def archive_template(template: str, reason: str | None = None) -> dict:
     return archive_template_service(template=template, reason=reason)
+
+
+@frappe.whitelist()
+def list_template_versions(template: str) -> dict:
+    return list_template_versions_service(template=template)
+
+
+@frappe.whitelist()
+def get_template_version(template_version: str) -> dict:
+    return get_template_version_service(template_version=template_version)
+
+
+@frappe.whitelist()
+def rollback_template_to_version(template: str, template_version: str, review_notes: str | None = None) -> dict:
+    return rollback_template_to_version_service(
+        template=template,
+        template_version=template_version,
+        review_notes=review_notes,
+    )

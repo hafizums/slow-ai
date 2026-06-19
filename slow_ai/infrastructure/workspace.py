@@ -124,6 +124,7 @@ def _workspace_links() -> list[dict]:
         _link("AI Workflow", "DocType", "AI Workflow"),
         _link("AI Workflow Version", "DocType", "AI Workflow Version"),
         _link("AI Workflow Template", "DocType", "AI Workflow Template"),
+        _link("AI Workflow Template Version", "DocType", "AI Workflow Template Version"),
         _card_break("Runs"),
         _link("AI Workflow Run", "DocType", "AI Workflow Run"),
         _link("AI Node Run", "DocType", "AI Node Run"),

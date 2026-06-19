@@ -36,6 +36,8 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.templates.approve_template",
     "slow_ai.api.templates.reject_template",
     "slow_ai.api.templates.archive_template",
+    "slow_ai.api.templates.list_template_versions",
+    "slow_ai.api.templates.rollback_template_to_version",
 }
 
 FORBIDDEN_CANVAS_FRAGMENTS = (
@@ -315,6 +317,12 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("approveTemplate", page.script)
         self.assertIn("rejectTemplate", page.script)
         self.assertIn("archiveTemplate", page.script)
+        self.assertIn("loadTemplateVersions", page.script)
+        self.assertIn("rollbackTemplateToVersion", page.script)
+        self.assertIn("slow_ai.api.templates.list_template_versions", page.script)
+        self.assertIn("slow_ai.api.templates.rollback_template_to_version", page.script)
+        self.assertIn("Active Version", page.script)
+        self.assertIn("Rollback", page.script)
         self.assertIn("Submit Review", page.script)
         self.assertIn("Approve", page.script)
         self.assertIn("Reject", page.script)

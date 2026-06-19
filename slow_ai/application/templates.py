@@ -12,11 +12,13 @@ from slow_ai.application.workflow_validation import validate_workflow
 from slow_ai.application.template_inputs import normalize_input_schema
 from slow_ai.application.workflows import save_workflow
 from slow_ai.domain.snapshots import canonical_json
+from slow_ai.domain.snapshots import snapshot_hash
 
 
 TEMPLATE_STATUSES = frozenset({"DRAFT", "IN_REVIEW", "PUBLISHED", "REJECTED", "ARCHIVED"})
 OWNER_EDITABLE_STATUSES = frozenset({"DRAFT", "REJECTED"})
 REVIEW_CONTROLLED_STATUSES = frozenset({"IN_REVIEW", "PUBLISHED", "ARCHIVED"})
+TEMPLATE_VERSION_STATUSES = frozenset({"ACTIVE", "SUPERSEDED", "ROLLED_BACK", "ARCHIVED"})
 FORBIDDEN_TEMPLATE_FRAGMENTS = (
     "api_key_secret",
     "Authorization: Bearer",
@@ -73,6 +75,8 @@ def save_template(
         doc = frappe.get_doc("AI Workflow Template", template)
         _assert_can_edit_template(doc)
         _assert_save_status_allowed(normalized_status, doc)
+        if doc.status == "PUBLISHED" and normalized_status == "DRAFT":
+            values["status"] = "PUBLISHED"
         doc.update(values)
         doc.save(ignore_permissions=True)
     else:
@@ -101,6 +105,7 @@ def get_template(template: str) -> dict[str, Any]:
         "review_notes": getattr(doc, "review_notes", None),
         "rejection_reason": getattr(doc, "rejection_reason", None),
         "published_at": getattr(doc, "published_at", None),
+        "published_version": getattr(doc, "published_version", None),
         "owner": doc.owner,
         "modified": doc.modified,
     }
@@ -129,6 +134,7 @@ def list_templates(status: str | None = None, category: str | None = None) -> di
             "review_notes",
             "rejection_reason",
             "published_at",
+            "published_version",
             "owner",
             "modified",
         ],
@@ -159,8 +165,8 @@ def create_workflow_from_template(
 def submit_template_for_review(template: str) -> dict[str, Any]:
     doc = frappe.get_doc("AI Workflow Template", template)
     _assert_can_submit_template(doc)
-    if doc.status not in {"DRAFT", "REJECTED"}:
-        frappe.throw("Only DRAFT or REJECTED templates can be submitted for review.", frappe.ValidationError)
+    if doc.status not in {"DRAFT", "REJECTED", "PUBLISHED"}:
+        frappe.throw("Only DRAFT, REJECTED, or PUBLISHED templates can be submitted for review.", frappe.ValidationError)
     _validate_template_for_publication(doc)
     doc.status = "IN_REVIEW"
     doc.submitted_by = frappe.session.user
@@ -180,12 +186,14 @@ def approve_template(template: str, review_notes: str | None = None) -> dict[str
         frappe.throw("Only IN_REVIEW templates can be approved.", frappe.ValidationError)
     _validate_template_for_publication(doc)
     now = now_datetime()
+    version = _create_template_version(doc, approved_by=frappe.session.user, approved_at=now, previous_active_status="SUPERSEDED")
     doc.status = "PUBLISHED"
     doc.reviewed_by = frappe.session.user
     doc.reviewed_at = now
     doc.review_notes = review_notes
     doc.rejection_reason = None
     doc.published_at = now
+    doc.published_version = version.name
     doc.save(ignore_permissions=True)
     return get_template(doc.name)
 
@@ -218,7 +226,109 @@ def archive_template(template: str, reason: str | None = None) -> dict[str, Any]
     if reason:
         doc.review_notes = str(reason)
     doc.save(ignore_permissions=True)
+    _mark_active_template_versions(doc.name, "ARCHIVED")
     return get_template(doc.name)
+
+
+def list_template_versions(template: str) -> dict[str, Any]:
+    doc = frappe.get_doc("AI Workflow Template", template)
+    _assert_can_view_template_versions(doc)
+    rows = frappe.get_all(
+        "AI Workflow Template Version",
+        filters={"template": doc.name},
+        fields=[
+            "name",
+            "template",
+            "version_no",
+            "status",
+            "template_name",
+            "category",
+            "description",
+            "preview_asset",
+            "snapshot_hash",
+            "approved_by",
+            "approved_at",
+            "source_template_modified",
+            "owner",
+            "creation",
+            "modified",
+        ],
+        order_by="version_no desc",
+    )
+    return {"versions": [dict(row) for row in rows]}
+
+
+def get_template_version(template_version: str) -> dict[str, Any]:
+    version = frappe.get_doc("AI Workflow Template Version", template_version)
+    template_doc = frappe.get_doc("AI Workflow Template", version.template)
+    _assert_can_view_template_versions(template_doc)
+    return _template_version_summary(version)
+
+
+def rollback_template_to_version(
+    *,
+    template: str,
+    template_version: str,
+    review_notes: str | None = None,
+) -> dict[str, Any]:
+    _require_system_manager("Rolling back AI Workflow Templates requires System Manager.")
+    doc = frappe.get_doc("AI Workflow Template", template)
+    target = frappe.get_doc("AI Workflow Template Version", template_version)
+    if target.template != doc.name:
+        frappe.throw("Template version does not belong to the selected template.", frappe.ValidationError)
+    _validate_template_version_snapshot(target)
+    now = now_datetime()
+    version = _create_template_version_from_version(
+        target,
+        approved_by=frappe.session.user,
+        approved_at=now,
+        previous_active_status="ROLLED_BACK",
+    )
+    doc.template_name = version.template_name
+    doc.category = version.category
+    doc.description = version.description
+    doc.preview_asset = version.preview_asset
+    doc.nodes_json = version.nodes_json
+    doc.edges_json = version.edges_json
+    doc.layout_json = version.layout_json
+    doc.input_schema_json = version.input_schema_json
+    doc.status = "PUBLISHED"
+    doc.reviewed_by = frappe.session.user
+    doc.reviewed_at = now
+    doc.review_notes = review_notes
+    doc.rejection_reason = None
+    doc.published_at = now
+    doc.published_version = version.name
+    doc.save(ignore_permissions=True)
+    return get_template(doc.name)
+
+
+def list_published_templates(category: str | None = None) -> dict[str, Any]:
+    filters: dict[str, Any] = {"status": "PUBLISHED"}
+    if category:
+        filters["category"] = category
+    templates = frappe.get_all(
+        "AI Workflow Template",
+        filters=filters,
+        fields=["name", "modified"],
+        order_by="modified desc",
+    )
+    rows = []
+    for template in templates:
+        version = _get_active_template_version(template.name)
+        if version:
+            rows.append(_public_template_summary(version, template.modified))
+    return {"templates": rows}
+
+
+def get_published_template(template: str) -> dict[str, Any]:
+    doc = frappe.get_doc("AI Workflow Template", template)
+    if doc.status != "PUBLISHED":
+        frappe.throw(f"Template is not published: {template}", frappe.PermissionError)
+    version = _get_active_template_version(doc.name, getattr(doc, "published_version", None))
+    if not version:
+        frappe.throw(f"Template has no active published version: {template}", frappe.PermissionError)
+    return _public_template_payload(version, doc.modified)
 
 
 def _loads_json(value: Any, default: Any) -> Any:
@@ -234,7 +344,7 @@ def _loads_json(value: Any, default: Any) -> Any:
 
 
 def _assert_can_edit_template(doc) -> None:
-    if doc.status not in OWNER_EDITABLE_STATUSES:
+    if doc.status not in OWNER_EDITABLE_STATUSES and doc.status != "PUBLISHED":
         frappe.throw("Only DRAFT or REJECTED templates can be edited through save_template.", frappe.PermissionError)
     if _is_system_manager():
         return
@@ -256,6 +366,11 @@ def _assert_save_status_allowed(status: str, doc) -> None:
     if doc is not None and doc.status == "REJECTED" and status != "REJECTED":
         frappe.throw(
             "Rejected templates must remain REJECTED until submitted for review.",
+            frappe.ValidationError,
+        )
+    if doc is not None and doc.status == "PUBLISHED" and status != "DRAFT":
+        frappe.throw(
+            "Published template draft content can only be edited through a DRAFT save before review.",
             frappe.ValidationError,
         )
 
@@ -363,3 +478,219 @@ def _resolve_model(model_ref: str):
     if not matches:
         frappe.throw(f"Provider model is not configured: {model_ref}.", frappe.ValidationError)
     return frappe.get_doc("AI Model", matches[0].name)
+
+
+def _create_template_version(doc, *, approved_by: str, approved_at, previous_active_status: str):
+    _mark_active_template_versions(doc.name, previous_active_status)
+    version_no = _next_template_version_no(doc.name)
+    snapshot = _template_snapshot_from_doc(doc)
+    return frappe.get_doc(
+        {
+            "doctype": "AI Workflow Template Version",
+            "template": doc.name,
+            "version_no": version_no,
+            "status": "ACTIVE",
+            "template_name": doc.template_name,
+            "category": doc.category,
+            "description": doc.description,
+            "preview_asset": doc.preview_asset,
+            "nodes_json": canonical_json(snapshot["nodes"]),
+            "edges_json": canonical_json(snapshot["edges"]),
+            "layout_json": canonical_json(snapshot["layout"]),
+            "input_schema_json": canonical_json(snapshot["input_schema"]),
+            "snapshot_hash": snapshot_hash(snapshot),
+            "approved_by": approved_by,
+            "approved_at": approved_at,
+            "source_template_modified": doc.modified,
+            "owner": doc.owner,
+        }
+    ).insert(ignore_permissions=True)
+
+
+def _create_template_version_from_version(version, *, approved_by: str, approved_at, previous_active_status: str):
+    _mark_active_template_versions(version.template, previous_active_status)
+    snapshot = _template_snapshot_from_version(version)
+    return frappe.get_doc(
+        {
+            "doctype": "AI Workflow Template Version",
+            "template": version.template,
+            "version_no": _next_template_version_no(version.template),
+            "status": "ACTIVE",
+            "template_name": version.template_name,
+            "category": version.category,
+            "description": version.description,
+            "preview_asset": version.preview_asset,
+            "nodes_json": canonical_json(snapshot["nodes"]),
+            "edges_json": canonical_json(snapshot["edges"]),
+            "layout_json": canonical_json(snapshot["layout"]),
+            "input_schema_json": canonical_json(snapshot["input_schema"]),
+            "snapshot_hash": snapshot_hash(snapshot),
+            "approved_by": approved_by,
+            "approved_at": approved_at,
+            "source_template_modified": version.source_template_modified,
+            "owner": version.owner,
+        }
+    ).insert(ignore_permissions=True)
+
+
+def _template_snapshot_from_doc(doc) -> dict[str, Any]:
+    nodes = _loads_json(doc.nodes_json, [])
+    edges = _loads_json(doc.edges_json, [])
+    layout = _loads_json(doc.layout_json, {})
+    input_schema = _loads_json(getattr(doc, "input_schema_json", None), [])
+    return _template_snapshot(
+        template_name=doc.template_name,
+        category=doc.category,
+        description=doc.description,
+        preview_asset=doc.preview_asset,
+        nodes=nodes,
+        edges=edges,
+        layout=layout,
+        input_schema=input_schema,
+    )
+
+
+def _template_snapshot_from_version(version) -> dict[str, Any]:
+    return _template_snapshot(
+        template_name=version.template_name,
+        category=version.category,
+        description=version.description,
+        preview_asset=version.preview_asset,
+        nodes=_loads_json(version.nodes_json, []),
+        edges=_loads_json(version.edges_json, []),
+        layout=_loads_json(version.layout_json, {}),
+        input_schema=_loads_json(version.input_schema_json, []),
+    )
+
+
+def _template_snapshot(
+    *,
+    template_name: str,
+    category: str | None,
+    description: str | None,
+    preview_asset: str | None,
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    layout: Any,
+    input_schema: Any,
+) -> dict[str, Any]:
+    return {
+        "template_name": template_name,
+        "category": category,
+        "description": description,
+        "preview_asset": preview_asset,
+        "nodes": nodes,
+        "edges": edges,
+        "layout": layout,
+        "input_schema": input_schema,
+    }
+
+
+def _next_template_version_no(template: str) -> int:
+    latest = frappe.get_all(
+        "AI Workflow Template Version",
+        filters={"template": template},
+        fields=["version_no"],
+        order_by="version_no desc",
+        limit=1,
+    )
+    return int(latest[0].version_no) + 1 if latest else 1
+
+
+def _mark_active_template_versions(template: str, status: str) -> None:
+    if status not in TEMPLATE_VERSION_STATUSES:
+        frappe.throw(f"Unsupported AI Workflow Template Version status: {status}", frappe.ValidationError)
+    rows = frappe.get_all(
+        "AI Workflow Template Version",
+        filters={"template": template, "status": "ACTIVE"},
+        fields=["name"],
+    )
+    for row in rows:
+        version = frappe.get_doc("AI Workflow Template Version", row.name)
+        version.status = status
+        version.save(ignore_permissions=True)
+
+
+def _get_active_template_version(template: str, preferred_version: str | None = None):
+    if preferred_version and frappe.db.exists("AI Workflow Template Version", preferred_version):
+        version = frappe.get_doc("AI Workflow Template Version", preferred_version)
+        if version.template == template and version.status == "ACTIVE":
+            return version
+    rows = frappe.get_all(
+        "AI Workflow Template Version",
+        filters={"template": template, "status": "ACTIVE"},
+        fields=["name"],
+        order_by="version_no desc",
+        limit=1,
+    )
+    return frappe.get_doc("AI Workflow Template Version", rows[0].name) if rows else None
+
+
+def _public_template_summary(version, template_modified=None) -> dict[str, Any]:
+    return {
+        "name": version.template,
+        "template": version.template,
+        "template_version": version.name,
+        "version_no": version.version_no,
+        "snapshot_hash": version.snapshot_hash,
+        "template_name": version.template_name,
+        "status": "PUBLISHED",
+        "category": version.category,
+        "description": version.description,
+        "preview_asset": version.preview_asset,
+        "published_at": version.approved_at,
+        "modified": template_modified or version.modified,
+    }
+
+
+def _public_template_payload(version, template_modified=None) -> dict[str, Any]:
+    return _public_template_summary(version, template_modified) | {
+        "nodes": _loads_json(version.nodes_json, []),
+        "edges": _loads_json(version.edges_json, []),
+        "layout": _loads_json(version.layout_json, {}),
+        "input_schema": _loads_json(version.input_schema_json, []),
+    }
+
+
+def _template_version_summary(version) -> dict[str, Any]:
+    return {
+        "name": version.name,
+        "template": version.template,
+        "version_no": version.version_no,
+        "status": version.status,
+        "template_name": version.template_name,
+        "category": version.category,
+        "description": version.description,
+        "preview_asset": version.preview_asset,
+        "snapshot_hash": version.snapshot_hash,
+        "approved_by": version.approved_by,
+        "approved_at": version.approved_at,
+        "source_template_modified": version.source_template_modified,
+        "owner": version.owner,
+        "created": version.creation,
+        "modified": version.modified,
+    }
+
+
+def _validate_template_version_snapshot(version) -> None:
+    nodes = _loads_json(version.nodes_json, [])
+    edges = _loads_json(version.edges_json, [])
+    input_schema = _loads_json(version.input_schema_json, [])
+    validate_workflow({"nodes": nodes, "edges": edges})
+    normalize_input_schema(input_schema, nodes)
+    _validate_required_public_metadata(version)
+    _validate_preview_asset(version)
+    _validate_safe_template_payload(nodes, edges, input_schema)
+    _validate_provider_nodes(nodes)
+    snapshot = _template_snapshot_from_version(version)
+    if snapshot_hash(snapshot) != version.snapshot_hash:
+        frappe.throw("Template version snapshot hash does not match persisted payload.", frappe.ValidationError)
+
+
+def _assert_can_view_template_versions(doc) -> None:
+    if _is_system_manager():
+        return
+    if frappe.session.user == "Guest":
+        frappe.throw("Login is required to view template versions.", frappe.PermissionError)
+    if doc.owner != frappe.session.user:
+        frappe.throw("You can only view versions for your own templates.", frappe.PermissionError)

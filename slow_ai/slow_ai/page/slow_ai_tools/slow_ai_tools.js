@@ -143,6 +143,7 @@ class SlowAiToolsPage {
 						<div>
 							<h4>${this.escape(template.template_name || template.name)}</h4>
 							<div class="slow-ai-tools__muted">${this.escape(template.category || __("Uncategorized"))} · ${this.escape(template.status || "")}</div>
+							${template.version_no ? `<div class="slow-ai-tools__muted">${__("Version")} ${this.escape(template.version_no)}</div>` : ""}
 							${template.description ? `<p>${this.escape(template.description)}</p>` : ""}
 						</div>
 						<button class="btn btn-xs btn-primary" type="button" data-action="select-template" data-template-name="${this.escape(template.name)}">${__("Select")}</button>
@@ -175,6 +176,7 @@ class SlowAiToolsPage {
 		this.$templateDetail.html(`<div class="slow-ai-tools__selected">
 			<h3>${this.escape(this.template.template_name || this.template.name)}</h3>
 			<div class="slow-ai-tools__muted">${this.escape(this.template.category || __("Uncategorized"))}</div>
+			${this.template.version_no ? `<div class="slow-ai-tools__muted">${__("Version")} ${this.escape(this.template.version_no)}</div>` : ""}
 			${this.template.description ? `<p>${this.escape(this.template.description)}</p>` : ""}
 		</div>`);
 		this.renderForm();

@@ -152,6 +152,26 @@ class TestCoreDocTypes(FrappeTestCase):
                 "layout_json": workflow.layout_json,
             }
         )
+        template_version = insert_doc(
+            {
+                "doctype": "AI Workflow Template Version",
+                "template": template.name,
+                "version_no": 1,
+                "status": "ACTIVE",
+                "template_name": template.template_name,
+                "category": template.category,
+                "preview_asset": asset.name,
+                "nodes_json": workflow.draft_nodes_json,
+                "edges_json": workflow.draft_edges_json,
+                "layout_json": workflow.layout_json,
+                "input_schema_json": json.dumps([]),
+                "snapshot_hash": unique("template-snapshot"),
+                "approved_by": "Administrator",
+                "approved_at": frappe.utils.now_datetime(),
+                "source_template_modified": template.modified,
+                "owner": template.owner,
+            }
+        )
         share = insert_doc(
             {
                 "doctype": "AI Tool Run Share",
@@ -176,6 +196,7 @@ class TestCoreDocTypes(FrappeTestCase):
             "asset": asset,
             "ledger": ledger,
             "template": template,
+            "template_version": template_version,
             "share": share,
         }
 
@@ -194,6 +215,13 @@ class TestCoreDocTypes(FrappeTestCase):
 
         with self.assertRaises(frappe.ValidationError):
             version.save(ignore_permissions=True)
+
+    def test_workflow_template_version_is_immutable_after_insert(self):
+        template_version = self.create_document_chain()["template_version"]
+        template_version.snapshot_hash = unique("changed")
+
+        with self.assertRaises(frappe.ValidationError):
+            template_version.save(ignore_permissions=True)
 
     def test_credit_ledger_is_append_only(self):
         ledger = self.create_document_chain()["ledger"]
@@ -225,6 +253,7 @@ class TestCoreDocTypes(FrappeTestCase):
             "slow_ai/doctype/ai_provider_account/ai_provider_account.py",
             "slow_ai/doctype/ai_credit_ledger/ai_credit_ledger.py",
             "slow_ai/doctype/ai_workflow_template/ai_workflow_template.py",
+            "slow_ai/doctype/ai_workflow_template_version/ai_workflow_template_version.py",
             "slow_ai/doctype/ai_tool_run_share/ai_tool_run_share.py",
         ]
         forbidden = ("providers.", "engine.", "node_registry.", "frappe.enqueue")

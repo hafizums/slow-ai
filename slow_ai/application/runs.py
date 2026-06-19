@@ -7,6 +7,7 @@ from typing import Any
 
 import frappe
 
+from slow_ai.application.project_access import assert_can_view_project
 from slow_ai.application.run_service import RunService
 
 
@@ -22,6 +23,7 @@ def start_run(workflow: str) -> dict[str, Any]:
 
 def get_run_status(workflow_run: str) -> dict[str, Any]:
     run = frappe.get_doc("AI Workflow Run", workflow_run)
+    assert_can_view_project(run.project)
     node_runs = frappe.get_all(
         "AI Node Run",
         filters={"workflow_run": workflow_run},

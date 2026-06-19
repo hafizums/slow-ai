@@ -135,6 +135,7 @@ class TestPlatformKernel(FrappeTestCase):
     def test_platform_kernel_layers_are_importable(self):
         expected_doctypes = {
             "AI Project",
+            "AI Project Member",
             "AI Workflow",
             "AI Workflow Version",
             "AI Workflow Run",

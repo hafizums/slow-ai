@@ -7,6 +7,7 @@ from typing import Any
 
 import frappe
 
+from slow_ai.application.project_access import can_manage_provider_accounts, assert_can_manage_provider_accounts, is_system_manager
 from slow_ai.infrastructure.provider_accounts import PROVIDER_ACCOUNT_SAFE_FIELDS, safe_account_payload
 
 
@@ -24,6 +25,9 @@ def list_accounts(
         filters["provider"] = provider_name
     if project_name:
         filters["project"] = project_name
+        assert_can_manage_provider_accounts(project_name)
+    elif not _is_system_manager():
+        filters["user"] = frappe.session.user
     if user_name:
         filters["user"] = user_name
     if not _as_bool(include_disabled):
@@ -60,6 +64,10 @@ def create_account(
     secret = _clean_required(api_key, "api_key")
     project_name = _validate_project(project)
     user_name = _validate_user(user)
+    if project_name:
+        assert_can_manage_provider_accounts(project_name)
+    elif not _is_system_manager():
+        frappe.throw("Project is required to create a provider account.", frappe.PermissionError)
     if user_name and user_name != frappe.session.user and not _is_system_manager():
         frappe.throw("You cannot create a provider account for another user.")
     if not user_name and not _is_system_manager():
@@ -121,6 +129,8 @@ def _can_view_account(row) -> bool:
     if _is_system_manager():
         return True
     current_user = frappe.session.user
+    if row.get("project") and can_manage_provider_accounts(row.get("project")):
+        return True
     return row.owner == current_user or row.get("user") == current_user
 
 
@@ -128,6 +138,8 @@ def _assert_can_manage_account(account) -> None:
     if _is_system_manager():
         return
     current_user = frappe.session.user
+    if account.project and can_manage_provider_accounts(account.project):
+        return
     if account.owner == current_user or account.user == current_user:
         return
     frappe.throw("You are not allowed to manage this provider account.")
@@ -139,7 +151,7 @@ def _assert_not_guest() -> None:
 
 
 def _is_system_manager() -> bool:
-    return "System Manager" in frappe.get_roles(frappe.session.user)
+    return is_system_manager()
 
 
 def _require_account_name(account: str) -> str:

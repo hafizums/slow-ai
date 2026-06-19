@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from slow_ai.application.contracts import NodeRunRepository, WorkflowRunRepository, WorkflowVersionRepository
+from slow_ai.application.project_access import assert_can_run_project
 from slow_ai.application.run_preflight import RunPreflightService
 from slow_ai.application.workflow_validation import validate_workflow
 from slow_ai.infrastructure.queue import FrappeWorkflowQueue
@@ -46,6 +47,7 @@ class RunService:
 
     def start_run(self, workflow_name: str) -> StartRunResult:
         draft = self.draft_repository.get_draft(workflow_name)
+        assert_can_run_project(draft.project)
         graph = validate_workflow(draft.as_workflow_json(), node_registry=self.node_registry)
         self.run_preflight.assert_can_start(draft, graph)
         workflow_version = self.version_repository.create_immutable_version(draft, graph)

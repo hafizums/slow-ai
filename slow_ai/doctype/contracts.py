@@ -2,6 +2,7 @@
 
 PERMANENT_DOCTYPES = (
     "AI Project",
+    "AI Project Member",
     "AI Workflow",
     "AI Workflow Version",
     "AI Workflow Run",

@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import frappe
 
+from slow_ai.application.project_access import assert_can_edit_project, assert_can_view_project
 from slow_ai.application.workflow_validation import validate_workflow
 from slow_ai.domain.snapshots import canonical_json
 
@@ -25,6 +26,7 @@ def save_workflow(
     parsed_edges = _loads_json(edges, [])
     parsed_layout = _loads_json(layout, {})
     validate_workflow({"nodes": parsed_nodes, "edges": parsed_edges})
+    assert_can_edit_project(project)
 
     values = {
         "title": title,
@@ -36,6 +38,7 @@ def save_workflow(
     }
     if workflow:
         doc = frappe.get_doc("AI Workflow", workflow)
+        assert_can_edit_project(doc.project)
         doc.update(values)
         doc.save(ignore_permissions=True)
     else:
@@ -46,6 +49,7 @@ def save_workflow(
 
 def get_workflow(workflow: str) -> dict[str, Any]:
     doc = frappe.get_doc("AI Workflow", workflow)
+    assert_can_view_project(doc.project)
     return {
         "name": doc.name,
         "title": doc.title,

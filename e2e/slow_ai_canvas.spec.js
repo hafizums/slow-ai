@@ -31,6 +31,10 @@ const API = {
 	getModel: "slow_ai.api.models.get_model",
 	updateModelStatus: "slow_ai.api.models.update_model_status",
 	updateModelPricing: "slow_ai.api.models.update_model_pricing",
+	listProjectMembers: "slow_ai.api.projects.list_members",
+	addProjectMember: "slow_ai.api.projects.add_member",
+	updateProjectMemberRole: "slow_ai.api.projects.update_member_role",
+	disableProjectMember: "slow_ai.api.projects.disable_member",
 };
 
 let fixtures;
@@ -52,6 +56,11 @@ function apiPredicate(method) {
 		response.request().method() === "POST" &&
 		response.url().includes(`/api/method/${method}`) &&
 		response.status() === 200;
+}
+
+function apiAnyStatusPredicate(method) {
+	return (response) =>
+		response.request().method() === "POST" && response.url().includes(`/api/method/${method}`);
 }
 
 async function apiJson(response) {
@@ -414,6 +423,31 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(balance.message.project).toBe(fixtures.public_tool_project);
 	await expect(page.locator("[data-role='balance']")).toContainText("Balance");
 
+	const memberListResponse = page.waitForResponse(apiPredicate(API.listProjectMembers));
+	await page.locator("[data-action='refresh-project-members']").click();
+	const memberList = await apiJson(await memberListResponse);
+	expect(Array.isArray(memberList.message.members)).toBe(true);
+
+	await page.locator("[data-role='member-user']").fill(fixtures.public_tool_editor_user);
+	await page.locator("[data-role='member-role']").selectOption("EDITOR");
+	const addEditorResponse = page.waitForResponse(apiPredicate(API.addProjectMember));
+	const reloadAfterEditorResponse = page.waitForResponse(apiPredicate(API.listProjectMembers));
+	await page.locator("[data-action='add-project-member']").click();
+	const addedEditor = await apiJson(await addEditorResponse);
+	await reloadAfterEditorResponse;
+	expect(addedEditor.message.member.role).toBe("EDITOR");
+	await expect(page.locator("[data-role='project-members']")).toContainText(fixtures.public_tool_editor_user);
+
+	await page.locator("[data-role='member-user']").fill(fixtures.public_tool_viewer_user);
+	await page.locator("[data-role='member-role']").selectOption("VIEWER");
+	const addViewerResponse = page.waitForResponse(apiPredicate(API.addProjectMember));
+	const reloadAfterViewerResponse = page.waitForResponse(apiPredicate(API.listProjectMembers));
+	await page.locator("[data-action='add-project-member']").click();
+	const addedViewer = await apiJson(await addViewerResponse);
+	await reloadAfterViewerResponse;
+	expect(addedViewer.message.member.role).toBe("VIEWER");
+	await expect(page.locator("[data-role='project-members']")).toContainText(fixtures.public_tool_viewer_user);
+
 	const templateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page
 		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)
@@ -541,6 +575,75 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(guestSource).not.toContain("Authorization: Bearer");
 	expect(guestProviderRequests).toEqual([]);
 	await guestContext.close();
+
+	const editorContext = await browser.newContext();
+	const editorPage = await editorContext.newPage();
+	await editorPage.request.post("/api/method/login", {
+		form: {
+			usr: fixtures.public_tool_editor_user,
+			pwd: fixtures.public_tool_editor_password,
+		},
+	});
+	const editorTemplateListResponse = editorPage.waitForResponse(apiPredicate(API.publicListTemplates));
+	await editorPage.goto("/app/slow-ai-tools");
+	await editorTemplateListResponse;
+	await editorPage.locator("[data-role='project']").fill(fixtures.public_tool_project);
+	const editorRunsResponse = editorPage.waitForResponse(apiPredicate(API.publicListMyRuns));
+	await editorPage.locator("[data-action='refresh-my-runs']").click();
+	const editorRuns = await apiJson(await editorRunsResponse);
+	expect(editorRuns.message.runs.some((run) => run.workflow_run === fixtures.public_asset_workflow_run)).toBe(true);
+	const editorTemplateResponse = editorPage.waitForResponse(apiPredicate(API.publicGetTemplate));
+	await editorPage
+		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)
+		.getByRole("button", { name: "Select" })
+		.click();
+	await editorTemplateResponse;
+	await editorPage.locator("[data-node-id='prompt_1'][data-config-field='text']").fill(`${fixtures.public_tool_prompt} editor`);
+	const editorCreateWorkflowResponse = editorPage.waitForResponse(apiPredicate(API.publicCreateWorkflowFromTemplate));
+	const editorSaveWorkflowResponse = editorPage.waitForResponse(apiPredicate(API.saveWorkflow));
+	const editorStartRunResponse = editorPage.waitForResponse(apiPredicate(API.startRun));
+	await editorPage.locator("[data-action='run-tool']").click();
+	await editorCreateWorkflowResponse;
+	await editorSaveWorkflowResponse;
+	const editorStarted = await apiJson(await editorStartRunResponse);
+	expect(editorStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+	await editorContext.close();
+
+	const viewerContext = await browser.newContext();
+	const viewerPage = await viewerContext.newPage();
+	const viewerStartRequests = [];
+	viewerPage.on("request", (request) => {
+		if (request.url().includes(`/api/method/${API.startRun}`)) {
+			viewerStartRequests.push(request.url());
+		}
+	});
+	await viewerPage.request.post("/api/method/login", {
+		form: {
+			usr: fixtures.public_tool_viewer_user,
+			pwd: fixtures.public_tool_viewer_password,
+		},
+	});
+	const viewerTemplateListResponse = viewerPage.waitForResponse(apiPredicate(API.publicListTemplates));
+	await viewerPage.goto("/app/slow-ai-tools");
+	await viewerTemplateListResponse;
+	await viewerPage.locator("[data-role='project']").fill(fixtures.public_tool_project);
+	const viewerRunsResponse = viewerPage.waitForResponse(apiPredicate(API.publicListMyRuns));
+	await viewerPage.locator("[data-action='refresh-my-runs']").click();
+	const viewerRuns = await apiJson(await viewerRunsResponse);
+	expect(viewerRuns.message.runs.some((run) => run.workflow_run === fixtures.public_asset_workflow_run)).toBe(true);
+	const viewerTemplateResponse = viewerPage.waitForResponse(apiPredicate(API.publicGetTemplate));
+	await viewerPage
+		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)
+		.getByRole("button", { name: "Select" })
+		.click();
+	await viewerTemplateResponse;
+	await viewerPage.locator("[data-node-id='prompt_1'][data-config-field='text']").fill(`${fixtures.public_tool_prompt} viewer`);
+	const viewerCreateWorkflowResponse = viewerPage.waitForResponse(apiAnyStatusPredicate(API.publicCreateWorkflowFromTemplate));
+	await viewerPage.locator("[data-action='run-tool']").click();
+	const viewerCreateWorkflow = await viewerCreateWorkflowResponse;
+	expect(viewerCreateWorkflow.status()).toBeGreaterThanOrEqual(400);
+	expect(viewerStartRequests).toEqual([]);
+	await viewerContext.close();
 
 	const pageSource = await page.locator("html").innerHTML();
 	expect(pageSource).not.toContain("WAVESPEED_API_KEY");

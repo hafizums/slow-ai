@@ -43,6 +43,9 @@ class SlowAiToolsPage {
 		this.$assets = this.$root.find("[data-role='asset-output']");
 		this.$runLibrary = this.$root.find("[data-role='run-library']");
 		this.$runDetail = this.$root.find("[data-role='run-detail']");
+		this.$members = this.$root.find("[data-role='project-members']");
+		this.$memberUser = this.$root.find("[data-role='member-user']");
+		this.$memberRole = this.$root.find("[data-role='member-role']");
 	}
 
 	bindEvents() {
@@ -51,7 +54,9 @@ class SlowAiToolsPage {
 			this.loadTemplate($(event.currentTarget).attr("data-template-name"));
 		});
 		this.$root.on("click", "[data-action='refresh-balance']", () => this.refreshBalance());
-		this.$root.on("change", "[data-role='project']", () => this.refreshBalance());
+		this.$root.on("change", "[data-role='project']", () => {
+			this.loadMyRuns();
+		});
 		this.$root.on("click", "[data-action='preview-input-asset']", (event) => {
 			this.previewInputAsset($(event.currentTarget).attr("data-node-id"));
 		});
@@ -76,12 +81,23 @@ class SlowAiToolsPage {
 		this.$root.on("click", "[data-action='copy-asset-url']", (event) => {
 			this.copyAssetUrl($(event.currentTarget).attr("data-asset-url"));
 		});
+		this.$root.on("click", "[data-action='refresh-project-members']", () => this.loadProjectMembers());
+		this.$root.on("click", "[data-action='add-project-member']", () => this.addProjectMember());
+		this.$root.on("change", "[data-action='update-project-member-role']", (event) => {
+			const member = $(event.currentTarget).attr("data-member-name");
+			const role = $(event.currentTarget).val();
+			this.updateProjectMemberRole(member, role);
+		});
+		this.$root.on("click", "[data-action='disable-project-member']", (event) => {
+			this.disableProjectMember($(event.currentTarget).attr("data-member-name"));
+		});
 	}
 
 	show() {
 		this.loadTemplates();
 		this.loadMyRuns();
 		this.refreshBalance();
+		this.loadProjectMembers();
 		if (this.workflowRun) {
 			this.refreshRun();
 		}
@@ -265,6 +281,94 @@ class SlowAiToolsPage {
 			})
 			.catch(() => {
 				this.$balance.text(__("Balance unavailable"));
+			});
+	}
+
+	loadProjectMembers() {
+		const project = this.projectName();
+		if (!project) {
+			this.$members.html(`<div class="slow-ai-tools__empty">${__("Enter a project to manage members")}</div>`);
+			return Promise.resolve();
+		}
+		this.$members.html(`<div class="slow-ai-tools__empty">${__("Loading members")}</div>`);
+		return frappe
+			.call("slow_ai.api.projects.list_members", { project })
+			.then((response) => {
+				const members = (response.message && response.message.members) || [];
+				this.renderProjectMembers(members);
+			})
+			.catch(() => {
+				this.$members.html(`<div class="slow-ai-tools__empty">${__("Project member management unavailable")}</div>`);
+			});
+	}
+
+	renderProjectMembers(members) {
+		if (!members.length) {
+			this.$members.html(`<div class="slow-ai-tools__empty">${__("No project members")}</div>`);
+			return;
+		}
+		this.$members.html(
+			members
+				.map((member) => `<article class="slow-ai-tools__member" data-member-name="${this.escape(member.name)}">
+					<div>
+						<strong>${this.escape(member.user)}</strong>
+						<div class="slow-ai-tools__muted">${this.escape(member.status)} · ${this.escape(member.name)}</div>
+					</div>
+					<select class="form-control input-xs" data-action="update-project-member-role" data-member-name="${this.escape(member.name)}">
+						${this.memberRoleOption("OWNER", member.role)}
+						${this.memberRoleOption("EDITOR", member.role)}
+						${this.memberRoleOption("VIEWER", member.role)}
+						${this.memberRoleOption("BILLING", member.role)}
+					</select>
+					<button class="btn btn-xs btn-default" type="button" data-action="disable-project-member" data-member-name="${this.escape(member.name)}">${__("Disable")}</button>
+				</article>`)
+				.join("")
+		);
+	}
+
+	memberRoleOption(role, selectedRole) {
+		const selected = role === selectedRole ? "selected" : "";
+		return `<option value="${this.escape(role)}" ${selected}>${this.escape(role)}</option>`;
+	}
+
+	addProjectMember() {
+		const project = this.projectName();
+		const user = String(this.$memberUser.val() || "").trim();
+		const role = String(this.$memberRole.val() || "VIEWER").trim();
+		if (!project || !user) {
+			frappe.msgprint(__("Enter a project and user before adding a member."));
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.projects.add_member", { project, user, role })
+			.then(() => {
+				this.$memberUser.val("");
+				this.setStatus(__("Project member saved"));
+				return this.loadProjectMembers();
+			});
+	}
+
+	updateProjectMemberRole(member, role) {
+		if (!member || !role) {
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.projects.update_member_role", { member, role })
+			.then(() => {
+				this.setStatus(__("Project member role updated"));
+				return this.loadProjectMembers();
+			});
+	}
+
+	disableProjectMember(member) {
+		if (!member) {
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.projects.disable_member", { member })
+			.then(() => {
+				this.setStatus(__("Project member disabled"));
+				return this.loadProjectMembers();
 			});
 	}
 

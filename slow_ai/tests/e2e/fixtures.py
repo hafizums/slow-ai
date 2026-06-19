@@ -14,6 +14,10 @@ E2E_USER = "slow.ai.e2e@example.test"
 E2E_PASSWORD = "SlowAiE2E!2345"
 PUBLIC_TOOL_USER = "slow.ai.public.e2e@example.test"
 PUBLIC_TOOL_PASSWORD = "SlowAiPublicE2E!2345"
+PUBLIC_TOOL_EDITOR_USER = "slow.ai.public.editor.e2e@example.test"
+PUBLIC_TOOL_EDITOR_PASSWORD = "SlowAiPublicEditorE2E!2345"
+PUBLIC_TOOL_VIEWER_USER = "slow.ai.public.viewer.e2e@example.test"
+PUBLIC_TOOL_VIEWER_PASSWORD = "SlowAiPublicViewerE2E!2345"
 
 
 def setup_canvas_e2e() -> dict:
@@ -21,6 +25,8 @@ def setup_canvas_e2e() -> dict:
 
     user = _ensure_user()
     public_tool_user = _ensure_public_tool_user()
+    public_tool_editor_user = _ensure_public_tool_member_user(PUBLIC_TOOL_EDITOR_USER, PUBLIC_TOOL_EDITOR_PASSWORD)
+    public_tool_viewer_user = _ensure_public_tool_member_user(PUBLIC_TOOL_VIEWER_USER, PUBLIC_TOOL_VIEWER_PASSWORD)
     project = _create_project()
     public_tool_project = _create_project(owner=public_tool_user)
     placeholder_asset = frappe.call(
@@ -63,6 +69,10 @@ def setup_canvas_e2e() -> dict:
         "password": E2E_PASSWORD,
         "public_tool_user": public_tool_user,
         "public_tool_password": PUBLIC_TOOL_PASSWORD,
+        "public_tool_editor_user": public_tool_editor_user,
+        "public_tool_editor_password": PUBLIC_TOOL_EDITOR_PASSWORD,
+        "public_tool_viewer_user": public_tool_viewer_user,
+        "public_tool_viewer_password": PUBLIC_TOOL_VIEWER_PASSWORD,
         "public_tool_project": public_tool_project.name,
         "public_tool_template": public_tool_template["name"],
         "public_tool_template_label": public_tool_template["template_name"],
@@ -149,6 +159,36 @@ def _ensure_public_tool_user() -> str:
         user.save(ignore_permissions=True)
     update_password(PUBLIC_TOOL_USER, PUBLIC_TOOL_PASSWORD)
     return PUBLIC_TOOL_USER
+
+
+def _ensure_public_tool_member_user(email: str, password: str) -> str:
+    if frappe.db.exists("User", email):
+        user = frappe.get_doc("User", email)
+        user.enabled = 1
+        user.user_type = "System User"
+        user.save(ignore_permissions=True)
+    else:
+        user = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": "Slow AI",
+                "last_name": "Project Member E2E",
+                "enabled": 1,
+                "user_type": "System User",
+                "send_welcome_email": 0,
+                "roles": [{"role": "Desk User"}],
+            }
+        ).insert(ignore_permissions=True)
+    existing_roles = {row.role for row in user.get("roles", [])}
+    if "Desk User" not in existing_roles:
+        user.append("roles", {"role": "Desk User"})
+        user.save(ignore_permissions=True)
+    if "System Manager" in existing_roles:
+        user.set("roles", [{"role": row.role} for row in user.get("roles", []) if row.role != "System Manager"])
+        user.save(ignore_permissions=True)
+    update_password(email, password)
+    return email
 
 
 def _create_project(owner: str | None = None):

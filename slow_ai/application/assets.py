@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import frappe
 
+from slow_ai.application.project_access import assert_can_edit_project, assert_can_view_project
 from slow_ai.infrastructure.provider_outputs import AssetWriter
 
 
@@ -27,6 +28,7 @@ def upload(
         frappe.throw(f"Unsupported AI Asset type: {asset_type}")
     if not url and not file:
         frappe.throw("Either url or file is required for AI Asset upload.")
+    assert_can_edit_project(project)
 
     asset_name = AssetWriter().create_uploaded_asset(
         project_name=project,
@@ -39,8 +41,10 @@ def upload(
     return view(asset_name)
 
 
-def view(asset: str) -> dict[str, Any]:
+def view(asset: str, ignore_project_permissions: bool = False) -> dict[str, Any]:
     doc = frappe.get_doc("AI Asset", asset)
+    if not ignore_project_permissions:
+        assert_can_view_project(doc.project)
     return {
         "name": doc.name,
         "project": doc.project,

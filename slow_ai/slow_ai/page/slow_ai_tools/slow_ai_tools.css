@@ -96,8 +96,35 @@
 	gap: 12px;
 }
 
+.slow-ai-tools__members {
+	grid-column: 1 / -1;
+	display: grid;
+	gap: 12px;
+}
+
 .slow-ai-tools__run-library {
 	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.slow-ai-tools__member-form,
+.slow-ai-tools__member {
+	display: grid;
+	grid-template-columns: minmax(220px, 1fr) minmax(140px, 180px) auto;
+	gap: 10px;
+	align-items: end;
+}
+
+.slow-ai-tools__member-list {
+	display: grid;
+	gap: 8px;
+}
+
+.slow-ai-tools__member {
+	align-items: center;
+	padding: 10px;
+	border: 1px solid #d9e1ec;
+	border-radius: 6px;
+	background: #fff;
 }
 
 .slow-ai-tools__template {

@@ -7,6 +7,8 @@ from typing import Any
 
 import frappe
 
+from slow_ai.application.project_access import assert_can_manage_billing, assert_can_view_billing
+
 
 LEDGER_SAFE_FIELDS = [
     "name",
@@ -32,8 +34,8 @@ def create_top_up(
     reference_doctype: str | None = None,
     reference_name: str | None = None,
 ) -> dict[str, Any]:
-    frappe.only_for("System Manager")
     project_name = _require_project(project)
+    assert_can_manage_billing(project_name)
     amount = _as_positive_decimal(amount_usd, "amount_usd")
     ledger = frappe.get_doc(
         {
@@ -52,6 +54,7 @@ def create_top_up(
 
 def get_balance(project: str, user: str | None = None) -> dict[str, Any]:
     project_name = _require_project(project)
+    assert_can_view_billing(project_name)
     rows = _ledger_rows(project_name, user=user)
     credits = Decimal("0")
     debits = Decimal("0")
@@ -79,6 +82,7 @@ def get_balance(project: str, user: str | None = None) -> dict[str, Any]:
 
 def get_ledger(project: str, user: str | None = None, limit: int | str = 50) -> dict[str, Any]:
     project_name = _require_project(project)
+    assert_can_view_billing(project_name)
     rows = frappe.get_all(
         "AI Credit Ledger",
         filters=_ledger_filters(project_name, user),
@@ -95,7 +99,19 @@ def get_ledger(project: str, user: str | None = None, limit: int | str = 50) -> 
 
 
 def get_project_balance_usd(project: str) -> Decimal:
-    return Decimal(get_balance(project)["balance_usd"])
+    rows = _ledger_rows(_require_project(project))
+    credits = Decimal("0")
+    debits = Decimal("0")
+    adjustments = Decimal("0")
+    for row in rows:
+        amount = _as_decimal(row.amount_usd)
+        if row.ledger_type == "CREDIT":
+            credits += amount
+        elif row.ledger_type == "DEBIT":
+            debits += amount
+        elif row.ledger_type == "ADJUSTMENT":
+            adjustments += amount
+    return credits + adjustments - debits
 
 
 def assert_project_has_balance(project: str, estimated_cost_usd: Decimal) -> None:

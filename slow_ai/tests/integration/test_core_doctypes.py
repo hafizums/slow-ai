@@ -37,6 +37,15 @@ class TestCoreDocTypes(FrappeTestCase):
                 "pricing_json": json.dumps({"unit": "run", "amount_usd": 0.01}),
             }
         )
+        project_member = insert_doc(
+            {
+                "doctype": "AI Project Member",
+                "project": project.name,
+                "user": "Administrator",
+                "role": "OWNER",
+                "status": "ACTIVE",
+            }
+        )
         provider_account = insert_doc(
             {
                 "doctype": "AI Provider Account",
@@ -156,6 +165,7 @@ class TestCoreDocTypes(FrappeTestCase):
 
         return {
             "project": project,
+            "project_member": project_member,
             "model": model,
             "provider_account": provider_account,
             "workflow": workflow,
@@ -204,6 +214,7 @@ class TestCoreDocTypes(FrappeTestCase):
 
         controller_paths = [
             "slow_ai/doctype/ai_project/ai_project.py",
+            "slow_ai/doctype/ai_project_member/ai_project_member.py",
             "slow_ai/doctype/ai_workflow/ai_workflow.py",
             "slow_ai/doctype/ai_workflow_version/ai_workflow_version.py",
             "slow_ai/doctype/ai_workflow_run/ai_workflow_run.py",

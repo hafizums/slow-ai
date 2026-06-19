@@ -13,6 +13,14 @@ from frappe.utils import get_datetime
 from frappe.utils import now_datetime
 
 from slow_ai.application.assets import view as view_asset
+from slow_ai.application.project_access import (
+    assert_can_edit_project,
+    assert_can_share_run,
+    assert_can_view_project,
+    can_manage_project_members,
+    is_system_manager,
+    list_accessible_project_names,
+)
 from slow_ai.application.templates import create_workflow_from_template as create_template_workflow
 from slow_ai.application.templates import get_template as get_template_service
 from slow_ai.application.templates import list_templates as list_templates_service
@@ -39,7 +47,7 @@ def create_workflow_from_template(
     _require_logged_in_user()
     payload = get_template_service(template)
     _assert_template_published(payload)
-    _assert_project_access(project)
+    assert_can_edit_project(project)
     return create_template_workflow(template=template, project=project, title=title)
 
 
@@ -72,7 +80,7 @@ def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str,
 def get_my_run(workflow_run: str) -> dict[str, Any]:
     _require_logged_in_user()
     run = frappe.get_doc("AI Workflow Run", workflow_run)
-    _assert_project_access(run.project)
+    assert_can_view_project(run.project)
 
     node_runs = frappe.get_all(
         "AI Node Run",
@@ -112,7 +120,7 @@ def create_run_share(
 ) -> dict[str, Any]:
     _require_logged_in_user()
     run = frappe.get_doc("AI Workflow Run", workflow_run)
-    _assert_project_access(run.project)
+    assert_can_share_run(run.project)
     _assert_shareable_run(run)
     selected_asset_names = _validate_selected_assets(run.name, selected_assets)
 
@@ -171,29 +179,17 @@ def _assert_template_published(template: dict[str, Any]) -> None:
 
 
 def _assert_project_access(project: str) -> None:
-    project_name = str(project or "").strip()
-    if not project_name:
-        frappe.throw("AI Project is required.", frappe.PermissionError)
-    if not frappe.db.exists("AI Project", project_name):
-        frappe.throw(f"AI Project does not exist: {project_name}.", frappe.PermissionError)
-    if "System Manager" in frappe.get_roles():
-        return
-    owner = frappe.db.get_value("AI Project", project_name, "owner")
-    if owner != frappe.session.user:
-        frappe.throw(
-            f"You do not have access to AI Project: {project_name}.",
-            frappe.PermissionError,
-        )
+    assert_can_view_project(project)
 
 
 def _run_filters(project: str | None) -> dict[str, Any] | None:
     project_name = str(project or "").strip()
     if project_name:
-        _assert_project_access(project_name)
+        assert_can_view_project(project_name)
         return {"project": project_name}
-    if "System Manager" in frappe.get_roles():
+    if is_system_manager():
         return {}
-    projects = frappe.get_all("AI Project", filters={"owner": frappe.session.user}, pluck="name")
+    projects = list_accessible_project_names("view")
     if not projects:
         return None
     return {"project": ["in", projects]}
@@ -327,7 +323,7 @@ def _shared_asset_views(names: list[str]) -> list[dict[str, Any]]:
     assets = []
     for asset_name in names:
         if frappe.db.exists("AI Asset", asset_name):
-            assets.append(_safe_shared_asset(view_asset(asset_name)))
+            assets.append(_safe_shared_asset(view_asset(asset_name, ignore_project_permissions=True)))
     return assets
 
 
@@ -519,11 +515,12 @@ def _assert_shareable_run(run) -> None:
 
 
 def _assert_share_manage_access(share_doc) -> None:
-    if "System Manager" in frappe.get_roles():
+    if is_system_manager():
         return
     if share_doc.owner != frappe.session.user:
-        frappe.throw("You do not have access to this shared run.", frappe.PermissionError)
-    _assert_project_access(share_doc.project)
+        if not can_manage_project_members(share_doc.project):
+            frappe.throw("You do not have access to this shared run.", frappe.PermissionError)
+    assert_can_view_project(share_doc.project)
 
 
 def _assert_share_readable(share_doc) -> None:
@@ -577,7 +574,7 @@ def _share_summary_for_run(workflow_run: str | None) -> dict[str, Any] | None:
     if not workflow_run:
         return None
     filters: dict[str, Any] = {"workflow_run": workflow_run}
-    if "System Manager" not in frappe.get_roles():
+    if not is_system_manager():
         filters["owner"] = frappe.session.user
     rows = frappe.get_all(
         "AI Tool Run Share",

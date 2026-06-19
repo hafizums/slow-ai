@@ -28,6 +28,10 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.assets.view",
     "slow_ai.api.billing.get_balance",
     "slow_ai.api.models.get_model_metadata",
+    "slow_ai.api.projects.list_members",
+    "slow_ai.api.projects.add_member",
+    "slow_ai.api.projects.update_member_role",
+    "slow_ai.api.projects.disable_member",
 }
 
 FORBIDDEN_PUBLIC_TOOL_FRAGMENTS = (

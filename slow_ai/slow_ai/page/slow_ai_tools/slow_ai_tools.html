@@ -50,5 +50,28 @@
 			<div data-role="run-library" class="slow-ai-tools__run-library"></div>
 			<div data-role="run-detail" class="slow-ai-tools__run-detail"></div>
 		</section>
+		<section class="slow-ai-tools__panel slow-ai-tools__members">
+			<div class="slow-ai-tools__panel-head">
+				<h3>Project Members</h3>
+				<button class="btn btn-xs btn-default" type="button" data-action="refresh-project-members">Refresh Members</button>
+			</div>
+			<div class="slow-ai-tools__member-form">
+				<label class="slow-ai-tools__field">
+					<span>User</span>
+					<input class="form-control" type="text" data-role="member-user" placeholder="user@example.com">
+				</label>
+				<label class="slow-ai-tools__field">
+					<span>Role</span>
+					<select class="form-control" data-role="member-role">
+						<option value="EDITOR">EDITOR</option>
+						<option value="VIEWER">VIEWER</option>
+						<option value="BILLING">BILLING</option>
+						<option value="OWNER">OWNER</option>
+					</select>
+				</label>
+				<button class="btn btn-default" type="button" data-action="add-project-member">Add Member</button>
+			</div>
+			<div data-role="project-members" class="slow-ai-tools__member-list"></div>
+		</section>
 	</main>
 </div>

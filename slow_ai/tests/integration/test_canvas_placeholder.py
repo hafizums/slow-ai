@@ -19,6 +19,11 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
     "slow_ai.api.models.get_model_metadata",
+    "slow_ai.api.provider_accounts.list_accounts",
+    "slow_ai.api.provider_accounts.get_account",
+    "slow_ai.api.provider_accounts.create_account",
+    "slow_ai.api.provider_accounts.set_default",
+    "slow_ai.api.provider_accounts.disable_account",
     "slow_ai.api.templates.list_templates",
     "slow_ai.api.templates.get_template",
     "slow_ai.api.templates.save_template",
@@ -318,6 +323,20 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("Create AI Asset", page.script)
         self.assertIn("Upload File", page.script)
         self.assertIn("Preview Selected Asset", page.script)
+        self.assertIn("Provider Accounts", page.script)
+        self.assertIn("renderProviderAccountsPanel", page.script)
+        self.assertIn("createProviderAccount", page.script)
+        self.assertIn("setDefaultProviderAccount", page.script)
+        self.assertIn("disableProviderAccount", page.script)
+        self.assertIn("viewProviderAccount", page.script)
+        self.assertIn("slow_ai.api.provider_accounts.list_accounts", page.script)
+        self.assertIn("slow_ai.api.provider_accounts.get_account", page.script)
+        self.assertIn("slow_ai.api.provider_accounts.create_account", page.script)
+        self.assertIn("slow_ai.api.provider_accounts.set_default", page.script)
+        self.assertIn("slow_ai.api.provider_accounts.disable_account", page.script)
+        self.assertIn("API keys are never displayed after save.", page.script)
+        self.assertIn("slow-ai-canvas__provider-accounts", page.style)
+        self.assertIn("slow-ai-canvas__provider-account-row", page.style)
         for method in ALLOWED_CANVAS_METHODS:
             self.assertIn(method, page.script)
         for fragment in FORBIDDEN_CANVAS_FRAGMENTS:
@@ -939,3 +958,130 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertTrue(metadata["models"][model.name]["pricing_known"])
         self.assertEqual(metadata["models"][model.name]["estimated_cost_usd"], "0.012")
         self.assertNotIn("pricing_json", metadata["models"][model.name])
+
+    def test_canvas_provider_account_ui_uses_safe_backend_apis(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        for method in (
+            "slow_ai.api.provider_accounts.list_accounts",
+            "slow_ai.api.provider_accounts.get_account",
+            "slow_ai.api.provider_accounts.create_account",
+            "slow_ai.api.provider_accounts.set_default",
+            "slow_ai.api.provider_accounts.disable_account",
+        ):
+            self.assertIn(method, page.script)
+        self.assertIn("type=\"password\"", page.script)
+        self.assertIn("API keys are never displayed after save.", page.script)
+        self.assertNotIn("api_key_secret", page.script)
+        for forbidden in ("frappe.db", "providers/wavespeed", "api.wavespeed.ai", "WAVESPEED_API_KEY"):
+            self.assertNotIn(forbidden, page.script)
+
+        project = create_project()
+        provider = unique("canvas-byok-provider")
+        secret = unique("canvas-byok-secret")
+        provider_job_count = frappe.db.count("AI Provider Job")
+        first = frappe.call(
+            "slow_ai.api.provider_accounts.create_account",
+            provider=provider,
+            account_label="Canvas BYOK Account",
+            api_key=secret,
+            project=project.name,
+            is_default=1,
+        )
+        second = frappe.call(
+            "slow_ai.api.provider_accounts.create_account",
+            provider=provider,
+            account_label="Canvas BYOK Account 2",
+            api_key=unique("canvas-byok-secret"),
+            project=project.name,
+            is_default=0,
+        )
+        listed = frappe.call(
+            "slow_ai.api.provider_accounts.list_accounts",
+            provider=provider,
+            project=project.name,
+            include_disabled=1,
+        )
+        fetched = frappe.call("slow_ai.api.provider_accounts.get_account", account=first["account"]["name"])
+        defaulted = frappe.call("slow_ai.api.provider_accounts.set_default", account=second["account"]["name"])
+        disabled = frappe.call("slow_ai.api.provider_accounts.disable_account", account=second["account"]["name"])
+
+        serialized = json.dumps(
+            {
+                "first": first,
+                "second": second,
+                "listed": listed,
+                "fetched": fetched,
+                "defaulted": defaulted,
+                "disabled": disabled,
+            },
+            default=str,
+        )
+        self.assertEqual(frappe.get_doc("AI Provider Account", first["account"]["name"]).get_password("api_key_secret"), secret)
+        self.assertNotIn(secret, serialized)
+        self.assertNotIn("api_key_secret", serialized)
+        self.assertNotIn("api_key", serialized)
+        self.assertIn(first["account"]["name"], {row["name"] for row in listed["accounts"]})
+        self.assertEqual(defaulted["account"]["is_default"], 1)
+        self.assertEqual(disabled["account"]["status"], "DISABLED")
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
+
+        model = frappe.get_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique(f"{provider}/model"),
+                "model_name": "Canvas BYOK Model",
+                "provider": provider,
+                "status": "ENABLED",
+                "node_type": "provider_text_to_image",
+                "category": "provider",
+                "modality": "TEXT_TO_IMAGE",
+                "pricing_json": json.dumps({"unit": "run", "amount_usd": "0.00"}),
+            }
+        ).insert(ignore_permissions=True)
+        workflow = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            project=project.name,
+            title="Canvas BYOK Disabled Account Workflow",
+            nodes=json.dumps(
+                [
+                    {"id": "prompt_1", "type": "text_prompt", "config": {"text": "Canvas BYOK"}},
+                    {
+                        "id": "provider_1",
+                        "type": "provider_text_to_image",
+                        "config": {
+                            "provider": provider,
+                            "model": model.name,
+                            "provider_account": second["account"]["name"],
+                        },
+                    },
+                    {"id": "output_1", "type": "export_output", "config": {}},
+                ]
+            ),
+            edges=json.dumps(
+                [
+                    {
+                        "id": "edge_1",
+                        "source": "prompt_1",
+                        "source_port": "text",
+                        "target": "provider_1",
+                        "target_port": "prompt",
+                    },
+                    {
+                        "id": "edge_2",
+                        "source": "provider_1",
+                        "source_port": "image",
+                        "target": "output_1",
+                        "target_port": "image",
+                    },
+                ]
+            ),
+            layout=json.dumps({"nodes": []}),
+        )
+
+        with self.assertRaises(RunPreflightError):
+            frappe.call("slow_ai.api.runs.start_run", workflow=workflow["name"])
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
+        self.assertFalse(frappe.db.exists("AI Workflow Run", {"workflow": workflow["name"]}))

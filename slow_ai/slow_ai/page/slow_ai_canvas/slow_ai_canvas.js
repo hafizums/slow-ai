@@ -22,6 +22,7 @@ class SlowAiCanvasPlaceholder {
 		this.workflowRun = null;
 		this.objectInfo = {};
 		this.templates = [];
+		this.providerAccounts = [];
 		this.selectedTemplate = null;
 		this.toolModeTemplate = null;
 		this.nodeRunsByNodeId = {};
@@ -47,6 +48,7 @@ class SlowAiCanvasPlaceholder {
 			fieldtype: "Link",
 			options: "AI Project",
 			reqd: 1,
+			change: () => this.loadProviderAccounts(),
 		}, controlsParent);
 		this.workflowField = this.page.add_field({
 			label: __("Workflow"),
@@ -79,6 +81,7 @@ class SlowAiCanvasPlaceholder {
 		this.$templateLibrary = this.$root.find("[data-role='template-library']");
 		this.$templatePreview = this.$root.find("[data-role='template-preview']");
 		this.$toolMode = this.$root.find("[data-role='tool-mode']");
+		this.$providerAccounts = this.$root.find("[data-role='provider-accounts']");
 		this.$stage = this.$root.find("[data-role='stage']");
 		this.$edges = this.$root.find("[data-role='edges']");
 		this.$nodes = this.$root.find("[data-role='nodes']");
@@ -130,6 +133,21 @@ class SlowAiCanvasPlaceholder {
 		});
 		this.$toolMode.on("click", "[data-action='upload-tool-file']", (event) => {
 			this.uploadToolModeFile($(event.currentTarget).attr("data-tool-node-id"));
+		});
+		this.$providerAccounts.on("click", "[data-action='refresh-provider-accounts']", () => {
+			this.loadProviderAccounts();
+		});
+		this.$providerAccounts.on("click", "[data-action='create-provider-account']", () => {
+			this.createProviderAccount();
+		});
+		this.$providerAccounts.on("click", "[data-action='set-default-provider-account']", (event) => {
+			this.setDefaultProviderAccount($(event.currentTarget).attr("data-account-name"));
+		});
+		this.$providerAccounts.on("click", "[data-action='disable-provider-account']", (event) => {
+			this.disableProviderAccount($(event.currentTarget).attr("data-account-name"));
+		});
+		this.$providerAccounts.on("click", "[data-action='view-provider-account']", (event) => {
+			this.viewProviderAccount($(event.currentTarget).attr("data-account-name"));
 		});
 		this.$nodes.on("click", "[data-node-id]", (event) => {
 			this.selectNode($(event.currentTarget).attr("data-node-id"));
@@ -186,6 +204,7 @@ class SlowAiCanvasPlaceholder {
 	show() {
 		this.loadObjectInfo();
 		this.loadTemplates();
+		this.loadProviderAccounts();
 		this.refreshQueue();
 		if (this.workflowRun) {
 			this.refreshRun();
@@ -197,6 +216,23 @@ class SlowAiCanvasPlaceholder {
 			this.objectInfo = response.message.nodes || {};
 			this.renderPalette();
 		});
+	}
+
+	loadProviderAccounts() {
+		if (!this.$providerAccounts) {
+			return Promise.resolve();
+		}
+		const project = this.projectField ? this.projectField.get_value() : null;
+		this.$providerAccounts.html(`<div class="slow-ai-canvas__empty">${__("Loading provider accounts")}</div>`);
+		return frappe
+			.call("slow_ai.api.provider_accounts.list_accounts", {
+				project: project || null,
+				include_disabled: true,
+			})
+			.then((response) => {
+				this.providerAccounts = (response.message && response.message.accounts) || [];
+				this.renderProviderAccountsPanel();
+			});
 	}
 
 	loadWorkflow() {
@@ -243,6 +279,154 @@ class SlowAiCanvasPlaceholder {
 			this.workflowField.set_value(draft.name);
 			this.setStatus(__("Saved {0}", [draft.name]));
 			this.render();
+		});
+	}
+
+	renderProviderAccountsPanel() {
+		if (!this.$providerAccounts) {
+			return;
+		}
+		const rows = this.providerAccounts.length
+			? this.providerAccounts.map((account) => this.renderProviderAccountRow(account)).join("")
+			: `<div class="slow-ai-canvas__empty">${__("No provider accounts")}</div>`;
+		this.$providerAccounts.html(`${this.renderProviderAccountForm()}${rows}`);
+	}
+
+	renderProviderAccountForm() {
+		const currentProject = this.projectField ? this.projectField.get_value() || "" : "";
+		return `<div class="slow-ai-canvas__provider-account-form" data-provider-account-form>
+			<div class="slow-ai-canvas__provider-account-title">${__("Create Provider Account")}</div>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Provider")}</span>
+				<input class="form-control input-xs" type="text" data-provider-account-field="provider" value="wavespeed">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Account Label")}</span>
+				<input class="form-control input-xs" type="text" data-provider-account-field="account_label" placeholder="${__("Team WaveSpeed")}">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("API Key")}</span>
+				<input class="form-control input-xs" type="password" autocomplete="new-password" data-provider-account-field="api_key" placeholder="${__("Stored server-side only")}">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Project Scope")}</span>
+				<input class="form-control input-xs" type="text" data-provider-account-field="project" value="${this.escape(currentProject)}" placeholder="${__("Optional AI Project")}">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("User Scope")}</span>
+				<input class="form-control input-xs" type="text" data-provider-account-field="user" placeholder="${__("Optional user email")}">
+			</label>
+			<label class="slow-ai-canvas__check-field">
+				<input type="checkbox" data-provider-account-field="is_default" checked>
+				<span>${__("Set as default")}</span>
+			</label>
+			<div class="slow-ai-canvas__tool-actions">
+				<button class="btn btn-xs btn-primary" type="button" data-action="create-provider-account">${__("Create Account")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="refresh-provider-accounts">${__("Refresh Accounts")}</button>
+			</div>
+			<div class="slow-ai-canvas__provider-account-note">${__("API keys are never displayed after save.")}</div>
+		</div>`;
+	}
+
+	renderProviderAccountRow(account) {
+		const status = account.status || "";
+		const isDefault = account.is_default ? __("Default") : __("Not default");
+		const disabled = status === "DISABLED";
+		return `<div class="slow-ai-canvas__provider-account-row" data-provider-account-name="${this.escape(account.name)}">
+			<div class="slow-ai-canvas__provider-account-row-head">
+				<div>
+					<div class="slow-ai-canvas__provider-account-title">${this.escape(account.account_label || account.name)}</div>
+					<div class="slow-ai-canvas__provider-account-meta">${this.escape(account.provider || "")} · ${this.escape(status)} · ${this.escape(isDefault)}</div>
+				</div>
+				<span class="slow-ai-canvas__status-badge" data-status="${this.escape(status)}">${this.escape(status)}</span>
+			</div>
+			<div class="slow-ai-canvas__asset-meta-grid">
+				${this.renderAssetMetaRow(__("Name"), account.name)}
+				${this.renderAssetMetaRow(__("Project"), account.project || __("All projects"))}
+				${this.renderAssetMetaRow(__("User"), account.user || __("All users"))}
+				${this.renderAssetMetaRow(__("Created"), this.formatTime(account.creation))}
+				${this.renderAssetMetaRow(__("Modified"), this.formatTime(account.modified))}
+			</div>
+			<div class="slow-ai-canvas__tool-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="view-provider-account" data-account-name="${this.escape(account.name)}">${__("View")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="set-default-provider-account" data-account-name="${this.escape(account.name)}" ${disabled ? "disabled" : ""}>${__("Set Default")}</button>
+				<button class="btn btn-xs btn-default" type="button" data-action="disable-provider-account" data-account-name="${this.escape(account.name)}" ${disabled ? "disabled" : ""}>${__("Disable")}</button>
+			</div>
+		</div>`;
+	}
+
+	providerAccountFormValues() {
+		const $form = this.$providerAccounts.find("[data-provider-account-form]");
+		const value = (fieldname) => $form.find(`[data-provider-account-field="${fieldname}"]`).val() || "";
+		return {
+			provider: value("provider").trim(),
+			account_label: value("account_label").trim(),
+			api_key: value("api_key"),
+			project: value("project").trim(),
+			user: value("user").trim(),
+			is_default: $form.find('[data-provider-account-field="is_default"]').is(":checked") ? 1 : 0,
+		};
+	}
+
+	createProviderAccount() {
+		const values = this.providerAccountFormValues();
+		if (!values.provider || !values.account_label || !values.api_key) {
+			frappe.msgprint(__("Provider, account label, and API key are required."));
+			return Promise.resolve();
+		}
+		return frappe
+			.call("slow_ai.api.provider_accounts.create_account", {
+				provider: values.provider,
+				account_label: values.account_label,
+				api_key: values.api_key,
+				project: values.project || null,
+				user: values.user || null,
+				is_default: values.is_default,
+			})
+			.then((response) => {
+				this.$providerAccounts.find('[data-provider-account-field="api_key"]').val("");
+				this.setStatus(__("Created provider account {0}", [response.message.account.name]));
+				return this.loadProviderAccounts();
+			});
+	}
+
+	viewProviderAccount(accountName) {
+		if (!accountName) {
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.provider_accounts.get_account", { account: accountName }).then((response) => {
+			const account = response.message.account;
+			frappe.msgprint({
+				title: __("Provider Account"),
+				message: `<div>${this.renderAssetMetaRow(__("Name"), account.name)}
+					${this.renderAssetMetaRow(__("Provider"), account.provider)}
+					${this.renderAssetMetaRow(__("Account Label"), account.account_label)}
+					${this.renderAssetMetaRow(__("Status"), account.status)}
+					${this.renderAssetMetaRow(__("Default"), account.is_default ? __("Yes") : __("No"))}
+					${this.renderAssetMetaRow(__("Project"), account.project || __("All projects"))}
+					${this.renderAssetMetaRow(__("User"), account.user || __("All users"))}</div>`,
+				indicator: "blue",
+			});
+		});
+	}
+
+	setDefaultProviderAccount(accountName) {
+		if (!accountName) {
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.provider_accounts.set_default", { account: accountName }).then((response) => {
+			this.setStatus(__("Set default provider account {0}", [response.message.account.name]));
+			return this.loadProviderAccounts();
+		});
+	}
+
+	disableProviderAccount(accountName) {
+		if (!accountName) {
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.provider_accounts.disable_account", { account: accountName }).then((response) => {
+			this.setStatus(__("Disabled provider account {0}", [response.message.account.name]));
+			return this.loadProviderAccounts();
 		});
 	}
 

@@ -13,6 +13,11 @@ const API = {
 	getTemplate: "slow_ai.api.templates.get_template",
 	createWorkflowFromTemplate: "slow_ai.api.templates.create_workflow_from_template",
 	modelMetadata: "slow_ai.api.models.get_model_metadata",
+	listProviderAccounts: "slow_ai.api.provider_accounts.list_accounts",
+	getProviderAccount: "slow_ai.api.provider_accounts.get_account",
+	createProviderAccount: "slow_ai.api.provider_accounts.create_account",
+	setDefaultProviderAccount: "slow_ai.api.provider_accounts.set_default",
+	disableProviderAccount: "slow_ai.api.provider_accounts.disable_account",
 };
 
 let fixtures;
@@ -86,9 +91,29 @@ async function clickCanvasButton(page, label) {
 	await page.locator(".dropdown-menu.show a, .dropdown-menu a:visible").filter({ hasText: label }).first().click();
 }
 
+async function closeVisibleModal(page) {
+	const modal = page.locator(".modal.show:visible").last();
+	await expect(modal).toBeVisible();
+	const footerButton = modal.locator(".modal-footer button:visible").last();
+	if ((await footerButton.count()) > 0) {
+		await footerButton.click();
+	} else {
+		await modal.locator("button:visible").last().click();
+	}
+	await expect(modal).toBeHidden();
+}
+
 test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page }) => {
+	const providerRequests = [];
+	page.on("request", (request) => {
+		const url = request.url();
+		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api")) {
+			providerRequests.push(url);
+		}
+	});
 	const objectInfoPromise = page.waitForResponse(apiPredicate(API.objectInfo));
 	const templateListPromise = page.waitForResponse(apiPredicate(API.listTemplates));
+	const initialProviderAccountsPromise = page.waitForResponse(apiPredicate(API.listProviderAccounts));
 
 	await page.request.post("/api/method/login", {
 		form: {
@@ -103,11 +128,46 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	expect(objectInfo.message.nodes.text_prompt.category).toBe("input");
 	const templates = await apiJson(await templateListPromise);
 	expect(Array.isArray(templates.message.templates)).toBe(true);
+	const initialProviderAccounts = await apiJson(await initialProviderAccountsPromise);
+	expect(Array.isArray(initialProviderAccounts.message.accounts)).toBe(true);
 	await expect(page.locator("[data-role='node-palette']")).toContainText("Text Prompt");
 	await expect(page.locator("[data-role='template-library']")).toContainText("Refresh Templates");
+	await expect(page.locator("[data-role='provider-accounts']")).toContainText("Create Provider Account");
 
 	await setCanvasField(page, "project", fixtures.project);
 	await setCanvasField(page, "title", fixtures.canvas_title);
+	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='provider']").fill(fixtures.provider_account_provider);
+	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='account_label']").fill(fixtures.provider_account_label);
+	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='api_key']").fill(fixtures.provider_account_secret);
+	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='project']").fill(fixtures.project);
+	const createProviderAccountResponse = page.waitForResponse(apiPredicate(API.createProviderAccount));
+	const reloadProviderAccountsResponse = page.waitForResponse(apiPredicate(API.listProviderAccounts));
+	await page.locator("[data-role='provider-accounts']").getByRole("button", { name: "Create Account" }).click();
+	const createdProviderAccount = await apiJson(await createProviderAccountResponse);
+	await reloadProviderAccountsResponse;
+	const providerAccountName = createdProviderAccount.message.account.name;
+	expect(createdProviderAccount.message.account.provider).toBe(fixtures.provider_account_provider);
+	expect(JSON.stringify(createdProviderAccount)).not.toContain(fixtures.provider_account_secret);
+	await expect(page.locator("[data-role='provider-accounts']")).toContainText(fixtures.provider_account_label);
+	await expect(page.locator("[data-role='provider-accounts'] [data-provider-account-field='api_key']")).toHaveValue("");
+
+	const getProviderAccountResponse = page.waitForResponse(apiPredicate(API.getProviderAccount));
+	await page.locator(`[data-provider-account-name="${providerAccountName}"]`).getByRole("button", { name: "View" }).click();
+	const fetchedProviderAccount = await apiJson(await getProviderAccountResponse);
+	expect(fetchedProviderAccount.message.account.name).toBe(providerAccountName);
+	expect(JSON.stringify(fetchedProviderAccount)).not.toContain(fixtures.provider_account_secret);
+	await closeVisibleModal(page);
+
+	const defaultProviderAccountResponse = page.waitForResponse(apiPredicate(API.setDefaultProviderAccount));
+	await page.locator(`[data-provider-account-name="${providerAccountName}"]`).getByRole("button", { name: "Set Default" }).click();
+	const defaultProviderAccount = await apiJson(await defaultProviderAccountResponse);
+	expect(Boolean(defaultProviderAccount.message.account.is_default)).toBe(true);
+
+	const disableProviderAccountResponse = page.waitForResponse(apiPredicate(API.disableProviderAccount));
+	await page.locator(`[data-provider-account-name="${providerAccountName}"]`).getByRole("button", { name: "Disable" }).click();
+	const disabledProviderAccount = await apiJson(await disableProviderAccountResponse);
+	expect(disabledProviderAccount.message.account.status).toBe("DISABLED");
+	await expect(page.locator(`[data-provider-account-name="${providerAccountName}"]`)).toContainText("DISABLED");
 
 	await page
 		.locator("[data-role='node-palette'] [data-palette-node-type='text_prompt']")
@@ -261,8 +321,10 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	const pageSource = await page.locator("html").innerHTML();
 	expect(pageSource).not.toContain("WAVESPEED_API_KEY");
 	expect(pageSource).not.toContain("api_key_secret");
+	expect(pageSource).not.toContain(fixtures.provider_account_secret);
 	expect(pageSource).not.toContain("api.wavespeed.ai");
 	expect(pageSource).not.toContain("Authorization: Bearer");
+	expect(providerRequests).toEqual([]);
 
 	const instance = await canvas(page);
 	expect(await instance.evaluate((value) => Boolean(value.workflowRun))).toBe(true);

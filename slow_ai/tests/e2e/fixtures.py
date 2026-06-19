@@ -51,6 +51,9 @@ def setup_canvas_e2e() -> dict:
         "upload_template_label": upload_template["template_name"],
         "selected_asset": selected_asset["name"],
         "upload_url": f"https://example.invalid/e2e-created-{uuid4().hex[:8]}.png",
+        "provider_account_provider": f"browser-e2e-provider-{uuid4().hex[:8]}",
+        "provider_account_label": f"Browser E2E Provider Account {uuid4().hex[:8]}",
+        "provider_account_secret": f"browser-e2e-secret-{uuid4().hex[:8]}",
         "asset_workflow_run": asset_run["workflow_run"],
         "history_asset": asset_run["asset"],
     }

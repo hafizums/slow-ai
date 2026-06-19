@@ -12,7 +12,10 @@
   "external_job_id",
   "status",
   "idempotency_key",
+  "estimated_cost_usd",
   "cost_usd",
+  "debit_cost_usd",
+  "debit_cost_source",
   "submitted_at",
   "completed_at",
   "request_json",
@@ -72,9 +75,25 @@
    "unique": 1
   },
   {
+   "fieldname": "estimated_cost_usd",
+   "fieldtype": "Currency",
+   "label": "Estimated Cost USD"
+  },
+  {
    "fieldname": "cost_usd",
    "fieldtype": "Currency",
-   "label": "Cost USD"
+   "label": "Actual Cost USD"
+  },
+  {
+   "fieldname": "debit_cost_usd",
+   "fieldtype": "Currency",
+   "label": "Debit Cost USD"
+  },
+  {
+   "fieldname": "debit_cost_source",
+   "fieldtype": "Select",
+   "label": "Debit Cost Source",
+   "options": "\nACTUAL\nESTIMATED\nZERO_COST"
   },
   {
    "fieldname": "submitted_at",

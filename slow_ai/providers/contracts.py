@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Mapping
 
 from slow_ai.domain.exceptions import ProviderInvariantError
@@ -18,6 +19,7 @@ class ProviderJobRequest:
     provider_account_name: str | None = None
     project_name: str | None = None
     idempotency_key: str | None = None
+    estimated_cost_usd: Decimal | float | str | None = None
 
     def __post_init__(self) -> None:
         if not self.provider:

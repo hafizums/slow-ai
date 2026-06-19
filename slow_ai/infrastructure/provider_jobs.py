@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 import frappe
 from frappe.utils import now_datetime
 
+from slow_ai.application.models import pricing_summary_from_json
 from slow_ai.domain.exceptions import ProviderInvariantError
 from slow_ai.domain.snapshots import canonical_json
 from slow_ai.domain.status import PROVIDER_JOB_TERMINAL_STATUSES, ProviderJobStatus
@@ -24,6 +26,7 @@ class ProviderJobRepository:
             request.project_name,
         )
         model_name = self._resolve_model(request.model)
+        estimated_cost_usd = self._resolve_estimated_cost_usd(model_name, request.estimated_cost_usd)
         provider_job = frappe.get_doc(
             {
                 "doctype": "AI Provider Job",
@@ -33,6 +36,7 @@ class ProviderJobRepository:
                 "model": model_name,
                 "status": ProviderJobStatus.QUEUED.value,
                 "idempotency_key": request.idempotency_key,
+                "estimated_cost_usd": estimated_cost_usd,
                 "request_json": canonical_json(request.input_data),
             }
         ).insert(ignore_permissions=True)
@@ -65,6 +69,15 @@ class ProviderJobRepository:
             if matches:
                 return matches[0].name
         return model_ref
+
+    def _resolve_estimated_cost_usd(self, model_name: str, explicit_estimate: Any | None) -> Decimal:
+        explicit = _as_decimal_or_none(explicit_estimate)
+        if explicit is not None:
+            return explicit
+        pricing_json = frappe.db.get_value("AI Model", model_name, "pricing_json")
+        pricing = pricing_summary_from_json(pricing_json)
+        estimated = _as_decimal_or_none(pricing["estimated_cost_usd"])
+        return estimated or Decimal("0")
 
     def get(self, provider_job_name: str):
         return frappe.get_doc("AI Provider Job", provider_job_name)
@@ -153,3 +166,15 @@ class ProviderJobRepository:
         if current == ProviderJobStatus.SUBMITTED and target == ProviderJobStatus.EXPIRED:
             return (ProviderJobStatus.WAITING_PROVIDER, target)
         return (target,)
+
+
+def _as_decimal_or_none(value: Any | None) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if amount < 0:
+        raise ProviderInvariantError("Provider job estimated cost cannot be negative.")
+    return amount

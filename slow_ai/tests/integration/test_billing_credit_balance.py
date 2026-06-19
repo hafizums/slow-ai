@@ -6,7 +6,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from slow_ai.application.billing import create_top_up
-from slow_ai.domain.exceptions import RunPreflightError
+from slow_ai.domain.exceptions import ProviderInvariantError, RunPreflightError
 from slow_ai.infrastructure.provider_outputs import ProviderOutputService
 from slow_ai.providers.contracts import NormalizedProviderOutput, NormalizedProviderResult
 
@@ -195,6 +195,7 @@ class TestBillingCreditBalance(FrappeTestCase):
                 "model": model.name,
                 "status": "SUCCEEDED",
                 "idempotency_key": unique("billing-provider-job"),
+                "estimated_cost_usd": 0.09,
                 "request_json": json.dumps({"prompt": "Billing"}),
                 "response_json": json.dumps({"status": "completed"}),
             }
@@ -240,11 +241,124 @@ class TestBillingCreditBalance(FrappeTestCase):
         )
         self.assertEqual(first.ledger_name, second.ledger_name)
         self.assertEqual(len(ledger_names), 1)
+        debit_job = frappe.get_doc("AI Provider Job", provider_job.name)
+        debit_ledger = frappe.get_doc("AI Credit Ledger", ledger_names[0])
+        self.assertEqual(float(debit_ledger.amount_usd), 0.07)
+        self.assertEqual(float(debit_job.debit_cost_usd), 0.07)
+        self.assertEqual(debit_job.debit_cost_source, "ACTUAL")
         self.assertIn(first.ledger_name, {row["name"] for row in history["ledger"]})
+        self.assertIn("debit_cost_source", history["provider_jobs"][0])
         self.assertIn(first.ledger_name, {row["name"] for row in ledger["ledger"]})
         serialized_ledger = json.dumps(ledger, default=str)
         self.assertNotIn("api_key_secret", serialized_ledger)
         self.assertNotIn("provider_account", serialized_ledger)
+
+    def test_provider_output_uses_estimated_cost_when_actual_cost_is_missing(self):
+        project = create_project()
+        workflow_run, node_run = create_started_run(project)
+        model = create_model("billing_estimate_provider", "0.08")
+        provider_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run,
+                "provider": "billing_estimate_provider",
+                "model": model.name,
+                "status": "SUCCEEDED",
+                "idempotency_key": unique("billing-estimate-job"),
+                "estimated_cost_usd": 0.08,
+                "request_json": json.dumps({"prompt": "Estimated"}),
+                "response_json": json.dumps({"status": "completed"}),
+            }
+        )
+        result = NormalizedProviderResult(
+            status="SUCCEEDED",
+            external_job_id="billing-estimate-1",
+            outputs=(
+                NormalizedProviderOutput(
+                    asset_type="IMAGE",
+                    url="https://example.invalid/estimated.png",
+                    mime_type="image/png",
+                    metadata={},
+                ),
+            ),
+            cost_usd=0.0,
+        )
+
+        first = ProviderOutputService().materialize(
+            project_name=project.name,
+            workflow_run_name=workflow_run,
+            node_run_name=node_run,
+            provider_job_name=provider_job.name,
+            result=result,
+            description="Estimated provider debit",
+        )
+        second = ProviderOutputService().materialize(
+            project_name=project.name,
+            workflow_run_name=workflow_run,
+            node_run_name=node_run,
+            provider_job_name=provider_job.name,
+            result=NormalizedProviderResult(
+                status="SUCCEEDED",
+                external_job_id="billing-estimate-1",
+                outputs=result.outputs,
+                cost_usd=0.01,
+            ),
+            description="Estimated provider debit",
+        )
+
+        ledger_names = frappe.get_all(
+            "AI Credit Ledger",
+            filters={"provider_job": provider_job.name, "ledger_type": "DEBIT"},
+            pluck="name",
+        )
+        provider_job.reload()
+        ledger = frappe.get_doc("AI Credit Ledger", ledger_names[0])
+        history = frappe.call("slow_ai.api.runs.get_history", workflow_run=workflow_run)
+
+        self.assertEqual(first.ledger_name, second.ledger_name)
+        self.assertEqual(len(ledger_names), 1)
+        self.assertEqual(float(ledger.amount_usd), 0.08)
+        self.assertEqual(first.debit_cost_source, "ESTIMATED")
+        self.assertEqual(second.ledger_name, first.ledger_name)
+        self.assertEqual(float(provider_job.debit_cost_usd), 0.08)
+        self.assertEqual(provider_job.debit_cost_source, "ESTIMATED")
+        self.assertEqual(history["provider_jobs"][0]["debit_cost_source"], "ESTIMATED")
+
+    def test_failed_provider_job_creates_no_debit(self):
+        project = create_project()
+        workflow_run, node_run = create_started_run(project)
+        model = create_model("billing_failed_provider", "0.08")
+        provider_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run,
+                "provider": "billing_failed_provider",
+                "model": model.name,
+                "status": "FAILED",
+                "idempotency_key": unique("billing-failed-job"),
+                "estimated_cost_usd": 0.08,
+                "request_json": json.dumps({"prompt": "Failed"}),
+                "raw_error_json": json.dumps({"message": "provider failed"}),
+            }
+        )
+        failed_result = NormalizedProviderResult(status="FAILED", cost_usd=0.08)
+
+        with self.assertRaises(ProviderInvariantError):
+            ProviderOutputService().materialize(
+                project_name=project.name,
+                workflow_run_name=workflow_run,
+                node_run_name=node_run,
+                provider_job_name=provider_job.name,
+                result=failed_result,
+                description="Failed provider debit",
+            )
+        self.assertFalse(
+            frappe.db.exists(
+                "AI Credit Ledger",
+                {"provider_job": provider_job.name, "ledger_type": "DEBIT"},
+            )
+        )
+        self.assertFalse(frappe.db.exists("AI Asset", {"source_provider_job": provider_job.name}))
 
     def test_zero_cost_provider_output_creates_asset_without_debit(self):
         project = create_project()
@@ -258,6 +372,7 @@ class TestBillingCreditBalance(FrappeTestCase):
                 "model": model.name,
                 "status": "SUCCEEDED",
                 "idempotency_key": unique("billing-zero-job"),
+                "estimated_cost_usd": 0.0,
                 "request_json": json.dumps({"prompt": "Free result"}),
                 "response_json": json.dumps({"status": "completed"}),
             }
@@ -286,6 +401,9 @@ class TestBillingCreditBalance(FrappeTestCase):
         )
 
         self.assertIsNone(materialized.ledger_name)
+        provider_job.reload()
+        self.assertEqual(float(provider_job.debit_cost_usd), 0.0)
+        self.assertEqual(provider_job.debit_cost_source, "ZERO_COST")
         self.assertTrue(frappe.db.exists("AI Asset", {"source_provider_job": provider_job.name}))
         self.assertFalse(
             frappe.db.exists(

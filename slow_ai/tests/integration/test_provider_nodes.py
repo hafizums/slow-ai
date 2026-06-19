@@ -54,11 +54,13 @@ class DeterministicProviderAdapter(ProviderAdapter):
         self.mime_type = mime_type
         self.cost_usd = cost_usd
         self.provider_job_existed_before_submit = False
+        self.estimated_cost_existed_before_submit = False
         self.submissions: list[Mapping[str, Any]] = []
 
     def submit_job(self, submission: ProviderSubmission) -> NormalizedProviderResult:
         provider_job = self.provider_jobs.get(submission.provider_job_name)
         self.provider_job_existed_before_submit = provider_job.status == ProviderJobStatus.QUEUED.value
+        self.estimated_cost_existed_before_submit = float(provider_job.estimated_cost_usd or 0) == 0.17
         self.submissions.append({"model": submission.model, "input_data": dict(submission.input_data)})
         self.provider_jobs.mark_submitting(submission.provider_job_name)
         result = NormalizedProviderResult(
@@ -235,8 +237,12 @@ class TestProviderNodes(FrappeTestCase):
         )
 
         self.assertTrue(adapter.provider_job_existed_before_submit)
+        self.assertTrue(adapter.estimated_cost_existed_before_submit)
         self.assertEqual(provider_job.status, ProviderJobStatus.SUCCEEDED.value)
         self.assertEqual(provider_job.provider, "test_provider")
+        self.assertEqual(float(provider_job.estimated_cost_usd), 0.17)
+        self.assertEqual(float(provider_job.debit_cost_usd), 0.17)
+        self.assertEqual(provider_job.debit_cost_source, "ACTUAL")
         self.assertEqual(json.loads(provider_job.request_json)["prompt"], "A cinematic product shot")
         self.assertEqual(json.loads(provider_job.request_json)["aspect_ratio"], "1:1")
         self.assertEqual(provider_node_run.status, "SUCCEEDED")

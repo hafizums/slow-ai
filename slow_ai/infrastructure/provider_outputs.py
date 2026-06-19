@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 import frappe
 
+from slow_ai.application.models import pricing_summary_from_json
+from slow_ai.domain.exceptions import ProviderInvariantError
 from slow_ai.domain.snapshots import canonical_json
+from slow_ai.domain.status import ProviderJobStatus
 from slow_ai.providers.contracts import NormalizedProviderOutput, NormalizedProviderResult
 
 
@@ -26,6 +30,14 @@ class ProviderOutputMaterialization:
     asset_names: tuple[str, ...]
     ledger_name: str | None
     node_outputs: Mapping[str, Any]
+    debit_amount_usd: float
+    debit_cost_source: str
+
+
+@dataclass(frozen=True)
+class ProviderDebitDecision:
+    amount_usd: Decimal
+    cost_source: str
 
 
 class AssetWriter:
@@ -115,8 +127,11 @@ class CreditLedgerService:
         provider_job_name: str,
         amount_usd: float,
         description: str,
+        cost_source: str = "ACTUAL",
     ) -> str | None:
-        if amount_usd == 0:
+        amount = _as_decimal_or_zero(amount_usd)
+        if amount == 0:
+            self._record_provider_debit_metadata(provider_job_name, amount, cost_source)
             return None
         existing = frappe.db.get_value(
             "AI Credit Ledger",
@@ -127,6 +142,7 @@ class CreditLedgerService:
             "name",
         )
         if existing:
+            self._record_existing_provider_debit_metadata(provider_job_name, existing, cost_source)
             return existing
 
         ledger = frappe.get_doc(
@@ -137,14 +153,42 @@ class CreditLedgerService:
                 "node_run": node_run_name,
                 "provider_job": provider_job_name,
                 "ledger_type": "DEBIT",
-                "amount_usd": amount_usd,
+                "amount_usd": amount,
                 "currency": "USD",
-                "description": description,
+                "description": f"{description} ({cost_source.lower()} cost)",
                 "reference_doctype": "AI Provider Job",
                 "reference_name": provider_job_name,
             }
         ).insert(ignore_permissions=True)
+        self._record_provider_debit_metadata(provider_job_name, amount, cost_source)
         return ledger.name
+
+    def _record_existing_provider_debit_metadata(
+        self,
+        provider_job_name: str,
+        ledger_name: str,
+        cost_source: str,
+    ) -> None:
+        provider_job = frappe.get_doc("AI Provider Job", provider_job_name)
+        if provider_job.debit_cost_source:
+            return
+        amount_usd = frappe.db.get_value("AI Credit Ledger", ledger_name, "amount_usd")
+        self._record_provider_debit_metadata(provider_job_name, _as_decimal_or_zero(amount_usd), cost_source)
+
+    def _record_provider_debit_metadata(
+        self,
+        provider_job_name: str,
+        amount_usd: Decimal,
+        cost_source: str,
+    ) -> None:
+        frappe.db.set_value(
+            "AI Provider Job",
+            provider_job_name,
+            {
+                "debit_cost_usd": amount_usd,
+                "debit_cost_source": cost_source,
+            },
+        )
 
 
 class ProviderOutputService:
@@ -169,6 +213,11 @@ class ProviderOutputService:
         required_asset_type: str | None = None,
         output_port: str | None = None,
     ) -> ProviderOutputMaterialization:
+        if result.status != ProviderJobStatus.SUCCEEDED.value:
+            raise ProviderInvariantError(
+                f"Provider output materialization requires SUCCEEDED result: {provider_job_name}"
+            )
+        debit = resolve_provider_debit(provider_job_name, result)
         asset_names = self.asset_writer.create_provider_assets(
             project_name=project_name,
             workflow_run_name=workflow_run_name,
@@ -181,8 +230,9 @@ class ProviderOutputService:
             workflow_run_name=workflow_run_name,
             node_run_name=node_run_name,
             provider_job_name=provider_job_name,
-            amount_usd=result.cost_usd,
+            amount_usd=float(debit.amount_usd),
             description=description,
+            cost_source=debit.cost_source,
         )
         primary_asset = _primary_asset_name(
             result.outputs,
@@ -201,8 +251,12 @@ class ProviderOutputService:
                     "assets": list(asset_names),
                     "status": result.status,
                     "ledger": ledger_name,
+                    "debit_cost_usd": str(debit.amount_usd),
+                    "debit_cost_source": debit.cost_source,
                 },
             },
+            debit_amount_usd=float(debit.amount_usd),
+            debit_cost_source=debit.cost_source,
         )
 
 
@@ -248,6 +302,48 @@ class ProviderOutputRepository(ProviderOutputService):
 
 def get_workflow_run_project(workflow_run_name: str) -> str:
     return frappe.get_doc("AI Workflow Run", workflow_run_name).project
+
+
+def resolve_provider_debit(
+    provider_job_name: str,
+    result: NormalizedProviderResult,
+) -> ProviderDebitDecision:
+    actual_cost = _as_decimal_or_zero(result.cost_usd)
+    if actual_cost > 0:
+        return ProviderDebitDecision(amount_usd=actual_cost, cost_source="ACTUAL")
+
+    provider_job = frappe.get_doc("AI Provider Job", provider_job_name)
+    estimated_cost = _as_decimal_or_zero(getattr(provider_job, "estimated_cost_usd", None))
+    if estimated_cost > 0:
+        return ProviderDebitDecision(amount_usd=estimated_cost, cost_source="ESTIMATED")
+
+    model_pricing = _model_pricing_summary(getattr(provider_job, "model", None))
+    model_estimate = _as_decimal_or_zero(model_pricing.get("estimated_cost_usd"))
+    if model_estimate > 0:
+        return ProviderDebitDecision(amount_usd=model_estimate, cost_source="ESTIMATED")
+    if model_pricing.get("pricing_known") and model_estimate == 0:
+        return ProviderDebitDecision(amount_usd=Decimal("0"), cost_source="ZERO_COST")
+
+    raise ProviderInvariantError(
+        f"Provider job has no actual or estimated cost; refusing to materialize output: {provider_job_name}"
+    )
+
+
+def _model_pricing_summary(model_name: str | None) -> dict[str, Any]:
+    if not model_name or not frappe.db.exists("AI Model", model_name):
+        return {"pricing_known": False, "estimated_cost_usd": None}
+    pricing_json = frappe.db.get_value("AI Model", model_name, "pricing_json")
+    return pricing_summary_from_json(pricing_json)
+
+
+def _as_decimal_or_zero(value: Any | None) -> Decimal:
+    if value in (None, ""):
+        return Decimal("0")
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+    return amount if amount > 0 else Decimal("0")
 
 
 def _primary_asset_name(

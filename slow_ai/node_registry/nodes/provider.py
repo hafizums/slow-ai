@@ -149,7 +149,7 @@ class ProviderNodeBase(ConfigSchemaMixin, NodeDefinition):
         )
         return NodeExecutionResult(
             outputs=materialized.node_outputs,
-            cost_usd=result.cost_usd,
+            cost_usd=materialized.debit_amount_usd,
             provider_job_name=provider_job_name,
             asset_names=materialized.asset_names,
         )

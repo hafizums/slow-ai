@@ -122,7 +122,7 @@ def _update_waiting_node_from_provider_result(provider_job, result, workflow_run
             node_run.name,
             status=NodeRunStatus.SUCCEEDED,
             outputs=materialized.node_outputs,
-            cost_usd=result.cost_usd,
+            cost_usd=materialized.debit_amount_usd,
             provider_job_name=provider_job.name,
         )
         return

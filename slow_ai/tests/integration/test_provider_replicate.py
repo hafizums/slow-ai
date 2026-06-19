@@ -31,9 +31,16 @@ def insert_doc(data: dict):
 
 
 class RecordingReplicateClient:
-    def __init__(self, *, idempotency_key: str, submit_status: str = "starting") -> None:
+    def __init__(
+        self,
+        *,
+        idempotency_key: str,
+        submit_status: str = "starting",
+        include_cost: bool = True,
+    ) -> None:
         self.idempotency_key = idempotency_key
         self.submit_status = submit_status
+        self.include_cost = include_cost
         self.created: list[Mapping[str, Any]] = []
         self.polled: list[str] = []
         self.cancelled: list[str] = []
@@ -67,21 +74,24 @@ class RecordingReplicateClient:
         }
         if self.submit_status == "succeeded":
             raw_response["output"] = ["https://replicate.delivery/pbxt/generated.webp"]
-            raw_response["metrics"] = {"cost_usd": 0.003}
+            if self.include_cost:
+                raw_response["metrics"] = {"cost_usd": 0.003}
         return raw_response
 
     def get_prediction(self, api_key: str, prediction_id: str) -> Mapping[str, Any]:
         self.polled.append(prediction_id)
-        return {
+        raw_response: dict[str, Any] = {
             "id": prediction_id,
             "status": "succeeded",
             "output": ["https://replicate.delivery/pbxt/polled-generated.webp"],
-            "metrics": {"cost_usd": 0.003},
             "urls": {
                 "get": f"https://api.replicate.com/v1/predictions/{prediction_id}",
                 "cancel": f"https://api.replicate.com/v1/predictions/{prediction_id}/cancel",
             },
         }
+        if self.include_cost:
+            raw_response["metrics"] = {"cost_usd": 0.003}
+        return raw_response
 
     def cancel_prediction(self, api_key: str, prediction_id: str) -> Mapping[str, Any]:
         self.cancelled.append(prediction_id)
@@ -263,6 +273,7 @@ class TestReplicateProvider(FrappeTestCase):
         self.assertEqual(result.status, ProviderJobStatus.SUBMITTED.value)
         self.assertEqual(provider_job.status, ProviderJobStatus.SUBMITTED.value)
         self.assertEqual(provider_job.external_job_id, "replicate-prediction-submit")
+        self.assertEqual(float(provider_job.estimated_cost_usd), 0.003)
         self.assertEqual(json.loads(provider_job.request_json)["prompt"], "A product shot")
         self.assertEqual(client.created[0]["api_key"], "replicate-test-secret")
         self.assertEqual(client.created[0]["version"], model.model_id)
@@ -333,7 +344,7 @@ class TestReplicateProvider(FrappeTestCase):
         account = create_provider_account(project=project.name)
         create_top_up(project.name, "0.02", "Replicate provider node credit")
         idempotency_key = None
-        client = RecordingReplicateClient(idempotency_key="", submit_status="succeeded")
+        client = RecordingReplicateClient(idempotency_key="", submit_status="succeeded", include_cost=False)
         adapter = ReplicateAdapter(client=client)
         workflow = create_workflow(
             project,
@@ -367,9 +378,14 @@ class TestReplicateProvider(FrappeTestCase):
         self.assertEqual(provider_job.model, model.name)
         self.assertEqual(provider_job.provider_account, account.name)
         self.assertEqual(provider_job.status, ProviderJobStatus.SUCCEEDED.value)
+        self.assertEqual(float(provider_job.cost_usd or 0), 0.0)
+        self.assertEqual(float(provider_job.estimated_cost_usd), 0.003)
+        self.assertEqual(float(provider_job.debit_cost_usd), 0.003)
+        self.assertEqual(provider_job.debit_cost_source, "ESTIMATED")
         self.assertEqual(asset.asset_type, "IMAGE")
         self.assertEqual(asset.mime_type, "image/webp")
         self.assertEqual(float(ledger.amount_usd), 0.003)
+        self.assertIn("estimated", ledger.description.lower())
         self.assertEqual(client.created[0]["version"], model.model_id)
 
     def test_replicate_provider_preflight_rejects_bad_model_account_and_balance(self):

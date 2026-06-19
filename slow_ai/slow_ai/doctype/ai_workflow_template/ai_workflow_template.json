@@ -14,7 +14,15 @@
   "nodes_json",
   "edges_json",
   "layout_json",
-  "input_schema_json"
+  "input_schema_json",
+  "review_section",
+  "submitted_by",
+  "submitted_at",
+  "reviewed_by",
+  "reviewed_at",
+  "review_notes",
+  "rejection_reason",
+  "published_at"
  ],
  "fields": [
   {
@@ -33,7 +41,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "DRAFT\nPUBLISHED\nARCHIVED",
+   "options": "DRAFT\nIN_REVIEW\nPUBLISHED\nREJECTED\nARCHIVED",
    "reqd": 1
   },
   {
@@ -78,6 +86,53 @@
    "fieldtype": "Code",
    "label": "Input Schema JSON",
    "options": "JSON"
+  },
+  {
+   "fieldname": "review_section",
+   "fieldtype": "Section Break",
+   "label": "Review"
+  },
+  {
+   "fieldname": "submitted_by",
+   "fieldtype": "Link",
+   "label": "Submitted By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_at",
+   "fieldtype": "Datetime",
+   "label": "Submitted At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_at",
+   "fieldtype": "Datetime",
+   "label": "Reviewed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_notes",
+   "fieldtype": "Small Text",
+   "label": "Review Notes"
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason"
+  },
+  {
+   "fieldname": "published_at",
+   "fieldtype": "Datetime",
+   "label": "Published At",
+   "read_only": 1
   }
  ],
  "links": [],

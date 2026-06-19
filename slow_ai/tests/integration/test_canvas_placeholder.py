@@ -32,6 +32,10 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.templates.get_template",
     "slow_ai.api.templates.save_template",
     "slow_ai.api.templates.create_workflow_from_template",
+    "slow_ai.api.templates.submit_template_for_review",
+    "slow_ai.api.templates.approve_template",
+    "slow_ai.api.templates.reject_template",
+    "slow_ai.api.templates.archive_template",
 }
 
 FORBIDDEN_CANVAS_FRAGMENTS = (
@@ -307,6 +311,14 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("saveCurrentWorkflowAsTemplate", page.script)
         self.assertIn("loadTemplatePreview", page.script)
         self.assertIn("createWorkflowFromTemplate", page.script)
+        self.assertIn("submitTemplateForReview", page.script)
+        self.assertIn("approveTemplate", page.script)
+        self.assertIn("rejectTemplate", page.script)
+        self.assertIn("archiveTemplate", page.script)
+        self.assertIn("Submit Review", page.script)
+        self.assertIn("Approve", page.script)
+        self.assertIn("Reject", page.script)
+        self.assertIn("Archive", page.script)
         self.assertIn("Save Current Workflow as Template", page.script)
         self.assertIn("Load Template Preview", page.script)
         self.assertIn("Create Workflow from Template", page.script)

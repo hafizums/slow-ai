@@ -5,9 +5,13 @@ from __future__ import annotations
 import frappe
 
 from slow_ai.application.templates import create_workflow_from_template as create_workflow_from_template_service
+from slow_ai.application.templates import approve_template as approve_template_service
+from slow_ai.application.templates import archive_template as archive_template_service
 from slow_ai.application.templates import get_template as get_template_service
 from slow_ai.application.templates import list_templates as list_templates_service
+from slow_ai.application.templates import reject_template as reject_template_service
 from slow_ai.application.templates import save_template as save_template_service
+from slow_ai.application.templates import submit_template_for_review as submit_template_for_review_service
 
 
 @frappe.whitelist()
@@ -52,3 +56,23 @@ def list_templates(status: str | None = None, category: str | None = None) -> di
 @frappe.whitelist()
 def create_workflow_from_template(template: str, project: str, title: str | None = None) -> dict:
     return create_workflow_from_template_service(template=template, project=project, title=title)
+
+
+@frappe.whitelist()
+def submit_template_for_review(template: str) -> dict:
+    return submit_template_for_review_service(template=template)
+
+
+@frappe.whitelist()
+def approve_template(template: str, review_notes: str | None = None) -> dict:
+    return approve_template_service(template=template, review_notes=review_notes)
+
+
+@frappe.whitelist()
+def reject_template(template: str, rejection_reason: str) -> dict:
+    return reject_template_service(template=template, rejection_reason=rejection_reason)
+
+
+@frappe.whitelist()
+def archive_template(template: str, reason: str | None = None) -> dict:
+    return archive_template_service(template=template, reason=reason)

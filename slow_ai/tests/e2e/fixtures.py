@@ -60,6 +60,9 @@ def setup_canvas_e2e() -> dict:
         public_tool_asset["name"],
         prefix="Browser E2E Public Upload Tool",
     )
+    review_template = _create_tool_template(prefix="Browser E2E Review Draft", status="DRAFT")
+    rejected_template = _create_tool_template(prefix="Browser E2E Rejected Tool", status="REJECTED")
+    archived_template = _create_tool_template(prefix="Browser E2E Archived Tool", status="ARCHIVED")
     catalog_model = _create_catalog_model()
     asset_run = _create_history_asset_run(project.name)
     public_asset_run = _create_history_asset_run(public_tool_project.name)
@@ -76,6 +79,12 @@ def setup_canvas_e2e() -> dict:
         "public_tool_project": public_tool_project.name,
         "public_tool_template": public_tool_template["name"],
         "public_tool_template_label": public_tool_template["template_name"],
+        "public_review_template": review_template["name"],
+        "public_review_template_label": review_template["template_name"],
+        "public_rejected_template": rejected_template["name"],
+        "public_rejected_template_label": rejected_template["template_name"],
+        "public_archived_template": archived_template["name"],
+        "public_archived_template_label": archived_template["template_name"],
         "public_tool_prompt": f"Public Tool Prompt {uuid4().hex[:8]}",
         "public_upload_template": public_upload_template["name"],
         "public_upload_template_label": public_upload_template["template_name"],
@@ -209,11 +218,11 @@ def _create_project(owner: str | None = None):
     return project
 
 
-def _create_tool_template(prefix: str = "Browser E2E Text Tool") -> dict:
+def _create_tool_template(prefix: str = "Browser E2E Text Tool", status: str = "PUBLISHED") -> dict:
     return frappe.call(
         "slow_ai.api.templates.save_template",
         template_name=_unique(prefix),
-        status="PUBLISHED",
+        status=status,
         category="Browser E2E",
         description="Browser E2E text prompt Tool Mode template",
         nodes=json.dumps(

@@ -12,6 +12,10 @@ const API = {
 	listTemplates: "slow_ai.api.templates.list_templates",
 	getTemplate: "slow_ai.api.templates.get_template",
 	createWorkflowFromTemplate: "slow_ai.api.templates.create_workflow_from_template",
+	submitTemplateReview: "slow_ai.api.templates.submit_template_for_review",
+	approveTemplate: "slow_ai.api.templates.approve_template",
+	rejectTemplate: "slow_ai.api.templates.reject_template",
+	archiveTemplate: "slow_ai.api.templates.archive_template",
 	publicListTemplates: "slow_ai.api.public_tools.list_templates",
 	publicGetTemplate: "slow_ai.api.public_tools.get_template",
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
@@ -297,6 +301,30 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	await modal.locator(".btn-secondary").first().click();
 	await expect(page.locator("[data-role='status']")).toContainText("Run cancelled");
 
+	await expect(page.locator("[data-role='template-library']")).toContainText(fixtures.public_review_template_label);
+	const reviewTemplateCard = page.locator(
+		`.slow-ai-canvas__template-card[data-template-name="${fixtures.public_review_template}"]`
+	);
+	await expect(reviewTemplateCard).toContainText("DRAFT");
+	const submitReviewResponse = page.waitForResponse(apiPredicate(API.submitTemplateReview));
+	const reloadAfterSubmitReviewResponse = page.waitForResponse(apiPredicate(API.listTemplates));
+	await reviewTemplateCard.getByRole("button", { name: "Submit Review" }).click();
+	const submittedReview = await apiJson(await submitReviewResponse);
+	await reloadAfterSubmitReviewResponse;
+	expect(submittedReview.message.status).toBe("IN_REVIEW");
+	await expect(reviewTemplateCard).toContainText("IN_REVIEW");
+	const approveReviewResponse = page.waitForResponse(apiPredicate(API.approveTemplate));
+	const reloadAfterApproveReviewResponse = page.waitForResponse(apiPredicate(API.listTemplates));
+	await reviewTemplateCard.getByRole("button", { name: "Approve" }).click();
+	const approveModal = page.locator(".modal.show:visible").last();
+	await expect(approveModal).toBeVisible();
+	await approveModal.locator("textarea").fill("Browser E2E review approved.");
+	await approveModal.getByRole("button", { name: "Approve" }).click();
+	const approvedReview = await apiJson(await approveReviewResponse);
+	await reloadAfterApproveReviewResponse;
+	expect(approvedReview.message.status).toBe("PUBLISHED");
+	await expect(reviewTemplateCard).toContainText("PUBLISHED");
+
 	await expect(page.locator("[data-role='template-library']")).toContainText(fixtures.tool_template_label);
 	const templatePreviewResponse = page.waitForResponse(apiPredicate(API.getTemplate));
 	await page.locator(`[data-template-name="${fixtures.tool_template}"]`).first().getByRole("button", { name: "Load Template Preview" }).click();
@@ -414,9 +442,15 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 
 	const templates = await apiJson(await templateListResponse);
 	expect(templates.message.templates.some((template) => template.name === fixtures.public_tool_template)).toBe(true);
+	expect(templates.message.templates.some((template) => template.name === fixtures.public_review_template)).toBe(true);
+	expect(templates.message.templates.some((template) => template.name === fixtures.public_rejected_template)).toBe(false);
+	expect(templates.message.templates.some((template) => template.name === fixtures.public_archived_template)).toBe(false);
 	const initialRuns = await apiJson(await initialRunsResponse);
 	expect(Array.isArray(initialRuns.message.runs)).toBe(true);
 	await expect(page.locator("[data-role='template-list']")).toContainText(fixtures.public_tool_template_label);
+	await expect(page.locator("[data-role='template-list']")).toContainText(fixtures.public_review_template_label);
+	await expect(page.locator("[data-role='template-list']")).not.toContainText(fixtures.public_rejected_template_label);
+	await expect(page.locator("[data-role='template-list']")).not.toContainText(fixtures.public_archived_template_label);
 
 	await page.locator("[data-role='project']").fill(fixtures.public_tool_project);
 	const balanceResponse = page.waitForResponse(apiPredicate(API.billingBalance));

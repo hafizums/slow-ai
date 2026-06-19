@@ -116,6 +116,18 @@ class SlowAiCanvasPlaceholder {
 		this.$templateLibrary.on("click", "[data-action='create-workflow-from-template']", (event) => {
 			this.createWorkflowFromTemplate($(event.currentTarget).attr("data-template-name"));
 		});
+		this.$templateLibrary.on("click", "[data-action='submit-template-review']", (event) => {
+			this.submitTemplateForReview($(event.currentTarget).attr("data-template-name"));
+		});
+		this.$templateLibrary.on("click", "[data-action='approve-template']", (event) => {
+			this.approveTemplate($(event.currentTarget).attr("data-template-name"));
+		});
+		this.$templateLibrary.on("click", "[data-action='reject-template']", (event) => {
+			this.rejectTemplate($(event.currentTarget).attr("data-template-name"));
+		});
+		this.$templateLibrary.on("click", "[data-action='archive-template']", (event) => {
+			this.archiveTemplate($(event.currentTarget).attr("data-template-name"));
+		});
 		this.$templatePreview.on("click", "[data-action='create-workflow-from-template']", (event) => {
 			this.createWorkflowFromTemplate($(event.currentTarget).attr("data-template-name"));
 		});
@@ -808,16 +820,144 @@ class SlowAiCanvasPlaceholder {
 		const preview = template.preview_asset
 			? `<div class="slow-ai-canvas__template-meta">${__("Preview Asset")}: ${this.escape(template.preview_asset)}</div>`
 			: "";
+		const review = this.renderTemplateReviewMeta(template);
+		const reviewActions = this.renderTemplateReviewActions(template);
 		return `<div class="slow-ai-canvas__template-card" data-template-name="${this.escape(template.name)}">
 			<div class="slow-ai-canvas__template-title">${this.escape(template.template_name || template.name)}</div>
 			<div class="slow-ai-canvas__template-meta">${this.escape(template.category || __("Uncategorized"))} · ${this.escape(template.status || "")}</div>
 			${template.description ? `<div class="slow-ai-canvas__template-description">${this.escape(template.description)}</div>` : ""}
+			${review}
 			${preview}
 			<div class="slow-ai-canvas__template-card-actions">
 				<button class="btn btn-xs btn-default" type="button" data-action="load-template-preview" data-template-name="${this.escape(template.name)}">${__("Load Template Preview")}</button>
 				<button class="btn btn-xs btn-primary" type="button" data-action="create-workflow-from-template" data-template-name="${this.escape(template.name)}">${__("Create Workflow")}</button>
+				${reviewActions}
 			</div>
 		</div>`;
+	}
+
+	renderTemplateReviewMeta(template) {
+		const rows = [];
+		if (template.submitted_at) {
+			rows.push(`${__("Submitted")}: ${template.submitted_at}`);
+		}
+		if (template.reviewed_at) {
+			rows.push(`${__("Reviewed")}: ${template.reviewed_at}`);
+		}
+		if (template.published_at) {
+			rows.push(`${__("Published")}: ${template.published_at}`);
+		}
+		if (template.rejection_reason) {
+			rows.push(`${__("Rejected")}: ${template.rejection_reason}`);
+		}
+		if (!rows.length) {
+			return "";
+		}
+		return `<div class="slow-ai-canvas__template-review">${rows.map((row) => `<div class="slow-ai-canvas__template-meta">${this.escape(row)}</div>`).join("")}</div>`;
+	}
+
+	renderTemplateReviewActions(template) {
+		const status = String(template.status || "").toUpperCase();
+		const name = this.escape(template.name);
+		const submit = status === "DRAFT" || status === "REJECTED"
+			? `<button class="btn btn-xs btn-default" type="button" data-action="submit-template-review" data-template-name="${name}">${__("Submit Review")}</button>`
+			: "";
+		const approve = status === "IN_REVIEW"
+			? `<button class="btn btn-xs btn-primary" type="button" data-action="approve-template" data-template-name="${name}">${__("Approve")}</button>`
+			: "";
+		const reject = status === "IN_REVIEW"
+			? `<button class="btn btn-xs btn-default" type="button" data-action="reject-template" data-template-name="${name}">${__("Reject")}</button>`
+			: "";
+		const archive = status !== "ARCHIVED"
+			? `<button class="btn btn-xs btn-default" type="button" data-action="archive-template" data-template-name="${name}">${__("Archive")}</button>`
+			: "";
+		return `${submit}${approve}${reject}${archive}`;
+	}
+
+	submitTemplateForReview(templateName) {
+		if (!templateName) {
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.templates.submit_template_for_review", { template: templateName }).then((response) => {
+			this.selectedTemplate = response.message;
+			this.setStatus(__("Submitted template {0} for review", [response.message.name]));
+			return this.loadTemplates();
+		});
+	}
+
+	approveTemplate(templateName) {
+		if (!templateName) {
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			frappe.prompt(
+				[{ label: __("Review Notes"), fieldname: "review_notes", fieldtype: "Small Text" }],
+				(values) => {
+					frappe
+						.call("slow_ai.api.templates.approve_template", {
+							template: templateName,
+							review_notes: values.review_notes || "",
+						})
+						.then((response) => {
+							this.selectedTemplate = response.message;
+							this.setStatus(__("Approved template {0}", [response.message.name]));
+							this.loadTemplates().then(resolve);
+						});
+				},
+				__("Approve Template"),
+				__("Approve")
+			);
+		});
+	}
+
+	rejectTemplate(templateName) {
+		if (!templateName) {
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			frappe.prompt(
+				[{ label: __("Rejection Reason"), fieldname: "rejection_reason", fieldtype: "Small Text", reqd: 1 }],
+				(values) => {
+					frappe
+						.call("slow_ai.api.templates.reject_template", {
+							template: templateName,
+							rejection_reason: values.rejection_reason,
+						})
+						.then((response) => {
+							this.selectedTemplate = response.message;
+							this.setStatus(__("Rejected template {0}", [response.message.name]));
+							this.loadTemplates().then(resolve);
+						});
+				},
+				__("Reject Template"),
+				__("Reject")
+			);
+		});
+	}
+
+	archiveTemplate(templateName) {
+		if (!templateName) {
+			return Promise.resolve();
+		}
+		return new Promise((resolve) => {
+			frappe.prompt(
+				[{ label: __("Reason"), fieldname: "reason", fieldtype: "Small Text" }],
+				(values) => {
+					frappe
+						.call("slow_ai.api.templates.archive_template", {
+							template: templateName,
+							reason: values.reason || "",
+						})
+						.then((response) => {
+							this.selectedTemplate = response.message;
+							this.setStatus(__("Archived template {0}", [response.message.name]));
+							this.loadTemplates().then(resolve);
+						});
+				},
+				__("Archive Template"),
+				__("Archive")
+			);
+		});
 	}
 
 	saveCurrentWorkflowAsTemplate() {

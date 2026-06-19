@@ -67,6 +67,10 @@ API_ALLOWED_CLIENT_METHODS = {
     "slow_ai.api.templates.get_template",
     "slow_ai.api.templates.list_templates",
     "slow_ai.api.templates.create_workflow_from_template",
+    "slow_ai.api.templates.submit_template_for_review",
+    "slow_ai.api.templates.approve_template",
+    "slow_ai.api.templates.reject_template",
+    "slow_ai.api.templates.archive_template",
     "slow_ai.api.workflows.save_workflow",
     "slow_ai.api.workflows.get_workflow",
 }

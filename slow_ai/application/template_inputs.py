@@ -152,6 +152,29 @@ def apply_input_values(
     return patched_nodes
 
 
+def extract_input_values_from_nodes(
+    *,
+    nodes: list[dict[str, Any]],
+    input_schema: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Extract previous values only through declared safe template input fields."""
+
+    nodes_by_id = _nodes_by_id(_copy_nodes(nodes))
+    values: dict[str, Any] = {}
+    for field in input_schema:
+        node = nodes_by_id.get(str(field.get("target_node_id") or ""))
+        if not node:
+            continue
+        config = node.get("config") or {}
+        target_field = str(field.get("target_config_field") or "")
+        if target_field not in config:
+            continue
+        value = config.get(target_field)
+        if value is not None:
+            values[str(field["id"])] = value
+    return values
+
+
 def apply_legacy_public_tool_values(
     *,
     nodes: list[dict[str, Any]],

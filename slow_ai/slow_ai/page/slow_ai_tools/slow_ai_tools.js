@@ -21,6 +21,7 @@ class SlowAiToolsPage {
 		this.templates = [];
 		this.template = null;
 		this.workflow = null;
+		this.rerunWorkflow = null;
 		this.workflowRun = null;
 		this.pollTimer = null;
 		this.makeBody();
@@ -78,6 +79,9 @@ class SlowAiToolsPage {
 		this.$root.on("click", "[data-action='refresh-my-runs']", () => this.loadMyRuns());
 		this.$root.on("click", "[data-action='open-run-detail']", (event) => {
 			this.openRunDetail($(event.currentTarget).attr("data-run-id"));
+		});
+		this.$root.on("click", "[data-action='prepare-rerun']", (event) => {
+			this.prepareRerun($(event.currentTarget).attr("data-run-id"));
 		});
 		this.$root.on("click", "[data-action='create-run-share']", (event) => {
 			this.createRunShare($(event.currentTarget).attr("data-run-id"));
@@ -157,6 +161,7 @@ class SlowAiToolsPage {
 		if (!templateName) {
 			return Promise.resolve();
 		}
+		this.rerunWorkflow = null;
 		this.setStatus(__("Loading template"));
 		return frappe.call("slow_ai.api.public_tools.get_template", { template: templateName }).then((response) => {
 			this.template = response.message;
@@ -503,6 +508,20 @@ class SlowAiToolsPage {
 				this.setStatus(__("Run cancelled"));
 				return null;
 			}
+			if (this.rerunWorkflow) {
+				const workflow = this.rerunWorkflow;
+				this.rerunWorkflow = null;
+				this.workflow = workflow;
+				this.setStatus(__("Starting rerun"));
+				return frappe.call("slow_ai.api.runs.start_run", { workflow }).then((response) => {
+					const result = response.message;
+					this.workflowRun = result.workflow_run;
+					this.setStatus(__("Queued {0}", [result.workflow_run]));
+					this.startPolling();
+					this.loadMyRuns();
+					return this.refreshRun();
+				});
+			}
 			const values = this.collectFormValues();
 			const title = `${this.template.template_name || this.template.name} Run`;
 			this.setStatus(__("Creating workflow draft"));
@@ -521,6 +540,7 @@ class SlowAiToolsPage {
 				.then((response) => {
 					const result = response.message;
 					this.workflowRun = result.workflow_run;
+					this.rerunWorkflow = null;
 					this.setStatus(__("Queued {0}", [result.workflow_run]));
 					this.startPolling();
 					this.loadMyRuns();
@@ -776,7 +796,6 @@ class SlowAiToolsPage {
 						<div class="slow-ai-tools__muted">${this.escape(run.created || run.queued_at || "")}</div>
 						<div class="slow-ai-tools__inline-actions">
 							<button class="btn btn-xs btn-default" type="button" data-action="open-run-detail" data-run-id="${this.escape(run.workflow_run)}">${__("Open Detail")}</button>
-							<a class="btn btn-xs btn-default" href="/app/slow-ai-tools">${__("Rerun Tool")}</a>
 							${shareActions}
 						</div>
 					</article>`;
@@ -863,6 +882,9 @@ class SlowAiToolsPage {
 		const cost = detail.cost_summary || {};
 		const shareActions = this.renderShareActions(run, true);
 		const lineageRows = this.renderTemplateLineageRows(run.template_lineage);
+		const rerunAction = run.template_lineage && run.template_lineage.source_template_version
+			? `<button class="btn btn-xs btn-primary" type="button" data-action="prepare-rerun" data-run-id="${this.escape(run.workflow_run)}">${__("Rerun")}</button>`
+			: "";
 		const assetCount = detail.output_gallery
 			? (detail.output_gallery.assets || []).length
 			: (detail.assets || []).length;
@@ -877,9 +899,45 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetCount)}</strong></div>
-			<div class="slow-ai-tools__inline-actions">${shareActions}</div>
+			<div class="slow-ai-tools__inline-actions">${rerunAction}${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
+	}
+
+	prepareRerun(runId) {
+		if (!runId) {
+			return Promise.resolve();
+		}
+		this.setStatus(__("Preparing rerun draft"));
+		return frappe.call("slow_ai.api.public_tools.prepare_rerun_from_run", { workflow_run: runId }).then((response) => {
+			const payload = response.message || {};
+			const workflow = payload.workflow || {};
+			this.template = payload.template || null;
+			this.workflow = workflow.name;
+			this.rerunWorkflow = workflow.name;
+			if (workflow.project) {
+				this.$project.val(workflow.project);
+			}
+			this.renderTemplateList();
+			this.renderSelectedTemplate();
+			this.applyFormValues(payload.prefilled_values || {});
+			this.setStatus(__("Rerun draft ready"));
+			return this.loadMyRuns();
+		});
+	}
+
+	applyFormValues(values) {
+		Object.keys(values || {}).forEach((inputId) => {
+			const $input = this.$form.find(`[data-input-id="${this.escapeSelector(inputId)}"]`);
+			if (!$input.length) {
+				return;
+			}
+			if ($input.attr("data-input-type") === "BOOLEAN") {
+				$input.prop("checked", Boolean(values[inputId]));
+			} else {
+				$input.val(values[inputId]);
+			}
+		});
 	}
 
 	renderTemplateLineageRows(lineage) {

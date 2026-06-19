@@ -22,11 +22,13 @@ from slow_ai.application.project_access import (
     list_accessible_project_names,
 )
 from slow_ai.application.templates import get_published_template
+from slow_ai.application.templates import get_template_version_payload
 from slow_ai.application.templates import list_published_templates
 from slow_ai.application.run_outputs import get_run_output_gallery as get_run_output_gallery_service
 from slow_ai.application.template_lineage import safe_template_lineage
 from slow_ai.application.template_inputs import apply_input_values
 from slow_ai.application.template_inputs import apply_legacy_public_tool_values
+from slow_ai.application.template_inputs import extract_input_values_from_nodes
 from slow_ai.application.workflows import save_workflow
 
 
@@ -91,6 +93,53 @@ def prepare_workflow_from_template(
         source_template=payload["template"],
         source_template_version=payload["template_version"],
     )
+
+
+def prepare_rerun_from_run(
+    *,
+    workflow_run: str,
+    title: str | None = None,
+) -> dict[str, Any]:
+    _require_logged_in_user()
+    run = frappe.get_doc("AI Workflow Run", workflow_run)
+    assert_can_view_project(run.project)
+    assert_can_edit_project(run.project)
+    source_template = str(getattr(run, "source_template", None) or "").strip()
+    source_template_version = str(getattr(run, "source_template_version", None) or "").strip()
+    if not source_template or not source_template_version:
+        frappe.throw("This run has no template version lineage for rerun.", frappe.ValidationError)
+
+    payload = get_template_version_payload(source_template, source_template_version)
+    previous_workflow = frappe.get_doc("AI Workflow", run.workflow)
+    previous_nodes = _loads_json(previous_workflow.draft_nodes_json, [])
+    input_schema = payload.get("input_schema") or []
+    prefilled_values = extract_input_values_from_nodes(nodes=previous_nodes, input_schema=input_schema)
+    nodes = (
+        apply_input_values(
+            nodes=payload["nodes"],
+            input_schema=input_schema,
+            values=prefilled_values,
+            project=run.project,
+        )
+        if input_schema
+        else payload["nodes"]
+    )
+    draft = save_workflow(
+        project=run.project,
+        title=title or f"Rerun of {frappe.db.get_value('AI Workflow', run.workflow, 'title') or payload['template_name']}",
+        nodes=nodes,
+        edges=payload["edges"],
+        layout=payload["layout"],
+        status="DRAFT",
+        source_template=payload["template"],
+        source_template_version=payload["template_version"],
+    )
+    return {
+        "workflow": draft,
+        "template": payload,
+        "prefilled_values": prefilled_values,
+        "source_run": _run_summary(run.as_dict()),
+    }
 
 
 def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str, Any]:

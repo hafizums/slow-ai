@@ -17,6 +17,7 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.list_templates",
     "slow_ai.api.public_tools.get_template",
     "slow_ai.api.public_tools.prepare_workflow_from_template",
+    "slow_ai.api.public_tools.prepare_rerun_from_run",
     "slow_ai.api.public_tools.list_my_runs",
     "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.public_tools.get_run_output_gallery",
@@ -117,14 +118,19 @@ def add_member(project: str, user: str, role: str):
     )
 
 
-def text_tool_nodes(text: str = "Template prompt"):
+def text_tool_nodes(text: str = "Template prompt", *, style: str | None = None, steps: int | None = None):
+    config = {"text": text}
+    if style is not None:
+        config["text_style"] = style
+    if steps is not None:
+        config["steps"] = steps
     return [
         {
             "id": "prompt_1",
             "type": "text_prompt",
             "label": "Prompt",
             "position": {"x": 96, "y": 128},
-            "config": {"text": text},
+            "config": config,
         },
         {
             "id": "tool_output_1",
@@ -136,6 +142,38 @@ def text_tool_nodes(text: str = "Template prompt"):
                 "description": "Primary tool output",
                 "schema": {"type": "string"},
             },
+        },
+    ]
+
+
+def text_tool_input_schema():
+    return [
+        {
+            "id": "prompt",
+            "label": "Prompt",
+            "input_type": "LONG_TEXT",
+            "target_node_id": "prompt_1",
+            "target_config_field": "text",
+            "required": True,
+        },
+        {
+            "id": "style",
+            "label": "Style",
+            "input_type": "SELECT",
+            "target_node_id": "prompt_1",
+            "target_config_field": "text_style",
+            "default": "natural",
+            "options": [{"value": "natural", "label": "Natural"}, {"value": "studio", "label": "Studio"}],
+        },
+        {
+            "id": "steps",
+            "label": "Steps",
+            "input_type": "NUMBER",
+            "target_node_id": "prompt_1",
+            "target_config_field": "steps",
+            "default": 4,
+            "min": 1,
+            "max": 12,
         },
     ]
 
@@ -232,7 +270,7 @@ def provider_tool_edges():
     ]
 
 
-def save_template(template_name: str, status: str, nodes, edges):
+def save_template(template_name: str, status: str, nodes, edges, input_schema=None):
     template = frappe.call(
         "slow_ai.api.templates.save_template",
         template_name=template_name,
@@ -242,6 +280,7 @@ def save_template(template_name: str, status: str, nodes, edges):
         nodes=json.dumps(nodes),
         edges=json.dumps(edges),
         layout=json.dumps({"nodes": [{"id": nodes[0]["id"], "x": 96, "y": 128}]}),
+        input_schema_json=json.dumps(input_schema or []),
     )
     return transition_template_status(template["name"], status)
 
@@ -352,6 +391,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.list_templates", page.script)
         self.assertIn("slow_ai.api.public_tools.get_template", page.script)
         self.assertIn("slow_ai.api.public_tools.prepare_workflow_from_template", page.script)
+        self.assertIn("slow_ai.api.public_tools.prepare_rerun_from_run", page.script)
         self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
@@ -537,6 +577,110 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertEqual(lineage["version_no"], published["version_no"])
         self.assertEqual(lineage["snapshot_hash"], published["snapshot_hash"])
         self.assertEqual(listed_lineage["source_template_version"], published["template_version"])
+
+    def test_rerun_uses_original_template_version_and_schema_prefill_only(self):
+        template = save_template(
+            unique("Rerun Public Tool"),
+            "PUBLISHED",
+            text_tool_nodes("First default", style="natural", steps=4),
+            text_tool_edges(),
+            input_schema=text_tool_input_schema(),
+        )
+        project = create_project(self.user)
+
+        frappe.set_user(self.user)
+        published = frappe.call("slow_ai.api.public_tools.get_template", template=template["name"])
+        saved = frappe.call(
+            "slow_ai.api.public_tools.prepare_workflow_from_template",
+            template=template["name"],
+            project=project.name,
+            title="Original Rerun Source",
+            values={"prompt": "Original user prompt", "style": "studio", "steps": 7},
+        )
+        run = frappe.call("slow_ai.api.runs.start_run", workflow=saved["name"])
+        run_workflow(run["workflow_run"])
+        original_nodes = json.loads(frappe.db.get_value("AI Workflow", saved["name"], "draft_nodes_json"))
+        original_nodes[0]["config"]["provider_account"] = "provider-account-should-not-copy"
+        original_nodes[0]["config"]["raw_error_json"] = {"secret": "raw-error-should-not-copy"}
+        frappe.db.set_value("AI Workflow", saved["name"], "draft_nodes_json", json.dumps(original_nodes))
+
+        frappe.set_user(self.previous_user)
+        edited = frappe.call(
+            "slow_ai.api.templates.save_template",
+            template=template["name"],
+            template_name=template["template_name"],
+            status="DRAFT",
+            category=template["category"],
+            description="Edited rerun fixture",
+            nodes=json.dumps(text_tool_nodes("Second default", style="natural", steps=2)),
+            edges=json.dumps(text_tool_edges()),
+            layout=json.dumps({"nodes": [{"id": "prompt_1", "x": 96, "y": 128}]}),
+            input_schema_json=json.dumps(text_tool_input_schema()),
+        )
+        submitted = frappe.call("slow_ai.api.templates.submit_template_for_review", template=edited["name"])
+        approved = frappe.call(
+            "slow_ai.api.templates.approve_template",
+            template=submitted["name"],
+            review_notes="Rerun edit approved.",
+        )
+        rolled_back = frappe.call(
+            "slow_ai.api.templates.rollback_template_to_version",
+            template=template["name"],
+            template_version=published["template_version"],
+            review_notes="Rerun rollback fixture.",
+        )
+        archived = frappe.call("slow_ai.api.templates.archive_template", template=template["name"], reason="Rerun archive fixture.")
+
+        self.assertNotEqual(approved["published_version"], published["template_version"])
+        self.assertNotEqual(rolled_back["published_version"], published["template_version"])
+        self.assertEqual(archived["status"], "ARCHIVED")
+
+        counts_before = lineage_side_effect_counts()
+        workflow_count_before = frappe.db.count("AI Workflow")
+
+        frappe.set_user(self.user)
+        rerun = frappe.call("slow_ai.api.public_tools.prepare_rerun_from_run", workflow_run=run["workflow_run"])
+        encoded = json.dumps(rerun, default=str)
+        draft = rerun["workflow"]
+        prompt_node = next(node for node in draft["nodes"] if node["id"] == "prompt_1")
+
+        self.assertEqual(frappe.db.count("AI Workflow"), workflow_count_before + 1)
+        for doctype, count in counts_before.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+        self.assertNotEqual(draft["name"], saved["name"])
+        self.assertEqual(draft["source_template"], template["name"])
+        self.assertEqual(draft["source_template_version"], published["template_version"])
+        self.assertEqual(draft["template_lineage"]["source_template_version"], published["template_version"])
+        self.assertEqual(rerun["template"]["template_version"], published["template_version"])
+        self.assertEqual(rerun["template"]["version_no"], published["version_no"])
+        self.assertEqual(rerun["prefilled_values"], {"prompt": "Original user prompt", "style": "studio", "steps": 7})
+        self.assertEqual(prompt_node["config"]["text"], "Original user prompt")
+        self.assertEqual(prompt_node["config"]["text_style"], "studio")
+        self.assertEqual(prompt_node["config"]["steps"], 7)
+        self.assertNotIn("provider_account", encoded)
+        self.assertNotIn("raw_error_json", encoded)
+        self.assertNotIn("provider-account-should-not-copy", encoded)
+        self.assertNotIn("raw-error-should-not-copy", encoded)
+
+        started = frappe.call("slow_ai.api.runs.start_run", workflow=draft["name"])
+        rerun_version_lineage = frappe.db.get_value(
+            "AI Workflow Version",
+            started["workflow_version"],
+            ["source_template", "source_template_version"],
+            as_dict=True,
+        )
+        rerun_run_lineage = frappe.db.get_value(
+            "AI Workflow Run",
+            started["workflow_run"],
+            ["source_template", "source_template_version"],
+            as_dict=True,
+        )
+
+        self.assertNotEqual(started["workflow_run"], run["workflow_run"])
+        self.assertEqual(rerun_version_lineage.source_template, template["name"])
+        self.assertEqual(rerun_version_lineage.source_template_version, published["template_version"])
+        self.assertEqual(rerun_run_lineage.source_template, template["name"])
+        self.assertEqual(rerun_run_lineage.source_template_version, published["template_version"])
 
     def test_run_library_scopes_normal_users_to_owned_project_runs(self):
         other_user = ensure_user(f"slow.ai.public.other.{uuid4().hex[:8]}@example.test")

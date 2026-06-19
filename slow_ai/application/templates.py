@@ -331,6 +331,20 @@ def get_published_template(template: str) -> dict[str, Any]:
     return _public_template_payload(version, doc.modified)
 
 
+def get_template_version_payload(template: str, template_version: str) -> dict[str, Any]:
+    """Return a safe runnable payload from one immutable template version."""
+
+    if not frappe.db.exists("AI Workflow Template", template):
+        frappe.throw(f"Template does not exist: {template}", frappe.ValidationError)
+    if not frappe.db.exists("AI Workflow Template Version", template_version):
+        frappe.throw(f"Template version does not exist: {template_version}", frappe.ValidationError)
+    version = frappe.get_doc("AI Workflow Template Version", template_version)
+    if version.template != template:
+        frappe.throw("Template version does not belong to the selected template.", frappe.ValidationError)
+    _validate_historical_template_version_snapshot(version)
+    return _public_template_payload(version, version.modified)
+
+
 def _loads_json(value: Any, default: Any) -> Any:
     if value is None or value == "":
         return default
@@ -682,6 +696,20 @@ def _validate_template_version_snapshot(version) -> None:
     _validate_preview_asset(version)
     _validate_safe_template_payload(nodes, edges, input_schema)
     _validate_provider_nodes(nodes)
+    snapshot = _template_snapshot_from_version(version)
+    if snapshot_hash(snapshot) != version.snapshot_hash:
+        frappe.throw("Template version snapshot hash does not match persisted payload.", frappe.ValidationError)
+
+
+def _validate_historical_template_version_snapshot(version) -> None:
+    nodes = _loads_json(version.nodes_json, [])
+    edges = _loads_json(version.edges_json, [])
+    input_schema = _loads_json(version.input_schema_json, [])
+    validate_workflow({"nodes": nodes, "edges": edges})
+    normalize_input_schema(input_schema, nodes)
+    _validate_required_public_metadata(version)
+    _validate_preview_asset(version)
+    _validate_safe_template_payload(nodes, edges, input_schema)
     snapshot = _template_snapshot_from_version(version)
     if snapshot_hash(snapshot) != version.snapshot_hash:
         frappe.throw("Template version snapshot hash does not match persisted payload.", frappe.ValidationError)

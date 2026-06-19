@@ -13,6 +13,7 @@ from slow_ai.application.public_tools import get_shared_run as get_shared_run_se
 from slow_ai.application.public_tools import get_template as get_template_service
 from slow_ai.application.public_tools import list_my_runs as list_my_runs_service
 from slow_ai.application.public_tools import list_templates as list_templates_service
+from slow_ai.application.public_tools import prepare_rerun_from_run as prepare_rerun_from_run_service
 from slow_ai.application.public_tools import prepare_workflow_from_template as prepare_workflow_from_template_service
 
 
@@ -34,6 +35,11 @@ def create_workflow_from_template(template: str, project: str, title: str | None
 @frappe.whitelist()
 def prepare_workflow_from_template(template: str, project: str, title: str | None = None, values=None) -> dict:
     return prepare_workflow_from_template_service(template=template, project=project, title=title, values=values)
+
+
+@frappe.whitelist()
+def prepare_rerun_from_run(workflow_run: str, title: str | None = None) -> dict:
+    return prepare_rerun_from_run_service(workflow_run=workflow_run, title=title)
 
 
 @frappe.whitelist()

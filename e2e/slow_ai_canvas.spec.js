@@ -23,6 +23,7 @@ const API = {
 	publicGetTemplate: "slow_ai.api.public_tools.get_template",
 	publicCreateWorkflowFromTemplate: "slow_ai.api.public_tools.create_workflow_from_template",
 	publicPrepareWorkflowFromTemplate: "slow_ai.api.public_tools.prepare_workflow_from_template",
+	publicPrepareRerunFromRun: "slow_ai.api.public_tools.prepare_rerun_from_run",
 	publicListMyRuns: "slow_ai.api.public_tools.list_my_runs",
 	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
 	publicGetRunOutputGallery: "slow_ai.api.public_tools.get_run_output_gallery",
@@ -589,6 +590,14 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	await expect(page.locator("[data-role='run-history']")).toContainText("Nodes");
 	await expect(page.locator("[data-role='run-detail']")).toContainText("Template Version");
 	await expect(page.locator("[data-role='run-detail']")).toContainText(template.message.template_version);
+	const rerunDraftResponse = page.waitForResponse(apiPredicate(API.publicPrepareRerunFromRun));
+	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Rerun" }).click();
+	const rerunDraft = await apiJson(await rerunDraftResponse);
+	expect(rerunDraft.message.workflow.source_template_version).toBe(template.message.template_version);
+	expect(rerunDraft.message.template.template_version).toBe(template.message.template_version);
+	expect(rerunDraft.message.prefilled_values.prompt).toBe(fixtures.public_tool_prompt);
+	await expect(page.locator("[data-role='status']")).toContainText("Rerun draft ready");
+	await expect(page.locator("[data-input-id='prompt']")).toHaveValue(fixtures.public_tool_prompt);
 
 	const uploadTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page

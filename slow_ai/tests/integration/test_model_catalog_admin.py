@@ -228,6 +228,79 @@ class TestModelCatalogAdmin(FrappeTestCase):
         self.assertEqual(z_image.node_type, "provider_text_to_image")
         self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
 
+    def test_model_admin_update_apis_persist_safe_records_without_provider_jobs(self):
+        provider = unique("admin-update-provider")
+        model = create_model(
+            provider=provider,
+            pricing_json={"unit": "run", "amount_usd": "0.01", "currency": "USD"},
+        )
+        provider_job_count = frappe.db.count("AI Provider Job")
+
+        disabled = frappe.call(
+            "slow_ai.api.models.update_model_status",
+            model=model.name,
+            status="DISABLED",
+        )
+        unpriced = frappe.call(
+            "slow_ai.api.models.update_model_pricing",
+            model=model.name,
+            amount_usd="",
+            unit="run",
+            currency="USD",
+        )
+        metadata = frappe.call(
+            "slow_ai.api.models.update_model_metadata",
+            model=model.name,
+            capabilities=json.dumps({"text_to_image": True, "quality": "test"}),
+            input_metadata=json.dumps({"prompt": "text", "size": "string"}),
+            output_metadata=json.dumps({"image": "AI Asset"}),
+        )
+        priced = frappe.call(
+            "slow_ai.api.models.update_model_pricing",
+            model=model.model_id,
+            amount_usd="0.045",
+            unit="run",
+            currency="USD",
+        )
+        listed = frappe.call(
+            "slow_ai.api.models.list_models",
+            provider=provider,
+            status="ALL",
+            node_type="provider_text_to_image",
+            category="provider",
+        )
+
+        self.assertEqual(disabled["model"]["status"], "DISABLED")
+        self.assertFalse(unpriced["model"]["pricing_known"])
+        self.assertEqual(metadata["model"]["capabilities"]["quality"], "test")
+        self.assertTrue(priced["model"]["pricing_known"])
+        self.assertEqual(priced["model"]["estimated_cost_usd"], "0.045")
+        self.assertIn(model.name, {row["name"] for row in listed["models"]})
+        serialized = json.dumps({"listed": listed, "priced": priced, "metadata": metadata}, default=str)
+        self.assertNotIn("api_key_secret", serialized)
+        self.assertNotIn("provider_account", serialized)
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
+
+    def test_model_update_status_and_unpriced_model_remain_preflight_guards(self):
+        provider = unique("admin-preflight-provider")
+        model = create_model(
+            provider=provider,
+            pricing_json={"unit": "run", "amount_usd": "0.01", "currency": "USD"},
+        )
+        create_provider_account(provider=provider)
+        workflow = create_provider_workflow(create_project(), provider=provider, model_ref=model.name)
+        provider_job_count = frappe.db.count("AI Provider Job")
+
+        frappe.call("slow_ai.api.models.update_model_status", model=model.name, status="DISABLED")
+        self.assert_preflight_rejects_without_provider_job(workflow, "disabled model")
+
+        frappe.call("slow_ai.api.models.update_model_status", model=model.name, status="ENABLED")
+        frappe.call("slow_ai.api.models.update_model_pricing", model=model.name, amount_usd="", unit="run", currency="USD")
+        with preflight_policy(slow_ai_run_preflight_require_known_pricing=True):
+            self.assert_preflight_rejects_without_provider_job(workflow, "without known pricing")
+
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
+
     def assert_preflight_rejects_without_provider_job(self, workflow, message: str) -> None:
         provider_job_count = frappe.db.count("AI Provider Job")
         with self.assertRaises(RunPreflightError) as exc:

@@ -23,6 +23,8 @@ class SlowAiCanvasPlaceholder {
 		this.objectInfo = {};
 		this.templates = [];
 		this.providerAccounts = [];
+		this.models = [];
+		this.selectedModel = null;
 		this.selectedTemplate = null;
 		this.toolModeTemplate = null;
 		this.nodeRunsByNodeId = {};
@@ -82,6 +84,7 @@ class SlowAiCanvasPlaceholder {
 		this.$templatePreview = this.$root.find("[data-role='template-preview']");
 		this.$toolMode = this.$root.find("[data-role='tool-mode']");
 		this.$providerAccounts = this.$root.find("[data-role='provider-accounts']");
+		this.$modelCatalog = this.$root.find("[data-role='model-catalog']");
 		this.$stage = this.$root.find("[data-role='stage']");
 		this.$edges = this.$root.find("[data-role='edges']");
 		this.$nodes = this.$root.find("[data-role='nodes']");
@@ -149,6 +152,21 @@ class SlowAiCanvasPlaceholder {
 		this.$providerAccounts.on("click", "[data-action='view-provider-account']", (event) => {
 			this.viewProviderAccount($(event.currentTarget).attr("data-account-name"));
 		});
+		this.$modelCatalog.on("click", "[data-action='refresh-model-catalog']", () => {
+			this.loadModels();
+		});
+		this.$modelCatalog.on("change", "[data-model-filter]", () => {
+			this.loadModels();
+		});
+		this.$modelCatalog.on("click", "[data-action='view-model-detail']", (event) => {
+			this.loadModelDetail($(event.currentTarget).attr("data-model-name"));
+		});
+		this.$modelCatalog.on("click", "[data-action='update-model-status']", (event) => {
+			this.updateModelStatus($(event.currentTarget).attr("data-model-name"));
+		});
+		this.$modelCatalog.on("click", "[data-action='update-model-pricing']", (event) => {
+			this.updateModelPricing($(event.currentTarget).attr("data-model-name"));
+		});
 		this.$nodes.on("click", "[data-node-id]", (event) => {
 			this.selectNode($(event.currentTarget).attr("data-node-id"));
 		});
@@ -205,6 +223,7 @@ class SlowAiCanvasPlaceholder {
 		this.loadObjectInfo();
 		this.loadTemplates();
 		this.loadProviderAccounts();
+		this.loadModels();
 		this.refreshQueue();
 		if (this.workflowRun) {
 			this.refreshRun();
@@ -232,6 +251,25 @@ class SlowAiCanvasPlaceholder {
 			.then((response) => {
 				this.providerAccounts = (response.message && response.message.accounts) || [];
 				this.renderProviderAccountsPanel();
+			});
+	}
+
+	loadModels() {
+		if (!this.$modelCatalog) {
+			return Promise.resolve();
+		}
+		const filters = this.modelCatalogFilters();
+		this.$modelCatalog.html(`<div class="slow-ai-canvas__empty">${__("Loading model catalog")}</div>`);
+		return frappe
+			.call("slow_ai.api.models.list_models", {
+				provider: filters.provider || null,
+				status: filters.status || "ALL",
+				node_type: filters.node_type || null,
+				category: filters.category || null,
+			})
+			.then((response) => {
+				this.models = (response.message && response.message.models) || [];
+				this.renderModelCatalogPanel();
 			});
 	}
 
@@ -353,6 +391,202 @@ class SlowAiCanvasPlaceholder {
 				<button class="btn btn-xs btn-default" type="button" data-action="disable-provider-account" data-account-name="${this.escape(account.name)}" ${disabled ? "disabled" : ""}>${__("Disable")}</button>
 			</div>
 		</div>`;
+	}
+
+	renderModelCatalogPanel() {
+		if (!this.$modelCatalog) {
+			return;
+		}
+		const rows = this.models.length
+			? this.models.map((model) => this.renderModelRow(model)).join("")
+			: `<div class="slow-ai-canvas__empty">${__("No models")}</div>`;
+		const detail = this.selectedModel ? this.renderModelDetail(this.selectedModel) : "";
+		this.$modelCatalog.html(`${this.renderModelFilters()}${rows}${detail}`);
+	}
+
+	renderModelFilters() {
+		const filters = this.modelCatalogFilters();
+		return `<div class="slow-ai-canvas__model-filters">
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Provider")}</span>
+				<input class="form-control input-xs" type="text" data-model-filter="provider" value="${this.escape(filters.provider)}" placeholder="wavespeed">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Status")}</span>
+				<select class="form-control input-xs" data-model-filter="status">
+					${this.renderSelectOption("ALL", filters.status || "ALL", __("All"))}
+					${this.renderSelectOption("ENABLED", filters.status, __("Enabled"))}
+					${this.renderSelectOption("DISABLED", filters.status, __("Disabled"))}
+				</select>
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Node Type")}</span>
+				<input class="form-control input-xs" type="text" data-model-filter="node_type" value="${this.escape(filters.node_type)}" placeholder="provider_text_to_image">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Category")}</span>
+				<input class="form-control input-xs" type="text" data-model-filter="category" value="${this.escape(filters.category)}" placeholder="provider">
+			</label>
+			<div class="slow-ai-canvas__tool-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="refresh-model-catalog">${__("Refresh Models")}</button>
+			</div>
+		</div>`;
+	}
+
+	renderModelRow(model) {
+		const warnings = this.modelWarnings(model);
+		return `<div class="slow-ai-canvas__model-row" data-model-name="${this.escape(model.name)}">
+			<div class="slow-ai-canvas__provider-account-row-head">
+				<div>
+					<div class="slow-ai-canvas__provider-account-title">${this.escape(model.display_name || model.model_name || model.name)}</div>
+					<div class="slow-ai-canvas__provider-account-meta">${this.escape(model.provider || "")} · ${this.escape(model.model_id || "")}</div>
+				</div>
+				<span class="slow-ai-canvas__status-badge" data-status="${this.escape(model.status || "")}">${this.escape(model.status || "")}</span>
+			</div>
+			<div class="slow-ai-canvas__asset-meta-grid">
+				${this.renderAssetMetaRow(__("Slug"), model.model_slug)}
+				${this.renderAssetMetaRow(__("Node Type"), model.node_type)}
+				${this.renderAssetMetaRow(__("Category"), model.category)}
+				${this.renderAssetMetaRow(__("Modality"), model.modality)}
+				${this.renderAssetMetaRow(__("Pricing"), this.modelPricingSummary(model))}
+				${this.renderAssetMetaRow(__("Capabilities"), this.objectSummary(model.capabilities))}
+				${this.renderAssetMetaRow(__("Inputs"), this.objectSummary(model.input_metadata))}
+				${this.renderAssetMetaRow(__("Outputs"), this.objectSummary(model.output_metadata))}
+			</div>
+			${warnings.map((warning) => `<div class="slow-ai-canvas__model-warning">${this.escape(warning)}</div>`).join("")}
+			<div class="slow-ai-canvas__tool-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="view-model-detail" data-model-name="${this.escape(model.name)}">${__("Inspect Model")}</button>
+			</div>
+		</div>`;
+	}
+
+	renderModelDetail(model) {
+		const oppositeStatus = model.status === "ENABLED" ? "DISABLED" : "ENABLED";
+		return `<div class="slow-ai-canvas__model-detail" data-model-detail="${this.escape(model.name)}">
+			<div class="slow-ai-canvas__provider-account-title">${__("Model Detail")}: ${this.escape(model.display_name || model.name)}</div>
+			${this.modelWarnings(model).map((warning) => `<div class="slow-ai-canvas__model-warning">${this.escape(warning)}</div>`).join("")}
+			<div class="slow-ai-canvas__asset-meta-grid">
+				${this.renderAssetMetaRow(__("Name"), model.name)}
+				${this.renderAssetMetaRow(__("Provider"), model.provider)}
+				${this.renderAssetMetaRow(__("Model ID"), model.model_id)}
+				${this.renderAssetMetaRow(__("Status"), model.status)}
+				${this.renderAssetMetaRow(__("Pricing"), this.modelPricingSummary(model))}
+			</div>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Amount USD")}</span>
+				<input class="form-control input-xs" type="number" min="0" step="0.000001" data-model-pricing-amount="${this.escape(model.name)}" value="${this.escape(model.estimated_cost_usd || "")}" placeholder="${__("blank for unknown")}">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Pricing Unit")}</span>
+				<input class="form-control input-xs" type="text" data-model-pricing-unit="${this.escape(model.name)}" value="${this.escape(model.pricing_unit || "run")}">
+			</label>
+			<label class="slow-ai-canvas__tool-field">
+				<span>${__("Currency")}</span>
+				<input class="form-control input-xs" type="text" data-model-pricing-currency="${this.escape(model.name)}" value="${this.escape(model.currency || "USD")}">
+			</label>
+			<div class="slow-ai-canvas__tool-actions">
+				<button class="btn btn-xs btn-default" type="button" data-action="update-model-status" data-model-name="${this.escape(model.name)}" data-model-status="${this.escape(oppositeStatus)}">${this.escape(oppositeStatus === "ENABLED" ? __("Enable Model") : __("Disable Model"))}</button>
+				<button class="btn btn-xs btn-primary" type="button" data-action="update-model-pricing" data-model-name="${this.escape(model.name)}">${__("Save Pricing")}</button>
+			</div>
+		</div>`;
+	}
+
+	modelCatalogFilters() {
+		if (!this.$modelCatalog || !this.$modelCatalog.length) {
+			return { provider: "", status: "ALL", node_type: "", category: "" };
+		}
+		const value = (fieldname) => this.$modelCatalog.find(`[data-model-filter="${fieldname}"]`).val() || "";
+		return {
+			provider: String(value("provider")).trim(),
+			status: String(value("status") || "ALL").trim(),
+			node_type: String(value("node_type")).trim(),
+			category: String(value("category")).trim(),
+		};
+	}
+
+	loadModelDetail(modelName) {
+		if (!modelName) {
+			return Promise.resolve();
+		}
+		return frappe.call("slow_ai.api.models.get_model", { model: modelName }).then((response) => {
+			this.selectedModel = response.message.model;
+			this.renderModelCatalogPanel();
+			this.setStatus(__("Loaded model {0}", [this.selectedModel.name]));
+		});
+	}
+
+	updateModelStatus(modelName) {
+		if (!modelName) {
+			return Promise.resolve();
+		}
+		const targetStatus = this.$modelCatalog.find(`[data-action='update-model-status'][data-model-name="${this.escapeSelector(modelName)}"]`).attr("data-model-status");
+		return frappe.call("slow_ai.api.models.update_model_status", { model: modelName, status: targetStatus }).then((response) => {
+			this.selectedModel = response.message.model;
+			this.setStatus(__("Updated model {0}", [this.selectedModel.name]));
+			return this.loadModels();
+		});
+	}
+
+	updateModelPricing(modelName) {
+		if (!modelName) {
+			return Promise.resolve();
+		}
+		const amount = this.$modelCatalog.find(`[data-model-pricing-amount="${this.escapeSelector(modelName)}"]`).val();
+		const unit = this.$modelCatalog.find(`[data-model-pricing-unit="${this.escapeSelector(modelName)}"]`).val();
+		const currency = this.$modelCatalog.find(`[data-model-pricing-currency="${this.escapeSelector(modelName)}"]`).val();
+		return frappe
+			.call("slow_ai.api.models.update_model_pricing", {
+				model: modelName,
+				amount_usd: amount || null,
+				unit: unit || "run",
+				currency: currency || "USD",
+			})
+			.then((response) => {
+				this.selectedModel = response.message.model;
+				this.setStatus(__("Updated pricing for {0}", [this.selectedModel.name]));
+				return this.loadModels();
+			});
+	}
+
+	modelPricingSummary(model) {
+		if (!model || !model.pricing_known) {
+			return __("Pricing unknown");
+		}
+		return `${model.currency || "USD"} ${model.estimated_cost_usd} / ${model.pricing_unit || "run"}`;
+	}
+
+	modelWarnings(model) {
+		const warnings = [];
+		if (model && model.status === "DISABLED") {
+			warnings.push(__("Disabled model cannot pass run preflight."));
+		}
+		if (model && !model.pricing_known) {
+			warnings.push(__("Pricing unknown; strict preflight will reject this model."));
+		}
+		return warnings;
+	}
+
+	objectSummary(value) {
+		const entries = Object.entries(value || {});
+		if (!entries.length) {
+			return __("none");
+		}
+		return entries.map(([key, item]) => `${key}:${this.shortValue(item)}`).join(", ");
+	}
+
+	shortValue(value) {
+		if (value === null || value === undefined) {
+			return "";
+		}
+		if (typeof value === "object") {
+			return "object";
+		}
+		return String(value);
+	}
+
+	renderSelectOption(value, selectedValue, label) {
+		const selected = String(value) === String(selectedValue || "") ? "selected" : "";
+		return `<option value="${this.escape(value)}" ${selected}>${this.escape(label || value)}</option>`;
 	}
 
 	providerAccountFormValues() {

@@ -37,6 +37,7 @@ def setup_canvas_e2e() -> dict:
     )
     tool_template = _create_tool_template()
     upload_template = _create_upload_template(placeholder_asset["name"])
+    catalog_model = _create_catalog_model()
     asset_run = _create_history_asset_run(project.name)
     frappe.db.commit()
     return {
@@ -54,6 +55,9 @@ def setup_canvas_e2e() -> dict:
         "provider_account_provider": f"browser-e2e-provider-{uuid4().hex[:8]}",
         "provider_account_label": f"Browser E2E Provider Account {uuid4().hex[:8]}",
         "provider_account_secret": f"browser-e2e-secret-{uuid4().hex[:8]}",
+        "model_catalog_provider": catalog_model["provider"],
+        "model_catalog_model": catalog_model["name"],
+        "model_catalog_label": catalog_model["model_name"],
         "asset_workflow_run": asset_run["workflow_run"],
         "history_asset": asset_run["asset"],
     }
@@ -182,6 +186,28 @@ def _create_upload_template(asset_name: str) -> dict:
         ),
         layout=json.dumps({"nodes": [{"id": "asset_1", "x": 96, "y": 128}]}),
     )
+
+
+def _create_catalog_model() -> dict:
+    provider = f"browser-e2e-model-provider-{uuid4().hex[:8]}"
+    doc = frappe.get_doc(
+        {
+            "doctype": "AI Model",
+            "model_id": f"{provider}/disabled-unpriced",
+            "model_slug": f"{provider}-disabled-unpriced",
+            "model_name": f"Browser E2E Disabled Unpriced Model {uuid4().hex[:8]}",
+            "provider": provider,
+            "status": "DISABLED",
+            "node_type": "provider_text_to_image",
+            "category": "provider",
+            "modality": "TEXT_TO_IMAGE",
+            "pricing_json": json.dumps({"unit": "run", "currency": "USD"}),
+            "capabilities_json": json.dumps({"text_to_image": True}),
+            "input_metadata_json": json.dumps({"prompt": "text", "size": "string"}),
+            "output_metadata_json": json.dumps({"image": "AI Asset"}),
+        }
+    ).insert(ignore_permissions=True)
+    return {"name": doc.name, "provider": provider, "model_name": doc.model_name}
 
 
 def _create_history_asset_run(project: str) -> dict:

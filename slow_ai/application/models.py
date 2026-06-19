@@ -31,17 +31,21 @@ def list_models(
     provider: str | None = None,
     status: str | None = "ENABLED",
     node_type: str | None = None,
+    category: str | None = None,
 ) -> dict[str, Any]:
     filters: dict[str, Any] = {}
     provider = _clean_optional(provider)
     status = _clean_optional(status)
     node_type = _clean_optional(node_type)
+    category = _clean_optional(category)
     if provider:
         filters["provider"] = provider
     if status and status.upper() != "ALL":
         filters["status"] = status.upper()
     if node_type:
         filters["node_type"] = node_type
+    if category:
+        filters["category"] = category
 
     rows = frappe.get_all(
         "AI Model",
@@ -60,6 +64,57 @@ def get_model(model: str) -> dict[str, Any]:
     if not row:
         frappe.throw(f"AI Model is not configured: {model_ref}.")
     return {"model": _safe_model_payload(row)}
+
+
+def update_model_status(model: str, status: str) -> dict[str, Any]:
+    frappe.only_for("System Manager")
+    doc = _get_model_doc(model)
+    normalized_status = str(status or "").strip().upper()
+    if normalized_status not in {"ENABLED", "DISABLED"}:
+        frappe.throw("status must be ENABLED or DISABLED.")
+    doc.status = normalized_status
+    doc.save(ignore_permissions=True)
+    return {"model": _safe_model_payload(_get_model_row(doc.name))}
+
+
+def update_model_pricing(
+    model: str,
+    amount_usd: Any = None,
+    unit: str | None = "run",
+    currency: str | None = "USD",
+) -> dict[str, Any]:
+    frappe.only_for("System Manager")
+    doc = _get_model_doc(model)
+    pricing: dict[str, Any] = {
+        "unit": str(unit or "run").strip() or "run",
+        "currency": str(currency or "USD").strip() or "USD",
+    }
+    amount = _clean_optional(amount_usd)
+    if amount is not None:
+        pricing["amount_usd"] = str(_as_non_negative_decimal(amount, "amount_usd"))
+    doc.pricing_json = json.dumps(pricing, sort_keys=True)
+    doc.save(ignore_permissions=True)
+    return {"model": _safe_model_payload(_get_model_row(doc.name))}
+
+
+def update_model_metadata(
+    model: str,
+    capabilities: Any = None,
+    input_metadata: Any = None,
+    output_metadata: Any = None,
+) -> dict[str, Any]:
+    frappe.only_for("System Manager")
+    doc = _get_model_doc(model)
+    for value, fieldname in (
+        (capabilities, "capabilities_json"),
+        (input_metadata, "input_metadata_json"),
+        (output_metadata, "output_metadata_json"),
+    ):
+        parsed = _loads_json_object(value, fieldname)
+        if parsed is not None:
+            doc.set(fieldname, json.dumps(parsed, sort_keys=True))
+    doc.save(ignore_permissions=True)
+    return {"model": _safe_model_payload(_get_model_row(doc.name))}
 
 
 def get_model_metadata(model_ids: Any) -> dict[str, Any]:
@@ -146,6 +201,16 @@ def _get_model_row(model_ref: str):
     return rows[0] if rows else None
 
 
+def _get_model_doc(model_ref: str):
+    model_name = str(model_ref or "").strip()
+    if not model_name:
+        frappe.throw("model is required.")
+    row = _get_model_row(model_name)
+    if not row:
+        frappe.throw(f"AI Model is not configured: {model_name}.")
+    return frappe.get_doc("AI Model", row.name)
+
+
 def _get_model_rows(model_refs: list[str]):
     rows_by_name: dict[str, Any] = {}
     for fieldname in ("name", "model_id", "model_slug"):
@@ -197,3 +262,28 @@ def _clean_optional(value: Any) -> str | None:
     if value in (None, ""):
         return None
     return str(value).strip() or None
+
+
+def _as_non_negative_decimal(value: Any, label: str) -> Decimal:
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        frappe.throw(f"{label} must be a decimal value.")
+    if amount < 0:
+        frappe.throw(f"{label} cannot be negative.")
+    return amount
+
+
+def _loads_json_object(value: Any, label: str) -> dict[str, Any] | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            frappe.throw(f"{label} must be valid JSON.")
+    else:
+        parsed = value
+    if not isinstance(parsed, dict):
+        frappe.throw(f"{label} must be a JSON object.")
+    return parsed

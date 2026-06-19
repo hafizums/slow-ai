@@ -98,6 +98,7 @@
 .slow-ai-canvas__template-preview,
 .slow-ai-canvas__tool-mode,
 .slow-ai-canvas__provider-accounts,
+.slow-ai-canvas__model-catalog,
 .slow-ai-canvas__summary,
 .slow-ai-canvas__history,
 .slow-ai-canvas__asset-output,
@@ -383,6 +384,25 @@
 	padding: 10px 0;
 	border-bottom: 1px solid var(--slow-ai-border);
 	overflow-wrap: anywhere;
+}
+
+.slow-ai-canvas__model-row,
+.slow-ai-canvas__model-detail {
+	padding: 10px 0;
+	border-bottom: 1px solid var(--slow-ai-border);
+	overflow-wrap: anywhere;
+}
+
+.slow-ai-canvas__model-filters {
+	padding-bottom: 10px;
+	border-bottom: 1px solid var(--slow-ai-border);
+}
+
+.slow-ai-canvas__model-warning {
+	margin-top: 6px;
+	font-size: 12px;
+	line-height: 1.4;
+	color: var(--slow-ai-warning);
 }
 
 .slow-ai-canvas__provider-account-row-head {

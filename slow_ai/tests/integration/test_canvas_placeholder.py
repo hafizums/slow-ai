@@ -18,7 +18,11 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.queue.get_queue_status",
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
+    "slow_ai.api.models.get_model",
     "slow_ai.api.models.get_model_metadata",
+    "slow_ai.api.models.list_models",
+    "slow_ai.api.models.update_model_pricing",
+    "slow_ai.api.models.update_model_status",
     "slow_ai.api.provider_accounts.list_accounts",
     "slow_ai.api.provider_accounts.get_account",
     "slow_ai.api.provider_accounts.create_account",
@@ -337,6 +341,19 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("API keys are never displayed after save.", page.script)
         self.assertIn("slow-ai-canvas__provider-accounts", page.style)
         self.assertIn("slow-ai-canvas__provider-account-row", page.style)
+        self.assertIn("Model Catalog", page.script)
+        self.assertIn("renderModelCatalogPanel", page.script)
+        self.assertIn("loadModelDetail", page.script)
+        self.assertIn("updateModelStatus", page.script)
+        self.assertIn("updateModelPricing", page.script)
+        self.assertIn("slow_ai.api.models.list_models", page.script)
+        self.assertIn("slow_ai.api.models.get_model", page.script)
+        self.assertIn("slow_ai.api.models.update_model_status", page.script)
+        self.assertIn("slow_ai.api.models.update_model_pricing", page.script)
+        self.assertIn("Disabled model cannot pass run preflight.", page.script)
+        self.assertIn("Pricing unknown; strict preflight will reject this model.", page.script)
+        self.assertIn("slow-ai-canvas__model-catalog", page.style)
+        self.assertIn("slow-ai-canvas__model-warning", page.style)
         for method in ALLOWED_CANVAS_METHODS:
             self.assertIn(method, page.script)
         for fragment in FORBIDDEN_CANVAS_FRAGMENTS:
@@ -958,6 +975,118 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertTrue(metadata["models"][model.name]["pricing_known"])
         self.assertEqual(metadata["models"][model.name]["estimated_cost_usd"], "0.012")
         self.assertNotIn("pricing_json", metadata["models"][model.name])
+
+    def test_canvas_model_catalog_ui_uses_safe_model_apis_and_preflight_guards(self):
+        frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        page = frappe.get_doc("Page", "slow-ai-canvas")
+        page.load_assets()
+
+        for method in (
+            "slow_ai.api.models.list_models",
+            "slow_ai.api.models.get_model",
+            "slow_ai.api.models.update_model_status",
+            "slow_ai.api.models.update_model_pricing",
+        ):
+            self.assertIn(method, page.script)
+        self.assertIn("Model Catalog", page.script)
+        self.assertIn("Inspect Model", page.script)
+        self.assertIn("Disable Model", page.script)
+        self.assertIn("Save Pricing", page.script)
+        self.assertIn("Disabled model cannot pass run preflight.", page.script)
+        self.assertIn("Pricing unknown; strict preflight will reject this model.", page.script)
+        self.assertNotIn("api_key_secret", page.script)
+        for forbidden in ("frappe.db", "providers/wavespeed", "api.wavespeed.ai", "WAVESPEED_API_KEY"):
+            self.assertNotIn(forbidden, page.script)
+
+        project = create_project()
+        provider = unique("canvas-model-ui-provider")
+        account = frappe.get_doc(
+            {
+                "doctype": "AI Provider Account",
+                "provider": provider,
+                "account_label": unique("Canvas Model Account"),
+                "api_key_secret": "canvas-model-test-key",
+                "is_default": 1,
+                "status": "ACTIVE",
+            }
+        ).insert(ignore_permissions=True)
+        model = frappe.get_doc(
+            {
+                "doctype": "AI Model",
+                "model_id": unique(f"{provider}/model"),
+                "model_slug": unique(f"{provider}-slug"),
+                "model_name": "Canvas Model Catalog",
+                "provider": provider,
+                "status": "ENABLED",
+                "node_type": "provider_text_to_image",
+                "category": "provider",
+                "modality": "TEXT_TO_IMAGE",
+                "pricing_json": json.dumps({"unit": "run", "amount_usd": "0.01", "currency": "USD"}),
+                "capabilities_json": json.dumps({"text_to_image": True}),
+                "input_metadata_json": json.dumps({"prompt": "text"}),
+                "output_metadata_json": json.dumps({"image": "AI Asset"}),
+            }
+        ).insert(ignore_permissions=True)
+        provider_job_count = frappe.db.count("AI Provider Job")
+
+        listed = frappe.call(
+            "slow_ai.api.models.list_models",
+            provider=provider,
+            status="ALL",
+            node_type="provider_text_to_image",
+            category="provider",
+        )
+        detail = frappe.call("slow_ai.api.models.get_model", model=model.model_slug)
+        disabled = frappe.call("slow_ai.api.models.update_model_status", model=model.name, status="DISABLED")
+        unpriced = frappe.call("slow_ai.api.models.update_model_pricing", model=model.name, amount_usd="", unit="run", currency="USD")
+
+        self.assertIn(model.name, {row["name"] for row in listed["models"]})
+        self.assertEqual(detail["model"]["name"], model.name)
+        self.assertEqual(disabled["model"]["status"], "DISABLED")
+        self.assertFalse(unpriced["model"]["pricing_known"])
+        serialized = json.dumps({"listed": listed, "detail": detail, "disabled": disabled, "unpriced": unpriced}, default=str)
+        self.assertNotIn("api_key_secret", serialized)
+        self.assertNotIn(account.get_password("api_key_secret"), serialized)
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
+
+        workflow = frappe.call(
+            "slow_ai.api.workflows.save_workflow",
+            project=project.name,
+            title="Canvas Model Catalog Guard Workflow",
+            nodes=json.dumps(
+                [
+                    {"id": "prompt_1", "type": "text_prompt", "config": {"text": "Canvas model guard"}},
+                    {
+                        "id": "provider_1",
+                        "type": "provider_text_to_image",
+                        "config": {"provider": provider, "model": model.name},
+                    },
+                    {"id": "output_1", "type": "export_output", "config": {}},
+                ]
+            ),
+            edges=json.dumps(
+                [
+                    {
+                        "id": "edge_1",
+                        "source": "prompt_1",
+                        "source_port": "text",
+                        "target": "provider_1",
+                        "target_port": "prompt",
+                    },
+                    {
+                        "id": "edge_2",
+                        "source": "provider_1",
+                        "source_port": "image",
+                        "target": "output_1",
+                        "target_port": "image",
+                    },
+                ]
+            ),
+            layout=json.dumps({"nodes": []}),
+        )
+        with self.assertRaises(RunPreflightError):
+            frappe.call("slow_ai.api.runs.start_run", workflow=workflow["name"])
+        self.assertEqual(frappe.db.count("AI Provider Job"), provider_job_count)
 
     def test_canvas_provider_account_ui_uses_safe_backend_apis(self):
         frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")

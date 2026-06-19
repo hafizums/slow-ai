@@ -18,6 +18,10 @@ const API = {
 	createProviderAccount: "slow_ai.api.provider_accounts.create_account",
 	setDefaultProviderAccount: "slow_ai.api.provider_accounts.set_default",
 	disableProviderAccount: "slow_ai.api.provider_accounts.disable_account",
+	listModels: "slow_ai.api.models.list_models",
+	getModel: "slow_ai.api.models.get_model",
+	updateModelStatus: "slow_ai.api.models.update_model_status",
+	updateModelPricing: "slow_ai.api.models.update_model_pricing",
 };
 
 let fixtures;
@@ -114,6 +118,7 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	const objectInfoPromise = page.waitForResponse(apiPredicate(API.objectInfo));
 	const templateListPromise = page.waitForResponse(apiPredicate(API.listTemplates));
 	const initialProviderAccountsPromise = page.waitForResponse(apiPredicate(API.listProviderAccounts));
+	const initialModelsPromise = page.waitForResponse(apiPredicate(API.listModels));
 
 	await page.request.post("/api/method/login", {
 		form: {
@@ -130,12 +135,45 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	expect(Array.isArray(templates.message.templates)).toBe(true);
 	const initialProviderAccounts = await apiJson(await initialProviderAccountsPromise);
 	expect(Array.isArray(initialProviderAccounts.message.accounts)).toBe(true);
+	const initialModels = await apiJson(await initialModelsPromise);
+	expect(Array.isArray(initialModels.message.models)).toBe(true);
 	await expect(page.locator("[data-role='node-palette']")).toContainText("Text Prompt");
 	await expect(page.locator("[data-role='template-library']")).toContainText("Refresh Templates");
 	await expect(page.locator("[data-role='provider-accounts']")).toContainText("Create Provider Account");
+	await expect(page.locator("[data-role='model-catalog']")).toContainText("Refresh Models");
 
 	await setCanvasField(page, "project", fixtures.project);
 	await setCanvasField(page, "title", fixtures.canvas_title);
+
+	const filteredModelsResponse = page.waitForResponse(apiPredicate(API.listModels));
+	await page.locator("[data-role='model-catalog'] [data-model-filter='provider']").evaluate(
+		(element, provider) => {
+			element.value = provider;
+			element.dispatchEvent(new Event("change", { bubbles: true }));
+		},
+		fixtures.model_catalog_provider
+	);
+	const filteredModels = await apiJson(await filteredModelsResponse);
+	expect(filteredModels.message.models.some((model) => model.name === fixtures.model_catalog_model)).toBe(true);
+	await expect(page.locator("[data-role='model-catalog']")).toContainText(fixtures.model_catalog_label);
+	await expect(page.locator("[data-role='model-catalog']")).toContainText(
+		"Disabled model cannot pass run preflight."
+	);
+	await expect(page.locator("[data-role='model-catalog']")).toContainText(
+		"Pricing unknown; strict preflight will reject this model."
+	);
+	const modelDetailResponse = page.waitForResponse(apiPredicate(API.getModel));
+	await page
+		.locator(`[data-model-name="${fixtures.model_catalog_model}"]`)
+		.getByRole("button", { name: "Inspect Model" })
+		.click();
+	const modelDetail = await apiJson(await modelDetailResponse);
+	expect(modelDetail.message.model.name).toBe(fixtures.model_catalog_model);
+	expect(modelDetail.message.model.pricing_known).toBe(false);
+	await expect(page.locator(`[data-model-detail="${fixtures.model_catalog_model}"]`)).toContainText(
+		"Model Detail"
+	);
+
 	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='provider']").fill(fixtures.provider_account_provider);
 	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='account_label']").fill(fixtures.provider_account_label);
 	await page.locator("[data-role='provider-accounts'] [data-provider-account-field='api_key']").fill(fixtures.provider_account_secret);

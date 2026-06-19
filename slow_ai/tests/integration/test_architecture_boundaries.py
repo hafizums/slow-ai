@@ -31,7 +31,12 @@ PRODUCTION_DIRS = (
 API_ALLOWED_CLIENT_METHODS = {
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
+    "slow_ai.api.models.get_model",
     "slow_ai.api.models.get_model_metadata",
+    "slow_ai.api.models.list_models",
+    "slow_ai.api.models.update_model_metadata",
+    "slow_ai.api.models.update_model_pricing",
+    "slow_ai.api.models.update_model_status",
     "slow_ai.api.nodes.get_object_info",
     "slow_ai.api.provider_accounts.list_accounts",
     "slow_ai.api.provider_accounts.get_account",

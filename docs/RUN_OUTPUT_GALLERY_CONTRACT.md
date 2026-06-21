@@ -21,6 +21,10 @@ Normal run views must enforce project view access. Shared-link reads may reuse
 the service only after `AI Tool Run Share` token/status/expiry checks, and must
 pass the assets stored on `selected_assets_json` with unselected outputs
 excluded.
+Share creation must validate that every selected asset belongs to the workflow
+run being shared. Public tool input assets and rerun asset edits must resolve
+through the same project-scoped asset view path so inaccessible assets from
+another project cannot be written into a tool draft.
 
 ## Public API
 

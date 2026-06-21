@@ -161,6 +161,15 @@ code. Dragging nodes and connecting/deleting edges must mutate editable draft
 JSON only; persistence happens only when the user saves through
 `slow_ai.api.workflows.save_workflow`.
 
+Workflow draft save/load access is enforced by backend project policy. The
+Canvas may save drafts only for users with project edit access and may load
+drafts only for users with project view access. `get_workflow` returns a
+display-safe draft payload: provider account names and secret/raw provider
+payload config fields are removed from node config before reaching the browser.
+Rejected draft saves and read-only draft loads must not create or mutate
+workflow versions, runs, node runs, provider jobs, assets, ledger rows, shares,
+or templates.
+
 The run monitor renders persisted execution state only. It reads workflow and
 node status from `slow_ai.api.runs.get_run_status`, then reads provider jobs,
 assets, ledger entries, and detailed run history from
@@ -245,6 +254,11 @@ only the URL or file reference returned by `slow_ai.api.assets.view`.
 Canvas asset previews must treat `assets.view` as a safe display API only:
 sensitive asset metadata keys and raw provider URLs/secrets are removed or
 redacted by the backend shared safe-payload utility before rendering.
+Asset upload controls may call only `slow_ai.api.assets.upload`. The backend
+must enforce project edit access and create exactly one `AI Asset`; the Canvas
+must not create assets through direct DB access, provider outputs, or workflow
+execution paths. VIEWER/BILLING users may view scoped assets but must not upload
+unless the backend project policy changes.
 
 Opening or refreshing Canvas run detail, history, timeline, and asset views must
 not create, delete, enqueue, or mutate workflow versions, workflow runs, node

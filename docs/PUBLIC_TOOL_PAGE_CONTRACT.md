@@ -114,6 +114,13 @@ BILLING: view/manage billing and provider account settings only
 System Manager: cross-project administration
 ```
 
+Public-tool prepare and rerun draft creation require project edit access and
+may create only an editable `AI Workflow` draft. VIEWER, BILLING, non-member,
+and Guest callers must be rejected before any workflow version, workflow run,
+node run, provider job, asset, ledger, share, worker, or provider side effect is
+created. Public-tool draft reads and My Runs/gallery/asset reads require normal
+project view access.
+
 The Project Members panel may call only the safe project membership APIs listed
 above. Membership write controls must be shown only after the backend
 `list_members` call succeeds for the selected project. Users without membership
@@ -183,6 +190,14 @@ URLs unless the backend has materialized them as safe `AI Asset` metadata.
 Direct client calls to `slow_ai.api.assets.view` remain allowed for explicit
 user-selected input asset preview/upload workflows. They must not be used to
 recompute run output galleries from raw history in the browser.
+
+Tool input assets must resolve through backend asset access checks. Uploading
+an input asset requires project edit access and must go through
+`slow_ai.api.assets.upload`; previewing a selected input asset must go through
+`slow_ai.api.assets.view`. Non-members and Guest users cannot call internal
+asset upload/view APIs for project assets. Guest shared-output pages receive
+only selected output assets through `get_shared_run` and must not call
+`assets.view` directly.
 
 If a public-tool run timeline is shown, it must come from
 `slow_ai.api.runs.get_run_timeline` and may render only the safe event fields

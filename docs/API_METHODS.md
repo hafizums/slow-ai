@@ -99,7 +99,12 @@ Returns: persisted workflow draft payload
 
 `save_workflow` validates the supplied graph through application/domain
 workflow validation before writing the draft. It does not create an immutable
-version or execute a run.
+version or execute a run. It requires project edit access (`AI Project.owner`,
+OWNER, EDITOR, or System Manager). VIEWER, BILLING, non-member, and Guest
+callers must be rejected without creating or mutating workflow execution,
+provider, asset, ledger, share, or template records. Unsafe node config fields
+such as API keys, Authorization headers, raw request/response/error payloads,
+and raw URL fields are rejected before the draft is saved.
 
 ### slow_ai.api.workflows.get_workflow
 
@@ -108,6 +113,14 @@ Arguments: workflow
 Application service: slow_ai.application.workflows.get_workflow
 Returns: workflow draft with parsed nodes, edges, and layout
 ```
+
+`get_workflow` requires project view access. OWNER, EDITOR, VIEWER, BILLING,
+and System Manager may read scoped drafts; non-members and Guest callers are
+denied. The returned draft payload is safe for editor display: provider account
+names and secret/raw payload fields are stripped from node config in the read
+payload while the persisted draft remains server-side source data for backend
+validation/preflight. Reads must not mutate any run, provider, asset, ledger,
+share, template, or workflow-version records.
 
 ### slow_ai.api.runs.start_run
 
@@ -266,7 +279,11 @@ Returns: asset view payload
 ```
 
 The upload API records a provided file reference or URL as an `AI Asset`. It
-does not call providers.
+does not call providers. Upload requires project edit access (`AI Project.owner`,
+OWNER, EDITOR, or System Manager) and creates exactly one `AI Asset`; it must
+not create workflow versions, workflow runs, node runs, provider jobs, ledger
+rows, shares, workers, or provider calls. Rejected uploads create no side
+effects.
 
 ### slow_ai.api.assets.view
 
@@ -282,6 +299,14 @@ internals, raw provider responses, or raw provider errors. Asset metadata is
 returned only after sensitive metadata keys and unsafe provider URLs/secrets are
 redacted or removed through `slow_ai.application.safe_payloads`; raw provider
 payload metadata remains server-side only.
+
+`assets.view` requires project view access for authenticated asset reads.
+OWNER, EDITOR, VIEWER, BILLING, and System Manager may view scoped project
+assets. Non-members and Guest callers are denied from this internal asset API;
+guest shared-output reads must go through `slow_ai.api.public_tools.get_shared_run`
+and receive only selected safe asset previews from the share token payload.
+Asset view reads are read-only and must not create or mutate execution,
+provider, asset, ledger, or share records.
 
 ### slow_ai.api.billing.create_top_up
 

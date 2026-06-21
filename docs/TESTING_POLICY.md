@@ -743,6 +743,36 @@ compare before/after counts and mutation-sensitive fields for workflows,
 workflow versions, workflow runs, node runs, provider jobs, assets, credit
 ledger rows, and tool-run shares.
 
+Workflow draft access matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_workflow_draft_access_matrix.py
+```
+
+It uses real users, projects, memberships, workflow drafts, public-tool
+prepared drafts, rerun drafts, and run records. It verifies OWNER, EDITOR, and
+System Manager create/edit access; VIEWER/BILLING read-only behavior;
+non-member/Guest denial; disabled-member and role-change effects; rejected
+unsafe workflow config fields; safe redaction of persisted provider-account
+config in draft read payloads; public-tool prepare/rerun draft access; and no
+execution/provider/asset/ledger/share/template side effects from rejected
+actions or read-only calls.
+
+Asset access matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_asset_access_matrix.py
+```
+
+It uses real users, projects, memberships, uploaded assets, workflow runs,
+output galleries, share tokens, and public-tool upload templates. It verifies
+OWNER, EDITOR, and System Manager upload access; VIEWER/BILLING scoped view
+without upload; non-member/Guest denial from internal asset APIs;
+disabled-member and role-change effects; safe asset metadata redaction;
+selected-only guest shared payloads; no side effects from view/gallery/share
+reads; and inaccessible asset rejection in public-tool prepare and rerun update
+paths.
+
 Run timeline UI coverage is included in:
 
 ```txt

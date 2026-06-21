@@ -39,6 +39,23 @@ Server transforms file
 Workflow exports result
 ```
 
+User-uploaded assets must be created only through
+`slow_ai.api.assets.upload` / `slow_ai.application.assets.upload`, which require
+project edit access (`AI Project.owner`, OWNER, EDITOR, or System Manager).
+Each successful upload creates exactly one `AI Asset` and must not create
+workflow versions, workflow runs, node runs, provider jobs, credit ledger rows,
+tool-run shares, workers, or provider calls.
+
+Asset preview reads must go through `slow_ai.api.assets.view` or a backend
+service that delegates to the same safe asset view path. Authenticated view
+requires project view access; Guest access to generated outputs is only through
+validated share-token payloads from `slow_ai.api.public_tools.get_shared_run`.
+Safe preview payloads may include name, type, file/url, MIME type, dimensions,
+duration, source links, timestamps, and safe metadata. They must not expose
+provider account names, provider secrets, raw provider URLs embedded in
+metadata, raw request/response/error JSON, API keys, Authorization headers, or
+workflow draft internals.
+
 ## Forbidden patterns
 
 ```txt

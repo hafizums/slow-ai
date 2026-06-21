@@ -148,9 +148,14 @@ def _make_failed_provider_like_run():
                 {
                     "asset": "AI-ASSET-NOT-FOUND",
                     "safe_display": "visible summary key",
+                    "safe_list": ["visible list item"],
                     "api_key": secret,
                     "provider_url": "https://provider.example.invalid/node-output",
                     "raw_response": {"Authorization": f"Bearer {secret}"},
+                    "nested": [
+                        {"safe_nested": "visible nested value"},
+                        {"response_json": {"token": secret}},
+                    ],
                 }
             ),
             "error_json": json.dumps(
@@ -224,6 +229,11 @@ class TestRunDetailReadOnlySideEffectGuard(FrappeTestCase):
                         "provider_url": "https://provider.example.invalid/metadata",
                         "safe_note": "kept",
                     },
+                    "items": [
+                        {"safe_note": "list-kept"},
+                        {"request_json": {"Authorization": "Bearer sk_read_only_should_not_leak"}},
+                        "token=sk_read_only_should_not_leak https://provider.example.invalid/list",
+                    ],
                     "notes": "Authorization: Bearer sk_read_only_should_not_leak https://provider.example.invalid/meta",
                 }
             ),
@@ -268,17 +278,25 @@ class TestRunDetailReadOnlySideEffectGuard(FrappeTestCase):
         asset_view = authenticated_payloads[-1]
         self.assertEqual(asset_view["metadata"]["origin"], "read-only-guard")
         self.assertEqual(asset_view["metadata"]["nested"]["safe_note"], "kept")
+        self.assertEqual(asset_view["metadata"]["items"][0]["safe_note"], "list-kept")
+        self.assertEqual(asset_view["metadata"]["items"][1], {})
+        self.assertIn("[redacted]", asset_view["metadata"]["items"][2])
+        self.assertIn("[link hidden]", asset_view["metadata"]["items"][2])
         self.assertNotIn("provider_secret", asset_view["metadata"])
         self.assertNotIn("provider_url", asset_view["metadata"]["nested"])
         self.assertIn("[link hidden]", asset_view["metadata"]["notes"])
 
         detail = authenticated_payloads[7]
         failed_detail = authenticated_payloads[8]
+        failed_history = authenticated_payloads[5]
         self.assertTrue(detail["node_runs"][0]["output"]["has_output"])
         self.assertIn(selected_asset.name, detail["node_runs"][0]["asset_names"])
         failed_node = next(row for row in failed_detail["node_runs"] if row["node_id"] == "provider_1")
-        self.assertEqual(failed_node["output"]["keys"], ["asset", "safe_display"])
+        self.assertEqual(failed_node["output"]["keys"], ["asset", "nested", "safe_display", "safe_list"])
         self.assertNotIn("api_key", failed_node["output"]["keys"])
+        failed_history_node = next(row for row in failed_history["node_runs"] if row["node_id"] == "provider_1")
+        self.assertEqual(failed_history_node["output"]["keys"], ["asset", "nested", "safe_display", "safe_list"])
+        self.assertNotIn("api_key", failed_history_node["output"]["keys"])
 
         frappe.set_user("Guest")
         shared_payload = frappe.call("slow_ai.api.public_tools.get_shared_run", share_token=share.share_token)

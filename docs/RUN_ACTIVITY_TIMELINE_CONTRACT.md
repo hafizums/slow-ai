@@ -86,7 +86,10 @@ provider adapter internals
 ```
 
 Failure, timeout, and cancellation events must use safe generic messages. Raw
-provider error bodies remain server-side only.
+provider error bodies remain server-side only. Safe text redaction and
+sensitive-key detection should use `slow_ai.application.safe_payloads` so
+timeline, run status/history, public tool detail, and asset view behavior do
+not drift.
 
 ## Read-Only Boundary
 

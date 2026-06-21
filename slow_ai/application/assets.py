@@ -3,25 +3,16 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Mapping
 
 import frappe
 
 from slow_ai.application.project_access import assert_can_edit_project, assert_can_view_project
+from slow_ai.application.safe_payloads import safe_metadata
 from slow_ai.infrastructure.provider_outputs import AssetWriter
 
 
 ALLOWED_ASSET_TYPES = frozenset({"IMAGE", "VIDEO", "AUDIO", "MASK", "JSON", "TEXT"})
-SENSITIVE_METADATA_KEY_PATTERN = re.compile(
-    r"(api[_-]?key|authorization|bearer|secret|token|password|provider_account|request_json|response_json|raw_error_json|raw|url)",
-    re.IGNORECASE,
-)
-URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
-BEARER_PATTERN = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
-KEY_VALUE_SECRET_PATTERN = re.compile(
-    r"(?i)\b(api[_-]?key|authorization|bearer|secret|token|password)\b\s*[:=]\s*[^,\s}]+"
-)
 
 
 def upload(
@@ -70,7 +61,7 @@ def view(asset: str, ignore_project_permissions: bool = False) -> dict[str, Any]
         "source_provider_job": doc.source_provider_job,
         "created": doc.creation,
         "modified": doc.modified,
-        "metadata": _safe_metadata(_loads_json(doc.metadata_json, {})),
+        "metadata": safe_metadata(_loads_json(doc.metadata_json, {})),
     }
 
 
@@ -82,29 +73,3 @@ def _loads_json(value: Any, default: Any) -> Any:
     if isinstance(value, Mapping):
         return dict(value)
     return value
-
-
-def _safe_metadata(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        safe = {}
-        for key, child in value.items():
-            key_text = str(key)
-            if SENSITIVE_METADATA_KEY_PATTERN.search(key_text):
-                continue
-            safe[key_text] = _safe_metadata(child)
-        return safe
-    if isinstance(value, list):
-        return [_safe_metadata(child) for child in value]
-    if isinstance(value, tuple):
-        return [_safe_metadata(child) for child in value]
-    if isinstance(value, str):
-        return _sanitize_text(value)
-    return value
-
-
-def _sanitize_text(value: str) -> str:
-    text = str(value or "")
-    text = BEARER_PATTERN.sub("Bearer [redacted]", text)
-    text = KEY_VALUE_SECRET_PATTERN.sub("[redacted]", text)
-    text = URL_PATTERN.sub("[link hidden]", text)
-    return text[:500]

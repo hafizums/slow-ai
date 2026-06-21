@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -12,18 +11,10 @@ import frappe
 
 from slow_ai.application.project_access import assert_can_view_project
 from slow_ai.application.run_service import RunService
+from slow_ai.application.safe_payloads import safe_error_message
+from slow_ai.application.safe_payloads import safe_error_payload
+from slow_ai.application.safe_payloads import safe_node_output_summary
 from slow_ai.application.template_lineage import safe_template_lineage
-
-
-SENSITIVE_KEY_PATTERN = re.compile(
-    r"(api[_-]?key|authorization|bearer|secret|token|password|provider_account|request_json|response_json|raw_error_json)",
-    re.IGNORECASE,
-)
-URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
-BEARER_PATTERN = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
-KEY_VALUE_SECRET_PATTERN = re.compile(
-    r"(?i)\b(api[_-]?key|authorization|bearer|secret|token|password)\b\s*[:=]\s*[^,\s}]+"
-)
 
 
 def start_run(workflow: str) -> dict[str, Any]:
@@ -54,7 +45,7 @@ def get_run_status(workflow_run: str) -> dict[str, Any]:
         "queued_at": run.queued_at,
         "started_at": run.started_at,
         "completed_at": run.completed_at,
-        "error": _safe_error_message(run.error_json),
+        "error": safe_error_message(run.error_json),
         "template_lineage": safe_template_lineage(
             getattr(run, "source_template", None),
             getattr(run, "source_template_version", None),
@@ -285,8 +276,8 @@ def _safe_node_run_payload(row) -> dict[str, Any]:
         "started_at": row.started_at,
         "completed_at": row.completed_at,
         "input_summary": {"has_input": bool(row.input_json)},
-        "output": _safe_node_output_summary(row.output_json),
-        "error": _safe_error_payload(row.error_json),
+        "output": safe_node_output_summary(row.output_json, asset_exists=_asset_exists),
+        "error": safe_error_payload(row.error_json),
     }
 
 
@@ -305,99 +296,12 @@ def _safe_provider_job_payload(row) -> dict[str, Any]:
         "completed_at": row.completed_at,
         "last_polled_at": row.last_polled_at,
         "poll_attempts": row.poll_attempts,
-        "error": _safe_error_payload(row.raw_error_json),
+        "error": safe_error_payload(row.raw_error_json),
     }
 
 
-def _safe_error_message(value: str | None, fallback: str | None = None) -> str | None:
-    payload = _loads_json(value, None)
-    if payload is None:
-        return fallback
-    if isinstance(payload, str):
-        return _sanitize_text(payload) or fallback
-    if isinstance(payload, dict):
-        for key in ("message", "error", "status", "code", "type"):
-            candidate = payload.get(key)
-            if candidate is None or isinstance(candidate, (dict, list)):
-                continue
-            message = _sanitize_text(candidate)
-            if message:
-                return message
-    return fallback or "Error details captured on server."
-
-
-def _safe_error_payload(value: str | None) -> dict[str, str] | None:
-    payload = _loads_json(value, None)
-    if payload is None:
-        return None
-    message = _safe_error_message(value, "Error details captured on server.")
-    safe: dict[str, str] = {"message": message or "Error details captured on server."}
-    if isinstance(payload, dict):
-        for key in ("code", "status", "type"):
-            candidate = payload.get(key)
-            if candidate is None or isinstance(candidate, (dict, list)):
-                continue
-            sanitized = _sanitize_text(candidate)
-            if sanitized:
-                safe[key] = sanitized
-    return safe
-
-
-def _safe_node_output_summary(value: str | None) -> dict[str, Any]:
-    payload = _loads_json(value, None)
-    if payload is None:
-        return {"has_output": False, "asset_names": [], "keys": []}
-    return {
-        "has_output": True,
-        "asset_names": sorted(_extract_asset_names(payload)),
-        "keys": _safe_top_level_keys(payload),
-    }
-
-
-def _extract_asset_names(value: Any) -> set[str]:
-    names: set[str] = set()
-    if isinstance(value, dict):
-        for key, child in value.items():
-            if SENSITIVE_KEY_PATTERN.search(str(key)):
-                continue
-            if key in {"asset", "asset_name", "asset_names"}:
-                names.update(_extract_asset_name_values(child))
-                continue
-            names.update(_extract_asset_names(child))
-    elif isinstance(value, list):
-        for child in value:
-            names.update(_extract_asset_names(child))
-    elif isinstance(value, str) and value.startswith("AI-ASSET-") and frappe.db.exists("AI Asset", value):
-        names.add(value)
-    return names
-
-
-def _extract_asset_name_values(value: Any) -> set[str]:
-    names: set[str] = set()
-    if isinstance(value, str) and value.startswith("AI-ASSET-") and frappe.db.exists("AI Asset", value):
-        names.add(value)
-    elif isinstance(value, list):
-        for child in value:
-            names.update(_extract_asset_name_values(child))
-    elif isinstance(value, dict):
-        for child in value.values():
-            names.update(_extract_asset_name_values(child))
-    return names
-
-
-def _safe_top_level_keys(value: Any) -> list[str]:
-    if not isinstance(value, dict):
-        return []
-    keys = [str(key) for key in value.keys() if not SENSITIVE_KEY_PATTERN.search(str(key))]
-    return sorted(keys)[:10]
-
-
-def _sanitize_text(value: Any) -> str:
-    text = str(value or "")
-    text = BEARER_PATTERN.sub("Bearer [redacted]", text)
-    text = KEY_VALUE_SECRET_PATTERN.sub("[redacted]", text)
-    text = URL_PATTERN.sub("[link hidden]", text)
-    return text[:240]
+def _asset_exists(asset_name: str) -> bool:
+    return bool(frappe.db.exists("AI Asset", asset_name))
 
 
 @dataclass

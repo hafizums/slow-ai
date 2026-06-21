@@ -217,7 +217,8 @@ statuses, timestamps, provider status counts, ledger cost totals, and asset
 names/source metadata. They must not include provider account names, provider
 secrets, raw provider request/response/error JSON, raw provider output URLs, or
 unsafe error payloads. Node output details in run detail payloads must be
-reduced to safe summaries and must not return raw node output JSON.
+reduced to safe summaries by the backend shared safe-payload utility and must
+not return raw node output JSON.
 
 Listing or viewing runs must not create provider jobs, enqueue work, call
 providers, mutate workflow state, or create assets/ledger rows.

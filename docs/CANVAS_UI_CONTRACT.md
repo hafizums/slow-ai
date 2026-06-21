@@ -238,7 +238,7 @@ Open Asset, Copy URL, and Refresh Asset controls, but those controls must use
 only the URL or file reference returned by `slow_ai.api.assets.view`.
 Canvas asset previews must treat `assets.view` as a safe display API only:
 sensitive asset metadata keys and raw provider URLs/secrets are removed or
-redacted by the backend before rendering.
+redacted by the backend shared safe-payload utility before rendering.
 
 Opening or refreshing Canvas run detail, history, timeline, and asset views must
 not create, delete, enqueue, or mutate workflow versions, workflow runs, node

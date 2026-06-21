@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import secrets
 from datetime import timedelta
 from decimal import Decimal
@@ -27,6 +26,9 @@ from slow_ai.application.templates import get_published_template
 from slow_ai.application.templates import get_template_version_payload
 from slow_ai.application.templates import list_published_templates
 from slow_ai.application.run_outputs import get_run_output_gallery as get_run_output_gallery_service
+from slow_ai.application.safe_payloads import asset_names_from_value
+from slow_ai.application.safe_payloads import redact_text
+from slow_ai.application.safe_payloads import safe_node_output_summary
 from slow_ai.application.template_lineage import safe_template_lineage
 from slow_ai.application.template_inputs import apply_input_values
 from slow_ai.application.template_inputs import apply_legacy_public_tool_values
@@ -55,11 +57,6 @@ CANCELLABLE_WORKFLOW_STATUSES = frozenset(
 )
 CANCELLATION_ERROR = {"type": "RunCancelled", "message": "Run cancelled by user."}
 DEFAULT_TOOL_DRAFT_CLEANUP_AGE_HOURS = 24
-SENSITIVE_OUTPUT_KEY_PATTERN = re.compile(
-    r"(api[_-]?key|authorization|bearer|secret|token|password|provider_account|request_json|response_json|raw_error_json|raw|url)",
-    re.IGNORECASE,
-)
-URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
 def list_templates(category: str | None = None) -> dict[str, Any]:
@@ -687,8 +684,8 @@ def _node_run_summary(row) -> dict[str, Any]:
         "status": row.status,
         "provider_job": row.provider_job,
         "cost_usd": _decimal_string(row.cost_usd),
-        "output": _safe_node_output_summary(output),
-        "asset_names": _asset_names_from_value(output),
+        "output": safe_node_output_summary(output),
+        "asset_names": asset_names_from_value(output),
         "error": _safe_error(row.error_json),
         "started_at": row.started_at,
         "completed_at": row.completed_at,
@@ -731,7 +728,7 @@ def _asset_names_for_run(workflow_run: str) -> list[str]:
         order_by="creation asc",
     )
     for row in node_runs:
-        names.update(_asset_names_from_value(_loads_json(row.output_json, {})))
+        names.update(asset_names_from_value(_loads_json(row.output_json, {})))
     return sorted(names)
 
 
@@ -853,15 +850,7 @@ def _safe_error(value: Any) -> str | None:
         message = payload.get("message") or payload.get("error") or payload.get("status") or "Run failed."
     else:
         message = payload
-    return _sanitize_error(message)
-
-
-def _sanitize_error(value: Any) -> str:
-    message = str(value or "Run failed.")
-    message = re.sub(r"Bearer\s+[A-Za-z0-9._:-]+", "Bearer [redacted]", message)
-    message = re.sub(r"(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*[^,\s}]+", "[redacted]", message)
-    message = URL_PATTERN.sub("[link hidden]", message)
-    return message[:240]
+    return redact_text(message)
 
 
 def _loads_json(value: Any, default: Any) -> Any:
@@ -873,40 +862,6 @@ def _loads_json(value: Any, default: Any) -> Any:
         except (TypeError, ValueError):
             return default
     return value
-
-
-def _asset_names_from_value(value: Any) -> list[str]:
-    names: set[str] = set()
-    _collect_asset_names(value, names)
-    return sorted(names)
-
-
-def _collect_asset_names(value: Any, names: set[str]) -> None:
-    if isinstance(value, str) and value.startswith("AI-ASSET-"):
-        names.add(value)
-        return
-    if isinstance(value, (list, tuple)):
-        for item in value:
-            _collect_asset_names(item, names)
-        return
-    if isinstance(value, dict):
-        for item in value.values():
-            _collect_asset_names(item, names)
-
-
-def _safe_node_output_summary(value: Any) -> dict[str, Any]:
-    return {
-        "has_output": bool(value),
-        "asset_names": _asset_names_from_value(value),
-        "keys": _safe_top_level_output_keys(value),
-    }
-
-
-def _safe_top_level_output_keys(value: Any) -> list[str]:
-    if not isinstance(value, dict):
-        return []
-    keys = [str(key) for key in value if not SENSITIVE_OUTPUT_KEY_PATTERN.search(str(key))]
-    return sorted(keys)[:10]
 
 
 def _as_limit(value: int | str) -> int:

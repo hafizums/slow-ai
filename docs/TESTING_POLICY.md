@@ -658,7 +658,10 @@ mutation-sensitive fields for workflow versions, workflow runs, node runs,
 provider jobs, assets, credit ledger rows, and tool run shares. It also verifies
 payloads omit provider account names, secrets, raw provider URLs, raw
 request/response/error JSON, Authorization headers, stack traces, and workflow
-draft internals. The test uses real DocTypes and application/API calls only.
+draft internals. Nested dictionaries/lists with unsafe keys and unsafe values
+exercise the shared `slow_ai.application.safe_payloads` utility through real API
+calls rather than direct helper-only assertions. The test uses real DocTypes and
+application/API calls only.
 
 Run timeline UI coverage is included in:
 

@@ -8,6 +8,9 @@ slow_ai.api.runs.start_run
 slow_ai.api.runs.get_run_status
 slow_ai.api.runs.get_history
 slow_ai.api.runs.get_run_timeline
+slow_ai.api.runs.inspect_run_recovery
+slow_ai.api.runs.expire_stuck_run
+slow_ai.api.runs.resume_run
 slow_ai.api.queue.get_queue_status
 slow_ai.api.assets.upload
 slow_ai.api.assets.view
@@ -206,6 +209,52 @@ type, title/message, related DocType/name, node id/type, status, and safe
 amount/currency. It must not expose provider account names, provider secrets,
 raw provider request/response/error JSON, raw provider URLs, API keys, or
 workflow draft internals.
+
+### slow_ai.api.runs.inspect_run_recovery
+
+```txt
+Arguments: workflow_run, max_age_minutes
+Application service: slow_ai.application.run_recovery.inspect_run_recovery
+Returns: safe System Manager recovery diagnostics for one workflow run
+```
+
+This is a System Manager-only operational API. It returns safe run/node/provider
+job status summaries, safe ledger counts/totals, and safe recovery eligibility
+flags. It must not call providers, enqueue workers, create or mutate workflow
+versions/runs/node runs/provider jobs/assets/ledger rows/shares, expose provider
+account names, expose external provider job ids, expose raw provider payloads,
+or expose workflow draft internals.
+
+### slow_ai.api.runs.expire_stuck_run
+
+```txt
+Arguments: workflow_run, max_age_minutes, reason
+Application service: slow_ai.application.run_recovery.expire_stuck_run
+Writes: intended stale run/node/provider-job terminal state and reservation release only
+Returns: safe recovery diagnostics
+```
+
+This is a System Manager-only operational API. It may expire a non-terminal run
+only when the run is older than the supplied stale threshold. It cancels local
+non-terminal node/provider-job state, marks the workflow run `EXPIRED`, and
+releases stale reservations through the normal billing service. Repeating the
+call for an already `EXPIRED` run is a no-op. It must not call external
+providers, create provider jobs, create assets, create debits, create workflow
+versions/runs/node rows, or expose raw provider/internal payloads.
+
+### slow_ai.api.runs.resume_run
+
+```txt
+Arguments: workflow_run
+Application service: slow_ai.application.run_recovery.resume_run
+Enqueues: slow_ai.workers.run_workflow.run_workflow
+Returns: safe recovery diagnostics plus queue_job_id
+```
+
+This is a System Manager-only operational API. It may enqueue an existing
+non-terminal workflow run for the normal worker-safe execution path. It must not
+execute workflow logic inline, call providers, create provider jobs directly,
+create assets, create ledger rows, or resume terminal runs.
 
 ### slow_ai.api.public_tools.prepare_rerun_from_run
 

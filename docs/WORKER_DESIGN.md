@@ -102,6 +102,25 @@ status, or create asset/ledger/share side effects. Worker execution remains
 inside the worker entrypoints below. Client assets must not import worker
 modules, provider adapters, `frappe.enqueue`, or direct `frappe.db` access.
 
+## System Manager recovery boundary
+
+Operational recovery is exposed only through System Manager-only application
+services and thin `slow_ai.api.runs.*` delegates:
+
+```txt
+slow_ai.api.runs.inspect_run_recovery
+slow_ai.api.runs.expire_stuck_run
+slow_ai.api.runs.resume_run
+```
+
+`inspect_run_recovery` is read-only. `resume_run` only enqueues the existing
+workflow worker for a non-terminal run. `expire_stuck_run` may mark stale
+non-terminal run/node/provider-job state terminal locally and release stale
+reservations. These APIs must not call external providers, execute workflow
+logic inline, create provider jobs, create assets, create debit rows, or expose
+raw provider payloads/secrets. Canvas, Public Tool, and guest shared pages must
+not call recovery APIs.
+
 ## Task 08 implementation
 
 Worker entrypoints:

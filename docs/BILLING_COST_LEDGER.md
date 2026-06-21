@@ -165,3 +165,23 @@ provider cost. The unused available credit restored by settlement is therefore
 failure, timeout, expiry, cancellation, or workflow failure before provider
 completion, the reservation is released and no output asset/final debit is
 created unless a future explicit policy records a real provider charge.
+
+## Reservation reconciliation boundary
+
+Reservation reconciliation is allowed only in mutating service/worker paths that
+already own run or provider-job state transitions:
+
+```txt
+start_run -> create RESERVE
+provider output materialization -> create/reuse DEBIT and RELEASE
+provider failed/cancelled/expired poll handling -> RELEASE
+workflow failed/cancelled/expired terminal transition -> RELEASE
+System Manager recovery expiry -> RELEASE
+```
+
+Read APIs such as `get_balance`, `get_ledger`, run status/history/timeline,
+output gallery, asset view, and shared-run reads must not perform reconciliation
+or create missing release/debit rows. A terminal run should have no active
+unreleased reservation unless a future policy explicitly records an outstanding
+provider charge and documents it. Reconciliation rows are idempotent by
+workflow run, node run, provider job, and reservation reference.

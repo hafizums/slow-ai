@@ -214,6 +214,34 @@ cancellation winning over timeout policy, and public run detail payloads hiding
 raw provider response/error data, provider account names, secrets, and raw
 provider URLs.
 
+Billing reservation reconciliation coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_billing_reservation_reconciliation.py
+```
+
+This test uses real projects, provider accounts, models, workflow runs, node
+runs, provider jobs, workers, and credit ledger rows. It verifies final debit
+fallback to provider-job estimate when actual cost is unavailable, zero-cost
+success without debit, node failure before provider submission, cancellation
+before provider submission, cancellation while waiting provider, provider
+expiry/max-attempt exhaustion, idempotent release/debit behavior, active
+reservation counts, and read APIs not performing reconciliation.
+
+Run recovery admin tooling coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_recovery_admin_tools.py
+```
+
+This test uses real users, memberships, workflow runs, node runs, provider jobs,
+reservations, and queue entrypoints. It verifies System Manager-only inspect,
+resume, and stale expiry actions; owner, EDITOR, VIEWER, BILLING, non-member,
+and Guest rejection without side effects; terminal run resume/expiry rejection;
+fresh active run expiry rejection; stale reservation release during recovery;
+safe recovery payloads; and no recovery API references in Canvas, Public Tool,
+or guest shared client assets.
+
 Task 10 adds canvas placeholder coverage with:
 
 ```txt

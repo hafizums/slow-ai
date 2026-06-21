@@ -678,6 +678,22 @@ payloads only; rejected reads and guest-token failures must create no
 workflow-version, run, node-run, provider-job, asset, credit-ledger, or share
 side effects.
 
+Run write/action access matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_write_action_access_matrix.py
+```
+
+It creates real users, project membership rows, workflows, workflow runs,
+assets, templates, rerun drafts, and tool-run shares. It verifies OWNER,
+EDITOR, System Manager, VIEWER, BILLING, non-member, and Guest behavior for
+`start_run`, `cancel_my_run`, `archive_my_run`, `prepare_rerun_from_run`,
+`update_rerun_draft_values`, `create_run_share`, and `disable_run_share`.
+Allowed writes assert the exact expected side effects, while rejected writes
+compare before/after counts and mutation-sensitive fields for workflows,
+workflow versions, workflow runs, node runs, provider jobs, assets, credit
+ledger rows, and tool-run shares.
+
 Run timeline UI coverage is included in:
 
 ```txt

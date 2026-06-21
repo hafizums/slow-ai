@@ -72,6 +72,34 @@ function apiPredicate(method) {
 		response.status() === 200;
 }
 
+function requestFormValue(response, fieldname) {
+	const body = response.request().postData() || "";
+	const params = new URLSearchParams(body);
+	const directValue = params.get(fieldname);
+	if (directValue !== null) {
+		return directValue;
+	}
+	const args = params.get("args");
+	if (!args) {
+		return null;
+	}
+	try {
+		const parsed = JSON.parse(args);
+		return parsed && Object.prototype.hasOwnProperty.call(parsed, fieldname) ? String(parsed[fieldname]) : null;
+	} catch {
+		return null;
+	}
+}
+
+function apiPredicateWithForm(method, expectedFormValues) {
+	return (response) =>
+		apiPredicate(method)(response) &&
+		Object.entries(expectedFormValues).every(([fieldname, expectedValue]) => {
+			const actualValue = requestFormValue(response, fieldname);
+			return actualValue === String(expectedValue);
+		});
+}
+
 function apiAnyStatusPredicate(method) {
 	return (response) =>
 		response.request().method() === "POST" && response.url().includes(`/api/method/${method}`);
@@ -666,7 +694,9 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const refreshBeforeCancelResponse = page.waitForResponse(apiPredicate(API.publicListMyRuns));
 	await page.locator("[data-action='refresh-my-runs']").click();
 	await apiJson(await refreshBeforeCancelResponse);
-	const cancelRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
+	const cancelRunDetailResponse = page.waitForResponse(
+		apiPredicateWithForm(API.publicGetMyRun, { workflow_run: fixtures.public_cancellable_workflow_run })
+	);
 	await page
 		.locator(`[data-run-id="${fixtures.public_cancellable_workflow_run}"]`)
 		.getByRole("button", { name: "Open Detail" })
@@ -675,7 +705,9 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(cancelRunDetail.message.run.can_cancel).toBe(true);
 	await expect(page.locator("[data-role='run-detail']")).toContainText(fixtures.public_cancellable_workflow_run);
 	const cancelResponse = page.waitForResponse(apiPredicate(API.publicCancelMyRun));
-	const cancelledDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
+	const cancelledDetailResponse = page.waitForResponse(
+		apiPredicateWithForm(API.publicGetMyRun, { workflow_run: fixtures.public_cancellable_workflow_run })
+	);
 	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Cancel" }).click();
 	const cancelled = await apiJson(await cancelResponse);
 	expect(cancelled.message.run.status).toBe("CANCELLED");
@@ -725,9 +757,15 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(runList.message.runs.some((run) => run.workflow_run === fixtures.public_asset_workflow_run)).toBe(true);
 	await expect(page.locator("[data-role='run-library']")).toContainText(fixtures.public_asset_workflow_run);
 
-	const historyRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
-	const historyGalleryResponse = page.waitForResponse(apiPredicate(API.publicGetRunOutputGallery));
-	const historyTimelineResponse = page.waitForResponse(apiPredicate(API.runTimeline));
+	const historyRunDetailResponse = page.waitForResponse(
+		apiPredicateWithForm(API.publicGetMyRun, { workflow_run: fixtures.public_asset_workflow_run })
+	);
+	const historyGalleryResponse = page.waitForResponse(
+		apiPredicateWithForm(API.publicGetRunOutputGallery, { workflow_run: fixtures.public_asset_workflow_run })
+	);
+	const historyTimelineResponse = page.waitForResponse(
+		apiPredicateWithForm(API.runTimeline, { workflow_run: fixtures.public_asset_workflow_run })
+	);
 	await page
 		.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)
 		.getByRole("button", { name: "Open Detail" })
@@ -792,7 +830,9 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 		}
 	});
 	const shareUrl = new URL(createdShare.message.share.share_url, page.url()).toString();
-	const sharedRunResponse = guestPage.waitForResponse(apiPredicate(API.publicGetSharedRun));
+	const sharedRunResponse = guestPage.waitForResponse(
+		apiPredicateWithForm(API.publicGetSharedRun, { share_token: createdShare.message.share.share_token })
+	);
 	await guestPage.goto(shareUrl);
 	const sharedRun = await apiJson(await sharedRunResponse);
 	const sharedPayload = JSON.stringify(sharedRun.message);

@@ -265,6 +265,13 @@ previews may display template metadata, review status, node summaries, edge
 counts, and preview asset names. Any rendered asset link or media preview must
 still come from `slow_ai.api.assets.view`.
 
+Internal template APIs are owner/System Manager surfaces. System Managers may
+list, view, instantiate, review, archive, and rollback templates according to
+the review lifecycle. Normal users may list/view/save/instantiate only templates
+they own, and may submit only their own eligible templates for review. The
+public Tool page must use `slow_ai.api.public_tools.*` for published runnable
+templates instead of these internal template APIs.
+
 The Save Template prompt must not offer direct `PUBLISHED`, `IN_REVIEW`, or
 `ARCHIVED` statuses. Publishing, rejection, and archiving must stay behind the
 dedicated review buttons and backend review APIs.
@@ -344,7 +351,9 @@ field values, raw provider payloads, provider URLs, or account secrets after
 create/list/view/default/disable actions.
 
 The Model Catalog panel may list, filter, inspect, and administer persisted
-`AI Model` records through `slow_ai.api.models.*` only. It may display safe
+`AI Model` records through `slow_ai.api.models.*` only. Model reads are safe
+metadata reads; model status, pricing, and metadata mutations are System
+Manager-only. The panel may display safe
 metadata:
 
 ```txt
@@ -357,18 +366,19 @@ node_type
 category
 modality
 parsed pricing summary
-capabilities summary
-input metadata summary
-output metadata summary
+sanitized capabilities summary
+sanitized input metadata summary
+sanitized output metadata summary
 ```
 
 Supported filters are provider, status, node_type, and category. Detail views
 must use `slow_ai.api.models.get_model`. Admin actions may update model status
 and pricing through the model admin APIs, but the client must not duplicate
-pricing parser rules, read raw provider account data, render provider secrets,
-call provider URLs, create provider jobs, start runs, or bypass backend run
-preflight. Disabled models and models with unknown pricing must show clear
-warnings because backend preflight remains the final model/pricing/balance guard.
+pricing parser rules, read raw provider account data, render provider secrets or
+raw provider URLs embedded in metadata, call provider URLs, create provider
+jobs, start runs, or bypass backend run preflight. Disabled models and models
+with unknown pricing must show clear warnings because backend preflight remains
+the final model/pricing/balance guard.
 
 ## Browser E2E contract
 

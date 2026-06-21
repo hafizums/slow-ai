@@ -338,13 +338,15 @@ Application service: slow_ai.application.models.get_model_metadata
 Returns: public AI Model metadata and parsed pricing summary keyed by name, model_id, and model_slug
 ```
 
-This method returns only safe model metadata for UI display. It must not return
-provider account secrets, raw `pricing_json`, provider credentials, or provider
-URLs, and it must not call providers.
+This method returns only safe model metadata for UI display. It is a read-only
+metadata endpoint and does not require project membership. It must not return
+provider account names or secrets, raw `pricing_json`, provider credentials,
+raw provider URLs embedded in metadata, or provider internals, and it must not
+call providers.
 
 Safe returned fields include model identity, display name, provider, status,
-modality, node type, category, parsed pricing summary, capabilities, input
-metadata, and output metadata.
+modality, node type, category, parsed pricing summary, and sanitized
+capabilities/input/output metadata.
 
 ### slow_ai.api.models.list_models
 
@@ -357,7 +359,8 @@ Returns: safe AI Model summaries
 By default, `list_models` returns enabled models only. Passing `status=ALL`
 returns enabled and disabled models for admin review. The method returns parsed
 safe metadata only and never returns raw pricing JSON, provider credentials,
-provider account secrets, provider URLs, or provider adapter internals.
+provider account names or secrets, raw provider URLs embedded in metadata, or
+provider adapter internals.
 
 ### slow_ai.api.models.get_model
 
@@ -379,7 +382,7 @@ Writes: AI Model status
 Returns: safe AI Model detail
 ```
 
-This is a System Manager admin operation. It must not call providers, create
+This is a System Manager-only admin operation. It must not call providers, create
 provider jobs, expose provider secrets, or return raw provider internals.
 
 ### slow_ai.api.models.update_model_pricing
@@ -394,7 +397,8 @@ Returns: safe AI Model detail with parsed pricing summary
 Pricing updates write the persisted model pricing JSON, then return the same
 centralized safe parser output used by `get_model_metadata` and run preflight.
 Blank `amount_usd` clears known pricing while preserving unit/currency metadata.
-The API must not call providers or duplicate pricing-key parsing in the client.
+The API is System Manager-only. It must not call providers or duplicate
+pricing-key parsing in the client.
 
 ### slow_ai.api.models.update_model_metadata
 
@@ -405,8 +409,9 @@ Writes: AI Model metadata JSON fields
 Returns: safe AI Model detail
 ```
 
-Metadata updates accept JSON objects or JSON strings. They must not expose
-provider accounts, provider secrets, provider URLs, or provider adapter internals.
+Metadata updates are System Manager-only and accept JSON objects or JSON
+strings. Responses sanitize metadata and must not expose provider accounts,
+provider secrets, raw provider URLs, or provider adapter internals.
 
 ### slow_ai.api.provider_accounts.list_accounts
 
@@ -484,13 +489,15 @@ Writes: AI Workflow Template
 Returns: persisted template payload
 ```
 
-`save_template` validates the workflow graph before writing editable template
-JSON. It does not create an immutable template version or execute a run. Direct
-saves may create/update `DRAFT` templates, may preserve an already `REJECTED`
-template while editing content, and may edit mutable content on a previously
-`PUBLISHED` template without changing the active public version. Direct saves
-must reject direct `IN_REVIEW`, `PUBLISHED`, and `ARCHIVED` status writes; those
-lifecycle transitions are only allowed through the dedicated review APIs.
+`save_template` requires a logged-in user and validates the workflow graph
+before writing editable template JSON. It does not create an immutable template
+version or execute a run. Direct saves may create/update `DRAFT` templates, may
+preserve an already `REJECTED` template while editing content, and may edit
+mutable content on a previously `PUBLISHED` template without changing the active
+public version. Direct saves must reject direct `IN_REVIEW`, `PUBLISHED`, and
+`ARCHIVED` status writes; those lifecycle transitions are only allowed through
+the dedicated review APIs. Non-System Manager users may edit only templates they
+own.
 
 ### slow_ai.api.templates.get_template
 
@@ -500,6 +507,11 @@ Application service: slow_ai.application.templates.get_template
 Returns: template metadata with parsed nodes, edges, layout, and input schema
 ```
 
+This internal admin/editor API requires a logged-in user. System Managers may
+view any template; normal users may view only templates they own. Public Tool
+pages must use `slow_ai.api.public_tools.get_template` for runnable published
+template payloads.
+
 ### slow_ai.api.templates.list_templates
 
 ```txt
@@ -507,6 +519,11 @@ Arguments: status, category
 Application service: slow_ai.application.templates.list_templates
 Returns: template summaries
 ```
+
+This internal admin/editor API requires a logged-in user. System Managers may
+list all templates. Normal users receive only templates they own. Public Tool
+pages must use `slow_ai.api.public_tools.list_templates`, which exposes only
+published templates backed by active immutable versions.
 
 ### slow_ai.api.templates.create_workflow_from_template
 
@@ -519,6 +536,10 @@ Returns: workflow draft payload
 
 This method creates an editable workflow draft only. It must not start a run,
 create an immutable version, enqueue workers, or call providers.
+It uses the same internal template access policy as `get_template`: System
+Managers may instantiate any internal template, while normal users may
+instantiate only templates they own. Published user-facing tools must use the
+`slow_ai.api.public_tools.*` prepare/create APIs.
 
 ### slow_ai.api.templates.submit_template_for_review
 

@@ -80,6 +80,11 @@ approve `IN_REVIEW` templates, reject them with a reason, or archive templates.
 Normal users may run published templates through the public page, but they must
 not publish templates into the public catalog.
 
+The public Tool page must use `slow_ai.api.public_tools.*` for published
+runnable templates. Internal `slow_ai.api.templates.*` APIs are owner/System
+Manager template-library surfaces and must not be used as the public runnable
+template source.
+
 Template loading must not start a run, enqueue workers, call providers, create
 provider jobs, or create immutable workflow versions.
 

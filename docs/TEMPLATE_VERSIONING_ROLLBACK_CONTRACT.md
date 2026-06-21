@@ -50,6 +50,7 @@ Rules:
 
 ```txt
 System Manager only
+normal template owners and project members cannot rollback
 target version must belong to the template
 target snapshot must validate before rollback
 rollback creates a new ACTIVE version copied from the historical snapshot

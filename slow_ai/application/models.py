@@ -8,6 +8,8 @@ from typing import Any
 
 import frappe
 
+from slow_ai.application.safe_payloads import safe_metadata
+
 
 PRICE_KEYS = ("test_cost_usd", "amount_usd", "base_price", "price_usd")
 MODEL_SAFE_FIELDS = [
@@ -67,7 +69,7 @@ def get_model(model: str) -> dict[str, Any]:
 
 
 def update_model_status(model: str, status: str) -> dict[str, Any]:
-    frappe.only_for("System Manager")
+    _require_system_manager("Updating AI Models requires System Manager.")
     doc = _get_model_doc(model)
     normalized_status = str(status or "").strip().upper()
     if normalized_status not in {"ENABLED", "DISABLED"}:
@@ -83,7 +85,7 @@ def update_model_pricing(
     unit: str | None = "run",
     currency: str | None = "USD",
 ) -> dict[str, Any]:
-    frappe.only_for("System Manager")
+    _require_system_manager("Updating AI Model pricing requires System Manager.")
     doc = _get_model_doc(model)
     pricing: dict[str, Any] = {
         "unit": str(unit or "run").strip() or "run",
@@ -103,7 +105,7 @@ def update_model_metadata(
     input_metadata: Any = None,
     output_metadata: Any = None,
 ) -> dict[str, Any]:
-    frappe.only_for("System Manager")
+    _require_system_manager("Updating AI Model metadata requires System Manager.")
     doc = _get_model_doc(model)
     for value, fieldname in (
         (capabilities, "capabilities_json"),
@@ -255,7 +257,17 @@ def _safe_json_object(value: str | None) -> dict[str, Any]:
         parsed = json.loads(value)
     except json.JSONDecodeError:
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        return {}
+    sanitized = safe_metadata(parsed)
+    return sanitized if isinstance(sanitized, dict) else {}
+
+
+def _require_system_manager(message: str) -> None:
+    if frappe.session.user == "Administrator":
+        return
+    if "System Manager" not in frappe.get_roles(frappe.session.user):
+        frappe.throw(message, frappe.PermissionError)
 
 
 def _clean_optional(value: Any) -> str | None:

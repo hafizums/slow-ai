@@ -248,6 +248,34 @@ side effects.
 	disabled/unpriced preflight warnings, and creates no provider jobs or provider
 	calls during catalog actions.
 
+Model catalog access matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_model_catalog_access_matrix.py
+```
+
+It creates real users, project memberships, `AI Model` rows, provider accounts,
+workflows, and ledger credit. It verifies safe model metadata reads for
+System Manager, project roles, non-members, and Guest; System Manager-only
+status/pricing/metadata mutations; disabled/unpriced/mismatched preflight
+rejections before run/provider/ledger side effects; and metadata redaction for
+provider secrets, provider account names, raw provider URLs, API keys,
+Authorization headers, and raw provider payload field names.
+
+Template lifecycle access matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_template_lifecycle_access_matrix.py
+```
+
+It creates real users, project memberships, templates, immutable template
+versions, workflow drafts, and runs. It verifies internal template APIs are
+owner/System Manager scoped, Guest is rejected from internal template APIs,
+non-reviewers cannot submit/approve/reject/archive/rollback outside policy,
+direct save cannot bypass lifecycle statuses, unsafe input schema targets are
+rejected, public tool APIs expose only published active versions, and public
+tool draft/run lineage preserves the immutable template version used.
+
 Public Tool Page coverage lives in:
 
 ```txt

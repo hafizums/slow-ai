@@ -48,6 +48,7 @@ def save_template(
     input_schema: Any | None = None,
     input_schema_json: Any | None = None,
 ) -> dict[str, Any]:
+    _require_logged_in_user()
     parsed_nodes = _loads_json(nodes, [])
     parsed_edges = _loads_json(edges, [])
     parsed_layout = _loads_json(layout, {})
@@ -86,7 +87,9 @@ def save_template(
 
 
 def get_template(template: str) -> dict[str, Any]:
+    _require_logged_in_user()
     doc = frappe.get_doc("AI Workflow Template", template)
+    _assert_can_view_template(doc)
     return {
         "name": doc.name,
         "template_name": doc.template_name,
@@ -112,11 +115,14 @@ def get_template(template: str) -> dict[str, Any]:
 
 
 def list_templates(status: str | None = None, category: str | None = None) -> dict[str, Any]:
+    _require_logged_in_user()
     filters: dict[str, Any] = {}
     if status:
         filters["status"] = status.upper()
     if category:
         filters["category"] = category
+    if not _is_system_manager():
+        filters["owner"] = frappe.session.user
     rows = frappe.get_all(
         "AI Workflow Template",
         filters=filters,
@@ -366,6 +372,13 @@ def _assert_can_edit_template(doc) -> None:
         frappe.throw("You can only edit your own templates.", frappe.PermissionError)
 
 
+def _assert_can_view_template(doc) -> None:
+    if _is_system_manager():
+        return
+    if doc.owner != frappe.session.user:
+        frappe.throw("You can only view your own templates.", frappe.PermissionError)
+
+
 def _assert_save_status_allowed(status: str, doc) -> None:
     if status in REVIEW_CONTROLLED_STATUSES:
         frappe.throw(
@@ -401,6 +414,11 @@ def _assert_can_submit_template(doc) -> None:
 def _require_system_manager(message: str) -> None:
     if not _is_system_manager():
         frappe.throw(message, frappe.PermissionError)
+
+
+def _require_logged_in_user() -> None:
+    if frappe.session.user == "Guest":
+        frappe.throw("Login is required to manage AI Workflow Templates.", frappe.PermissionError)
 
 
 def _is_system_manager() -> bool:

@@ -41,23 +41,26 @@ slow_ai.api.templates.get_template_version
 slow_ai.api.templates.rollback_template_to_version
 ```
 
-All four APIs are thin Frappe whitelisted delegates into
+These APIs are thin Frappe whitelisted delegates into
 `slow_ai.application.templates`.
 
-`slow_ai.api.templates.save_template` is not a lifecycle transition API. It may
-create/update editable template content only. New template saves must be
-`DRAFT`. Existing `REJECTED` templates may be edited only while preserving
-`REJECTED`. Existing `PUBLISHED` templates may have mutable draft content edited
-while preserving `PUBLISHED`, but public payloads must continue using the active
-immutable version until the template is approved again. Direct saves must reject
-direct `IN_REVIEW`, `PUBLISHED`, and `ARCHIVED` status writes even for System
-Managers.
+`slow_ai.api.templates.save_template` is not a lifecycle transition API. It
+requires a logged-in user and may create/update editable template content only.
+New template saves must be `DRAFT`. Existing `REJECTED` templates may be edited
+only while preserving `REJECTED`. Existing `PUBLISHED` templates may have
+mutable draft content edited while preserving `PUBLISHED`, but public payloads
+must continue using the active immutable version until the template is approved
+again. Direct saves must reject direct `IN_REVIEW`, `PUBLISHED`, and `ARCHIVED`
+status writes even for System Managers.
 
 ## Permissions
 
-Template owners may submit their own `DRAFT` or `REJECTED` templates for
-review. System Managers may submit, approve, reject, or archive templates.
-Only System Managers may rollback a published template to a historical version.
+Internal template library APIs are owner/System Manager surfaces. System
+Managers may list, view, instantiate, submit, approve, reject, archive, and
+rollback templates according to the lifecycle. Normal users may list/view/save
+and instantiate only templates they own, and may submit only their own `DRAFT`
+or `REJECTED` templates for review. Only System Managers may approve, reject,
+archive, or rollback templates.
 
 Normal public tool users may list, load, prepare, and run only `PUBLISHED`
 templates through `slow_ai.api.public_tools.*`.

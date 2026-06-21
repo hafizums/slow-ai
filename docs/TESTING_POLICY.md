@@ -398,6 +398,20 @@ debits, repeated poll/cancel/timeout paths do not duplicate release/debit rows,
 and public run detail exposes only safe reserve/release/debit summaries without
 raw provider payloads or provider account names.
 
+Project quota and rate-limit coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_project_quota_rate_limit.py
+```
+
+This test creates real projects, workflows, provider accounts, provider jobs,
+templates, and ledger rows. It verifies project max active runs, per-user active
+run limits, provider-account active job concurrency, daily project spend caps,
+daily user spend caps, terminal runs not counting as active, safe rejection
+messages, and Public Tool start rejection through the backend `start_run` path.
+Every rejection is asserted before workflow version/run/node/provider-job,
+reservation, asset, ledger, or queue side effects for the attempted run.
+
 Multi-provider foundation coverage lives in:
 
 ```txt

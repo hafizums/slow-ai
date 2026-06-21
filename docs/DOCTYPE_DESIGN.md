@@ -174,6 +174,32 @@ provider job creation. Empty scope means the account is not restricted by that
 dimension. Secrets must not be stored in normal plain text fields or returned
 from API methods.
 
+`rate_limit_json` may store safe server-side provider account concurrency
+configuration such as:
+
+```json
+{"max_active_provider_jobs": 2}
+```
+
+The controller only validates JSON shape. Enforcement lives in application
+preflight services.
+
+## AI Project Quotas
+
+`AI Project` stores optional run quota and spend-cap fields:
+
+```txt
+max_active_runs
+max_active_runs_per_user
+daily_project_spend_cap_usd
+daily_user_spend_cap_usd
+```
+
+Blank or zero values mean unset. These fields are configured by admins in Desk
+and enforced by `slow_ai.application.run_quota_policy` during run preflight.
+The DocType controller remains persistence-only and does not count runs, jobs,
+or ledger rows.
+
 ## AI Credit Ledger
 
 Append-only.

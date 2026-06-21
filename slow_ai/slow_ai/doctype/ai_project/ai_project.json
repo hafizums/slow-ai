@@ -8,7 +8,12 @@
  "field_order": [
   "project_name",
   "status",
-  "description"
+  "description",
+  "quota_section",
+  "max_active_runs",
+  "max_active_runs_per_user",
+  "daily_project_spend_cap_usd",
+  "daily_user_spend_cap_usd"
  ],
  "fields": [
   {
@@ -34,6 +39,31 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "fieldname": "quota_section",
+   "fieldtype": "Section Break",
+   "label": "Quota and Spend Limits"
+  },
+  {
+   "fieldname": "max_active_runs",
+   "fieldtype": "Int",
+   "label": "Max Active Runs"
+  },
+  {
+   "fieldname": "max_active_runs_per_user",
+   "fieldtype": "Int",
+   "label": "Max Active Runs Per User"
+  },
+  {
+   "fieldname": "daily_project_spend_cap_usd",
+   "fieldtype": "Currency",
+   "label": "Daily Project Spend Cap USD"
+  },
+  {
+   "fieldname": "daily_user_spend_cap_usd",
+   "fieldtype": "Currency",
+   "label": "Daily User Spend Cap USD"
   }
  ],
  "links": [],

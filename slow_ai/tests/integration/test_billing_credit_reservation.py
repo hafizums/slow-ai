@@ -8,7 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from slow_ai.application.billing import create_top_up, get_balance
 from slow_ai.application.run_service import RunService
-from slow_ai.domain.exceptions import RunPreflightError
+from slow_ai.domain.exceptions import ProviderInvariantError, RunPreflightError
 from slow_ai.domain.status import ProviderJobStatus
 from slow_ai.engine.executor import WorkflowExecutor
 from slow_ai.infrastructure.provider_jobs import ProviderJobRepository
@@ -303,6 +303,22 @@ class TestBillingCreditReservation(FrappeTestCase):
         self.assertEqual(counts.get("DEBIT"), 1)
         self.assertEqual(frappe.db.count("AI Asset", {"source_provider_job": provider_job.name}), 1)
         self.assertEqual(Decimal(get_balance(project.name)["balance_usd"]), Decimal("0.93"))
+
+    def test_actual_cost_above_reservation_and_balance_rejects_without_asset_or_settlement(self):
+        project, workflow, adapter = setup_provider_run(top_up_usd="0.15", poll_cost_usd=0.20)
+        result = RunService(node_registry=registry(adapter)).start_run(workflow.name)
+        WorkflowExecutor(node_registry=registry(adapter)).run(result.workflow_run)
+        provider_job = provider_job_for_run(result.workflow_run)
+
+        with self.assertRaises(ProviderInvariantError):
+            poll_provider_job(provider_job.name, provider_registry=ProviderRegistry([adapter]))
+
+        counts = ledger_counts(result.workflow_run)
+        self.assertEqual(counts.get("RESERVE"), 1)
+        self.assertIsNone(counts.get("RELEASE"))
+        self.assertIsNone(counts.get("DEBIT"))
+        self.assertFalse(frappe.db.exists("AI Asset", {"source_provider_job": provider_job.name}))
+        self.assertEqual(Decimal(get_balance(project.name)["balance_usd"]), Decimal("0.05"))
 
     def test_provider_failure_releases_reservation_without_output_asset(self):
         project, workflow, adapter = setup_provider_run(poll_status=ProviderJobStatus.FAILED.value)

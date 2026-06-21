@@ -56,6 +56,16 @@ available_balance_usd = CREDIT + ADJUSTMENT + RELEASE - DEBIT - RESERVE
 `user` filters ledger rows by owner inside the same project for user-scoped
 display. Run preflight enforces project balance for provider-node workflows.
 
+Daily spend caps are separate from current available balance. Run preflight
+calculates current-day spend exposure from persisted ledger rows:
+
+```txt
+daily_spend_exposure = DEBIT + RESERVE - RELEASE
+```
+
+This keeps active reservations inside the cap until they settle, then leaves
+only the final debit as daily spend.
+
 Before a provider-node workflow with non-zero estimated cost is enqueued:
 
 ```txt
@@ -69,6 +79,10 @@ If the estimate exceeds available balance, `start_run` rejects before creating
 workflow versions, workflow runs, node runs, provider jobs, assets, ledger rows,
 or queue jobs. Balance checks read persisted ledger data only and do not call
 providers.
+
+If adding the new estimated cost would exceed `AI Project` daily project or
+daily user spend caps, `start_run` rejects at the same preflight boundary and
+does not create reservations.
 
 After preflight passes and the immutable workflow/run/node rows exist,
 `start_run` creates one `RESERVE` row per priced provider node before enqueue.

@@ -11,6 +11,7 @@ import frappe
 from slow_ai.application.billing import assert_project_has_balance
 from slow_ai.application.contracts import WorkflowDraft
 from slow_ai.application.models import pricing_summary_from_json
+from slow_ai.application.run_quota_policy import assert_run_quota_allows_start
 from slow_ai.domain.exceptions import RunPreflightError
 from slow_ai.domain.workflow_graph import WorkflowGraph, WorkflowNode
 from slow_ai.infrastructure.provider_accounts import resolve_provider_account_name
@@ -75,6 +76,12 @@ class RunPreflightService:
 
         if total_estimated_cost > Decimal("0"):
             assert_project_has_balance(draft.project, total_estimated_cost)
+
+        assert_run_quota_allows_start(
+            project=draft.project,
+            provider_runs=provider_runs,
+            estimated_cost_usd=total_estimated_cost,
+        )
 
         return RunPreflightResult(
             provider_runs=tuple(provider_runs),

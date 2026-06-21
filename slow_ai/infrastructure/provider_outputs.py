@@ -271,6 +271,11 @@ class ProviderOutputService:
                 f"Provider output materialization requires SUCCEEDED result: {provider_job_name}"
             )
         debit = resolve_provider_debit(provider_job_name, result)
+        assert_provider_debit_within_reserved_or_available(
+            project=project_name,
+            provider_job=provider_job_name,
+            amount_usd=debit.amount_usd,
+        )
         asset_names = self.asset_writer.create_provider_assets(
             project_name=project_name,
             workflow_run_name=workflow_run_name,

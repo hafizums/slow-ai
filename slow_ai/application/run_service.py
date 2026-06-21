@@ -78,15 +78,8 @@ class RunService:
         draft = self.draft_repository.get_draft(workflow_name)
         assert_can_run_project(draft.project)
         graph = validate_workflow(draft.as_workflow_json(), node_registry=self.node_registry)
-        preflight = self.run_preflight.assert_can_start(draft, graph)
         existing = self._find_recent_equivalent_active_run(draft, graph)
         if existing:
-            create_run_reservations(
-                project=draft.project,
-                workflow_run=existing.workflow_run,
-                provider_runs=preflight.provider_runs,
-                node_runs_by_node_id=_node_runs_by_node_id(existing.workflow_run),
-            )
             queue_job_id = None
             if existing.status == WorkflowRunStatus.QUEUED.value:
                 queue_job_id = self.workflow_queue.enqueue_workflow_run(existing.workflow_run)
@@ -96,6 +89,7 @@ class RunService:
                 node_runs=existing.node_runs,
                 queue_job_id=queue_job_id,
             )
+        preflight = self.run_preflight.assert_can_start(draft, graph)
         workflow_version = self.version_repository.create_immutable_version(draft, graph)
         workflow_run = self.run_repository.create_workflow_run(workflow_version)
         node_runs = self.node_run_repository.create_node_runs(workflow_run, graph)

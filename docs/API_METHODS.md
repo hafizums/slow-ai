@@ -119,7 +119,9 @@ Returns: workflow_version, workflow_run, node_runs, queue_job_id
 `start_run` must leave the `AI Workflow Run` in `QUEUED` state and must not call
 `WorkflowExecutor` directly. Before creating the immutable workflow version or
 enqueueing a worker, it runs server-side preflight policy through
-`slow_ai.application.run_preflight` for provider-node workflows.
+`slow_ai.application.run_preflight`. Preflight covers provider-node
+model/account/spend checks and persisted project/user/provider-account quota
+checks.
 
 If the same unchanged workflow draft is submitted again within the short
 server-side idempotency window while a matching run is still `QUEUED`,
@@ -130,8 +132,10 @@ recovery. Terminal runs are not reused, so an intentional later rerun can create
 a new immutable version/run through the same API.
 
 Preflight rejection must happen before creating `AI Workflow Version`,
-`AI Workflow Run`, `AI Node Run`, or `AI Provider Job` records. It must not call
-providers.
+`AI Workflow Run`, `AI Node Run`, `AI Provider Job`, reservation ledger, asset,
+or queue side effects for the attempted run. It must not call providers. Safe
+quota rejection messages may be returned to Canvas or Public Tool callers, but
+clients must not implement authoritative quota checks.
 
 ### slow_ai.api.runs.get_run_status
 

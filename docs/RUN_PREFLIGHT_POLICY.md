@@ -54,6 +54,11 @@ no active default provider account is allowed for the workflow project/user scop
 pricing is missing while strict pricing is enabled
 estimated provider cost exceeds configured budget
 estimated provider cost exceeds available project credit balance
+project active run quota is reached
+current user active run quota is reached for the project
+selected provider account active job quota is reached
+daily project spend cap would be exceeded
+daily user spend cap would be exceeded for the project
 ```
 
 Rejected preflight must not call providers, create provider jobs, create run
@@ -72,6 +77,23 @@ slow_ai_run_preflight_max_cost_usd
   default: unset
   when set, the summed provider-node estimated cost must not exceed this USD value
 ```
+
+Project quota and spend cap configuration is persisted on `AI Project`:
+
+```txt
+max_active_runs
+max_active_runs_per_user
+daily_project_spend_cap_usd
+daily_user_spend_cap_usd
+```
+
+Provider account concurrency is persisted on `AI Provider Account.rate_limit_json`:
+
+```json
+{"max_active_provider_jobs": 2}
+```
+
+`max_active_jobs` and `concurrency` are accepted as compatibility aliases.
 
 Pricing is read from `AI Model.pricing_json`. Recognized price keys:
 
@@ -121,6 +143,34 @@ node run, provider job, asset, ledger row, or queue entry. After preflight and
 run/node creation, `start_run` reserves the estimate in `AI Credit Ledger`
 before enqueue. If reservation creation cannot be completed, the run is not
 enqueued.
+
+Quota checks read persisted records only. Active workflow runs are statuses:
+
+```txt
+QUEUED
+RUNNING
+WAITING_PROVIDER
+```
+
+Active provider jobs are statuses:
+
+```txt
+QUEUED
+SUBMITTING
+SUBMITTED
+WAITING_PROVIDER
+```
+
+Daily spend caps use current-day ledger exposure:
+
+```txt
+DEBIT + RESERVE - RELEASE
+```
+
+This treats settled successful jobs as final debit spend and unsettled provider
+jobs as active reserved spend. Cap rejection happens before workflow version,
+workflow run, node run, provider job, reservation, asset, ledger, or queue side
+effects for the attempted run.
 
 Provider node execution persists the resolved `AI Provider Account` and resolved
 `AI Model` document name on `AI Provider Job`, along with the model-derived

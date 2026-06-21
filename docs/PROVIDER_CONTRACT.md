@@ -137,6 +137,19 @@ Automatic provider retry is not enabled by default. `retry_count` and
 bounded. No worker may retry forever or create unbounded provider-job rows for
 the same node/run idempotency key.
 
+The current polling policy has no time-based backoff window beyond the bounded
+`max_poll_attempts` and `timeout_seconds` guards. If an eligible submitted or
+waiting provider job is polled repeatedly, each worker invocation may record one
+poll attempt until the persisted max-attempt or timeout policy expires the job.
+Future backoff support must be persisted and tested as a provider-job policy
+field; it must not live in process memory.
+
+Terminal provider jobs are never externally polled again. A terminal provider
+job may be reconciled from persisted `response_json` only when its node run is
+still `WAITING_PROVIDER`, but that recovery path must not call the provider,
+create duplicate assets, create duplicate ledger rows, or enqueue duplicate
+resume jobs.
+
 ## Normalized provider result
 
 ```json

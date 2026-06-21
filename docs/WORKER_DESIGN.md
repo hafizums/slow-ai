@@ -46,6 +46,13 @@ Automatic provider retry is not enabled by default. Retry metadata is persisted
 with `max_retries=0` unless a future explicit retry action changes it. Retrying
 must remain bounded and must preserve provider-job idempotency.
 
+There is currently no time-based polling backoff field. Eligible provider jobs
+in `SUBMITTED` or `WAITING_PROVIDER` may be polled once per worker invocation,
+and the persisted `poll_attempts`, `max_poll_attempts`, and `timeout_seconds`
+fields bound that behavior. If a future backoff policy is added, workers must
+read it from persisted provider-job fields and tests must prove jobs are not
+polled before the backoff window.
+
 ## Idempotency policy
 
 Run creation and worker execution must tolerate retries:
@@ -59,6 +66,9 @@ provider job creation reuses the node-run idempotency key
 terminal provider job polling returns persisted state and does not call providers
 asset materialization reuses existing provider output assets by output index
 ledger debit creation reuses the existing provider-job DEBIT row
+provider reservation release reuses the RELEASE row for the original RESERVE
+public tool cancel/archive/share/rerun paths are idempotent or safely rejected
+System Manager recovery inspect/resume/expire paths are idempotent or safely rejected
 ```
 
 This policy prevents duplicate `AI Workflow Version`, `AI Workflow Run`,

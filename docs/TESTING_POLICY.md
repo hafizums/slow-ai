@@ -849,3 +849,30 @@ The browser test opens real Canvas and Public Tool run details, waits for the
 safe timeline API response, verifies safe event labels render, exercises
 Public Tool timeline search/clear behavior, and confirms the guest shared page
 does not render or call the internal timeline.
+
+Provider-job retry/backoff matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_provider_job_retry_backoff_matrix.py
+```
+
+It uses real projects, provider accounts, models, workflow runs, node runs,
+provider jobs, and ledger rows. It verifies eligible waiting jobs are polled
+once per worker invocation, documents the current no-time-backoff policy,
+expires jobs through timeout and max-attempt guards idempotently, proves
+automatic retry is disabled even when retry metadata is present, ensures
+cancellation wins over retry/timeout, confirms terminal jobs are not externally
+re-polled, and checks status/history/timeline payloads stay safe.
+
+Run idempotency stress matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_idempotency_stress_matrix.py
+```
+
+It stresses duplicate `start_run`, workflow worker, resume worker, single and
+batch provider poller, public-tool cancel/archive/share/rerun, and System
+Manager recovery entrypoints using real DocTypes and application/API/worker
+calls. The tests assert exact record-count deltas, current rerun-draft policy,
+duplicate share reuse, duplicate reservation/release/debit prevention, safe
+rejection for a denied role, and safe payload redaction under repeated calls.

@@ -185,3 +185,10 @@ or create missing release/debit rows. A terminal run should have no active
 unreleased reservation unless a future policy explicitly records an outstanding
 provider charge and documents it. Reconciliation rows are idempotent by
 workflow run, node run, provider job, and reservation reference.
+
+Repeated provider poller, resume worker, cancellation, timeout, expiry, and
+System Manager recovery invocations must not create duplicate `DEBIT` or
+`RELEASE` rows. A repeated successful provider poll reuses the existing provider
+assets and provider-job `DEBIT`; a repeated failed/cancelled/expired provider
+poll or stale-run expiry reuses the existing release for the original
+reservation.

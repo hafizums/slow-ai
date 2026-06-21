@@ -745,6 +745,14 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Timeline");
 	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Run queued");
 	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Asset created");
+	await page.locator("[data-role='run-timeline-detail'] [data-timeline-filter='search']").fill("Asset created");
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Asset created");
+	await expect(page.locator("[data-role='run-timeline-detail']")).not.toContainText("Run queued");
+	await page.locator("[data-role='run-timeline-detail'] [data-timeline-filter='search']").fill("no matching timeline event");
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("No timeline events match these filters");
+	await page.locator("[data-role='run-timeline-detail']").getByRole("button", { name: "Clear filters" }).click();
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Run queued");
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Asset created");
 	await expect(page.locator(`[data-role='asset-output'] [data-asset-name="${fixtures.public_history_asset}"]`)).toContainText(
 		fixtures.public_history_asset
 	);
@@ -816,6 +824,8 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(guestSource).not.toContain("slow_ai.api.runs.start_run");
 	expect(guestSource).not.toContain("slow_ai.api.runs.get_run_timeline");
 	expect(guestSource).not.toContain("Timeline");
+	expect(guestSource).not.toContain("data-timeline-filter");
+	expect(guestSource).not.toContain("No timeline events match these filters");
 	expect(guestSource).not.toContain("WAVESPEED_API_KEY");
 	expect(guestSource).not.toContain("REPLICATE_API_KEY");
 	expect(guestSource).not.toContain("api_key_secret");

@@ -295,6 +295,11 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("renderRunErrors", page.script)
         self.assertIn("renderRunTimeline", page.script)
         self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
+        self.assertIn("renderTimelineFilters", page.script)
+        self.assertIn("filteredTimelineEvents", page.script)
+        self.assertIn("timelineSearchText", page.script)
+        self.assertIn("data-timeline-filter", page.script)
+        self.assertIn("No timeline events match these filters", page.script)
         self.assertIn("renderRunTimelineUnavailable", page.script)
         self.assertIn("Timeline unavailable", page.script)
         self.assertIn("safeErrorMessage", page.script)
@@ -313,12 +318,19 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("slow-ai-canvas__ledger-summary", page.style)
         self.assertIn("slow-ai-canvas__run-errors", page.style)
         self.assertIn("slow-ai-canvas__run-timeline", page.style)
+        self.assertIn("slow-ai-canvas__timeline-filters", page.style)
 
         timeline_loader = page.script.split("refreshTimeline() {", 1)[1].split("refreshQueue()", 1)[0]
         self.assertIn("frappe", timeline_loader)
         self.assertIn("slow_ai.api.runs.get_run_timeline", timeline_loader)
         self.assertIn("this.workflowRun !== workflowRun", timeline_loader)
         self.assertIn(".catch(() =>", timeline_loader)
+        timeline_renderer = page.script.split("renderRunTimeline(timeline) {", 1)[1].split("renderAssetOutputs", 1)[0]
+        self.assertIn("this.timelineEvents", timeline_renderer)
+        self.assertIn("filteredTimelineEvents", timeline_renderer)
+        self.assertNotIn("get_history", timeline_renderer)
+        for fragment in UNSAFE_TIMELINE_ERROR_FRAGMENTS:
+            self.assertNotIn(fragment, timeline_renderer)
         failure_body = page.script.split("renderRunTimelineUnavailable() {", 1)[1].split(
             "timelineEventDetails(event)", 1
         )[0]
@@ -933,6 +945,8 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn('frappe.call("slow_ai.api.assets.view"', page.script)
         self.assertIn("renderRunTimeline", page.script)
         self.assertIn("renderRunTimelineUnavailable", page.script)
+        self.assertIn("renderTimelineFilters", page.script)
+        self.assertIn("filteredTimelineEvents", page.script)
         self.assertIn("timelineEventDetails", page.script)
         self.assertIn("event.title", page.script)
         self.assertIn("event.message", page.script)

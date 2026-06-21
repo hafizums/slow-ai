@@ -428,6 +428,11 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
         self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
         self.assertIn("Timeline", page.script)
+        self.assertIn("renderTimelineFilters", page.script)
+        self.assertIn("filteredTimelineEvents", page.script)
+        self.assertIn("timelineSearchText", page.script)
+        self.assertIn("data-timeline-filter", page.script)
+        self.assertIn("No timeline events match these filters", page.script)
         self.assertIn("renderRunTimelineUnavailable", page.script)
         self.assertIn("Timeline unavailable", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
@@ -452,6 +457,14 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.runs.get_run_timeline", timeline_loader)
         self.assertIn("this.workflowRun !== workflowRun", timeline_loader)
         self.assertIn(".catch(() =>", timeline_loader)
+        timeline_renderer = page.script.split("renderRunTimeline(timeline, $target) {", 1)[1].split(
+            "cancelRun(runId)", 1
+        )[0]
+        self.assertIn("this.timelineEvents", timeline_renderer)
+        self.assertIn("filteredTimelineEvents", timeline_renderer)
+        self.assertNotIn("get_history", timeline_renderer)
+        for fragment in UNSAFE_TIMELINE_ERROR_FRAGMENTS:
+            self.assertNotIn(fragment, timeline_renderer)
         failure_body = page.script.split("renderRunTimelineUnavailable($target) {", 1)[1].split(
             "timelineEventDetails(event)", 1
         )[0]
@@ -1653,6 +1666,8 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.get_shared_run", source)
         self.assertNotIn("slow_ai.api.runs.get_run_timeline", source)
         self.assertNotIn("Timeline", source)
+        self.assertNotIn("data-timeline-filter", source)
+        self.assertNotIn("No timeline events match these filters", source)
         self.assertNotIn("slow_ai.api.runs.start_run", source)
         self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", source)
         self.assertNotIn("slow_ai.api.workflows.save_workflow", source)

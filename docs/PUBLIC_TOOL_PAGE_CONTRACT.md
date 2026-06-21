@@ -185,6 +185,14 @@ provider secrets, raw provider URLs, `request_json`, `response_json`,
 The public Tool page must not derive timeline rows from history/gallery
 payloads. If a user switches run detail while a timeline request is in flight,
 stale timeline responses must not overwrite the currently selected run detail.
+Authenticated run detail may provide client-side timeline search and filters
+for event type, status, and node id. Filters must operate only on already
+loaded safe `get_run_timeline` events, must escape rendered values, must not
+call providers, and must not call `get_history` or gallery APIs to reconstruct
+timeline rows. Clear filters must restore all loaded safe events without
+another provider call. If filters match nothing, the UI may show
+`No timeline events match these filters`. The guest shared-output page must not
+show timeline filters.
 
 The gallery supports grouped output sections, asset preview cards, Open Asset,
 Copy URL, Select for Share, Select All, Clear Selection, and lightweight

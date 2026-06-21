@@ -127,3 +127,10 @@ Authorization headers, provider account names, or workflow draft internals.
 Timeline rows must be backed only by this API and not reconstructed from
 history payloads. Authenticated clients should ignore stale timeline responses
 when the selected/open run changes before the request completes.
+
+Authenticated clients may add local search and filters for safe fields such as
+event type, status, and node id. Filtering must happen client-side over the
+already returned safe timeline payload and must not call providers, enqueue
+workers, mutate records, request raw history to rebuild events, or expose
+forbidden payload fields. Guest shared-output pages must not show the internal
+timeline or timeline filters.

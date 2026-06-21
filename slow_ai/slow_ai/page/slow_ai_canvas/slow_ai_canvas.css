@@ -820,6 +820,22 @@
 	gap: 8px;
 }
 
+.slow-ai-canvas__timeline-filters {
+	display: grid;
+	grid-template-columns: minmax(120px, 1fr);
+	gap: 6px;
+	padding: 8px 0;
+	border-bottom: 1px solid var(--slow-ai-border);
+}
+
+.slow-ai-canvas__timeline-filters label {
+	display: grid;
+	gap: 3px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--slow-ai-muted);
+}
+
 .slow-ai-canvas__timeline-dot {
 	width: 8px;
 	height: 8px;

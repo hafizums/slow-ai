@@ -213,6 +213,22 @@
 	margin-top: 12px;
 }
 
+.slow-ai-tools__timeline-filters {
+	align-items: end;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.slow-ai-tools__timeline-filters label {
+	display: grid;
+	gap: 3px;
+	min-width: 140px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #6b7280;
+}
+
 .slow-ai-tools__timeline-row {
 	border-top: 1px solid #e5e7eb;
 	display: grid;

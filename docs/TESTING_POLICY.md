@@ -655,8 +655,10 @@ apps/slow_ai/e2e/slow_ai_canvas.spec.js
 The integration tests verify authenticated Canvas/Public Tool clients reference
 `slow_ai.api.runs.get_run_timeline`, render an explicit generic timeline
 failure state, keep the failure renderer free of raw provider/request/response
-fields, and confirm the guest shared page does not reference the internal
-timeline API. The browser test opens real Canvas and Public Tool run details,
-waits for the safe timeline API response, verifies safe event labels render,
-and confirms the guest shared page does not render or call the internal
-timeline.
+fields, expose client-side timeline filter controls over safe timeline state,
+avoid reconstructing timeline rows from `get_history`, and confirm the guest
+shared page does not reference the internal timeline API or timeline filter UI.
+The browser test opens real Canvas and Public Tool run details, waits for the
+safe timeline API response, verifies safe event labels render, exercises
+Public Tool timeline search/clear behavior, and confirms the guest shared page
+does not render or call the internal timeline.

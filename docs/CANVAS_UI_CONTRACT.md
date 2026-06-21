@@ -196,6 +196,7 @@ Timeline UI states must remain explicit:
 Loading timeline
 No timeline events
 Timeline unavailable
+No timeline events match these filters
 rendered safe event rows
 ```
 
@@ -207,6 +208,12 @@ provider secrets, raw provider URLs, `request_json`, `response_json`,
 Timeline rows must not be derived from `slow_ai.api.runs.get_history`.
 When the selected run changes while a timeline request is in flight, stale
 responses must not overwrite the currently selected run's timeline panel.
+The Canvas may provide client-side timeline search and filters for event type,
+status, and node id. These filters must operate only on the loaded safe
+`get_run_timeline` events in browser memory, must escape rendered values, must
+not issue provider calls, and must not reconstruct timeline rows from
+`get_history`. Clear filters must restore the loaded safe events without
+another provider call.
 
 The UI must only display sanitized error messages. It must not render raw
 provider responses, raw provider error JSON, provider account secrets, provider

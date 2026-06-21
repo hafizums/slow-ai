@@ -23,6 +23,8 @@ class SlowAiToolsPage {
 		this.workflow = null;
 		this.rerunWorkflow = null;
 		this.workflowRun = null;
+		this.timelineEvents = [];
+		this.timelineFilters = this.defaultTimelineFilters();
 		this.pollTimer = null;
 		this.makeBody();
 		this.bindEvents();
@@ -109,6 +111,12 @@ class SlowAiToolsPage {
 		});
 		this.$root.on("click", "[data-action='filter-gallery']", (event) => {
 			this.filterGallery($(event.currentTarget).attr("data-gallery-filter") || "ALL");
+		});
+		this.$root.on("input change", "[data-timeline-filter]", () => {
+			this.updateTimelineFilters();
+		});
+		this.$root.on("click", "[data-action='clear-timeline-filters']", () => {
+			this.clearTimelineFilters();
 		});
 		this.$root.on("click", "[data-action='refresh-project-members']", () => this.loadProjectMembers());
 		this.$root.on("click", "[data-action='add-project-member']", () => this.addProjectMember());
@@ -941,6 +949,8 @@ class SlowAiToolsPage {
 		if (!$target.length) {
 			return Promise.resolve();
 		}
+		this.timelineEvents = [];
+		this.timelineFilters = this.defaultTimelineFilters();
 		$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("Loading timeline")}</div>`);
 		return frappe
 			.call("slow_ai.api.runs.get_run_timeline", { workflow_run: workflowRun })
@@ -954,30 +964,92 @@ class SlowAiToolsPage {
 				if (this.workflowRun !== workflowRun) {
 					return;
 				}
+				this.timelineEvents = [];
+				this.timelineFilters = this.defaultTimelineFilters();
 				this.renderRunTimelineUnavailable($target);
 			});
 	}
 
 	renderRunTimeline(timeline, $target) {
-		const events = (timeline && timeline.events) || [];
+		this.timelineEvents = (timeline && timeline.events) || [];
+		this.timelineFilters = this.defaultTimelineFilters();
+		this.renderTimelinePanel($target);
+	}
+
+	renderTimelinePanel($target) {
+		const events = this.timelineEvents || [];
 		if (!events.length) {
 			$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("No timeline events")}</div>`);
 			return;
 		}
-		const rows = events
-			.map((event) => {
-				const details = this.timelineEventDetails(event);
-				return `<div class="slow-ai-tools__timeline-row" data-timeline-event="${this.escape(event.event_type || "")}">
-					<div class="slow-ai-tools__timeline-main">
-						<strong>${this.escape(event.title || event.event_type || __("Timeline event"))}</strong>
-						<span>${this.escape(this.formatTime(event.timestamp))}</span>
-					</div>
-					<div class="slow-ai-tools__muted">${this.escape(event.message || "")}</div>
-					${details ? `<div class="slow-ai-tools__muted">${this.escape(details)}</div>` : ""}
-				</div>`;
-			})
-			.join("");
-		$target.html(`<h4>${__("Timeline")}</h4>${rows}`);
+		const filteredEvents = this.filteredTimelineEvents();
+		const rows = filteredEvents.length
+			? filteredEvents.map((event) => this.renderTimelineRow(event)).join("")
+			: `<div class="slow-ai-tools__empty">${__("No timeline events match these filters")}</div>`;
+		$target.html(`<h4>${__("Timeline")}</h4>${this.renderTimelineFilters(events)}<div data-role="timeline-list">${rows}</div>`);
+	}
+
+	renderTimelineList() {
+		const $target = this.$runDetail.find("[data-role='run-timeline-detail']");
+		const $list = $target.find("[data-role='timeline-list']");
+		if (!$list.length) {
+			this.renderTimelinePanel($target);
+			return;
+		}
+		const filteredEvents = this.filteredTimelineEvents();
+		const rows = filteredEvents.length
+			? filteredEvents.map((event) => this.renderTimelineRow(event)).join("")
+			: `<div class="slow-ai-tools__empty">${__("No timeline events match these filters")}</div>`;
+		$list.html(rows);
+	}
+
+	renderTimelineRow(event) {
+		const details = this.timelineEventDetails(event);
+		return `<div class="slow-ai-tools__timeline-row" data-timeline-event="${this.escape(event.event_type || "")}">
+			<div class="slow-ai-tools__timeline-main">
+				<strong>${this.escape(event.title || event.event_type || __("Timeline event"))}</strong>
+				<span>${this.escape(this.formatTime(event.timestamp))}</span>
+			</div>
+			<div class="slow-ai-tools__muted">${this.escape(event.message || "")}</div>
+			${details ? `<div class="slow-ai-tools__muted">${this.escape(details)}</div>` : ""}
+		</div>`;
+	}
+
+	renderTimelineFilters(events) {
+		const nodeOptions = this.uniqueTimelineValues(events, "node_id");
+		const nodeFilter = nodeOptions.length
+			? `<label>${__("Node")}
+				<select class="form-control input-xs" data-timeline-filter="node_id">
+					${this.renderTimelineOptions(nodeOptions, this.timelineFilters.node_id)}
+				</select>
+			</label>`
+			: "";
+		return `<div class="slow-ai-tools__timeline-filters" data-role="timeline-filters">
+			<label>${__("Search")}
+				<input class="form-control input-xs" type="search" data-timeline-filter="search" value="${this.escape(this.timelineFilters.search)}">
+			</label>
+			<label>${__("Event")}
+				<select class="form-control input-xs" data-timeline-filter="event_type">
+					${this.renderTimelineOptions(this.uniqueTimelineValues(events, "event_type"), this.timelineFilters.event_type)}
+				</select>
+			</label>
+			<label>${__("Status")}
+				<select class="form-control input-xs" data-timeline-filter="status">
+					${this.renderTimelineOptions(this.uniqueTimelineValues(events, "status"), this.timelineFilters.status)}
+				</select>
+			</label>
+			${nodeFilter}
+			<button class="btn btn-xs btn-default" type="button" data-action="clear-timeline-filters">${__("Clear filters")}</button>
+		</div>`;
+	}
+
+	renderTimelineOptions(values, selectedValue) {
+		const options = [`<option value="">${__("All")}</option>`];
+		values.forEach((value) => {
+			const selected = value === selectedValue ? " selected" : "";
+			options.push(`<option value="${this.escape(value)}"${selected}>${this.escape(value)}</option>`);
+		});
+		return options.join("");
 	}
 
 	renderRunTimelineUnavailable($target) {
@@ -985,6 +1057,78 @@ class SlowAiToolsPage {
 			return;
 		}
 		$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("Timeline unavailable")}</div>`);
+	}
+
+	defaultTimelineFilters() {
+		return {
+			search: "",
+			event_type: "",
+			status: "",
+			node_id: "",
+		};
+	}
+
+	updateTimelineFilters() {
+		this.timelineFilters = {
+			search: this.$runDetail.find("[data-timeline-filter='search']").val() || "",
+			event_type: this.$runDetail.find("[data-timeline-filter='event_type']").val() || "",
+			status: this.$runDetail.find("[data-timeline-filter='status']").val() || "",
+			node_id: this.$runDetail.find("[data-timeline-filter='node_id']").val() || "",
+		};
+		this.renderTimelineList();
+	}
+
+	clearTimelineFilters() {
+		this.timelineFilters = this.defaultTimelineFilters();
+		this.$runDetail.find("[data-timeline-filter]").val("");
+		this.renderTimelineList();
+	}
+
+	filteredTimelineEvents() {
+		const filters = this.timelineFilters || this.defaultTimelineFilters();
+		const search = String(filters.search || "").trim().toLowerCase();
+		return (this.timelineEvents || []).filter((event) => {
+			if (filters.event_type && event.event_type !== filters.event_type) {
+				return false;
+			}
+			if (filters.status && event.status !== filters.status) {
+				return false;
+			}
+			if (filters.node_id && event.node_id !== filters.node_id) {
+				return false;
+			}
+			if (!search) {
+				return true;
+			}
+			return this.timelineSearchText(event).includes(search);
+		});
+	}
+
+	timelineSearchText(event) {
+		return [
+			event.timestamp,
+			event.event_type,
+			event.title,
+			event.message,
+			event.status,
+			event.node_id,
+			event.node_type,
+			event.amount_usd,
+			event.currency,
+		]
+			.filter((value) => value !== null && value !== undefined)
+			.join(" ")
+			.toLowerCase();
+	}
+
+	uniqueTimelineValues(events, fieldname) {
+		return Array.from(
+			new Set(
+				(events || [])
+					.map((event) => event[fieldname])
+					.filter((value) => value !== null && value !== undefined && value !== "")
+			)
+		).sort();
 	}
 
 	timelineEventDetails(event) {

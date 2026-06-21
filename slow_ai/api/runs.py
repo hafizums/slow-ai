@@ -6,6 +6,7 @@ import frappe
 
 from slow_ai.application.runs import get_history as get_history_service
 from slow_ai.application.runs import get_run_status as get_run_status_service
+from slow_ai.application.runs import get_run_timeline as get_run_timeline_service
 from slow_ai.application.runs import start_run as start_run_service
 
 
@@ -22,3 +23,8 @@ def get_run_status(workflow_run: str) -> dict:
 @frappe.whitelist()
 def get_history(workflow_run: str) -> dict:
     return get_history_service(workflow_run)
+
+
+@frappe.whitelist()
+def get_run_timeline(workflow_run: str) -> dict:
+    return get_run_timeline_service(workflow_run)

@@ -7,6 +7,7 @@ slow_ai.api.nodes.get_object_info
 slow_ai.api.runs.start_run
 slow_ai.api.runs.get_run_status
 slow_ai.api.runs.get_history
+slow_ai.api.runs.get_run_timeline
 slow_ai.api.queue.get_queue_status
 slow_ai.api.assets.upload
 slow_ai.api.assets.view
@@ -154,6 +155,26 @@ Arguments: workflow_run
 Application service: slow_ai.application.runs.get_history
 Returns: run, node runs, provider jobs, assets, and ledger rows
 ```
+
+### slow_ai.api.runs.get_run_timeline
+
+```txt
+Arguments: workflow_run
+Application service: slow_ai.application.runs.get_run_timeline
+Returns: safe, ordered run activity timeline generated from persisted records
+```
+
+`get_run_timeline` enforces project view access and derives timeline events
+from `AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`,
+`AI Credit Ledger`, and `AI Tool Run Share` records. It is read-only and must
+not create workflow versions, workflow runs, node runs, provider jobs, assets,
+ledger rows, shares, queue jobs, or provider calls.
+
+The timeline payload may include safe event metadata such as timestamp, event
+type, title/message, related DocType/name, node id/type, status, and safe
+amount/currency. It must not expose provider account names, provider secrets,
+raw provider request/response/error JSON, raw provider URLs, API keys, or
+workflow draft internals.
 
 ### slow_ai.api.public_tools.prepare_rerun_from_run
 

@@ -617,3 +617,16 @@ EDITOR save/start access, BILLING billing/provider-account access, scoped run
 library access, share creation rules, safe provider account payloads, and
 insufficient-balance preflight rejection without workflow version/run/node or
 provider-job side effects.
+
+Run activity timeline coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_activity_timeline.py
+```
+
+It uses real `AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`,
+`AI Credit Ledger`, and `AI Tool Run Share` records. It verifies ordered safe
+timeline events for successful, provider, expired, cancelled, and archived runs,
+project view-access enforcement, no timeline read side effects, and no exposure
+of provider account names, provider secrets, raw request/response/error JSON, or
+raw provider URLs. It does not mock provider success or call external providers.

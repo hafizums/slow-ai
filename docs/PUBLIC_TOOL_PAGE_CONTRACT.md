@@ -171,6 +171,11 @@ Direct client calls to `slow_ai.api.assets.view` remain allowed for explicit
 user-selected input asset preview/upload workflows. They must not be used to
 recompute run output galleries from raw history in the browser.
 
+If a public-tool run timeline is shown, it must come from
+`slow_ai.api.runs.get_run_timeline` and may render only the safe event fields
+documented in `RUN_ACTIVITY_TIMELINE_CONTRACT.md`. The guest shared-output page
+must not show the internal run timeline in the first timeline milestone.
+
 The gallery supports grouped output sections, asset preview cards, Open Asset,
 Copy URL, Select for Share, Select All, Clear Selection, and lightweight
 client-side filtering by asset type. These actions must not mutate run state,

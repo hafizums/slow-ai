@@ -663,6 +663,21 @@ exercise the shared `slow_ai.application.safe_payloads` utility through real API
 calls rather than direct helper-only assertions. The test uses real DocTypes and
 application/API calls only.
 
+Run read access matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_read_access_matrix.py
+```
+
+It creates real users, project membership rows, workflow runs, provider jobs,
+assets, ledger rows, and active/disabled/expired tool-run shares. It verifies
+OWNER, EDITOR, VIEWER, BILLING, System Manager, non-member, and Guest behavior
+for run status, history, timeline, My Runs detail/list, output gallery,
+`assets.view`, and guest shared-run reads. Allowed reads must return safe
+payloads only; rejected reads and guest-token failures must create no
+workflow-version, run, node-run, provider-job, asset, credit-ledger, or share
+side effects.
+
 Run timeline UI coverage is included in:
 
 ```txt

@@ -22,6 +22,8 @@ BEARER_PATTERN = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
 KEY_VALUE_SECRET_PATTERN = re.compile(
     r"(?i)\b(api[_-]?key|authorization|bearer|secret|token|password)\b\s*[:=]\s*[^,\s}]+"
 )
+SENSITIVE_TEXT_LABEL_PATTERN = re.compile(r"(?i)\b(api[_-]?key|authorization|bearer|provider_account)\b")
+STACK_TRACE_PATTERN = re.compile(r"(?i)\b(traceback|stack trace)\b")
 
 
 def is_sensitive_key(key: Any) -> bool:
@@ -30,9 +32,12 @@ def is_sensitive_key(key: Any) -> bool:
 
 def redact_text(value: Any, *, limit: int = 240) -> str:
     text = str(value or "")
-    text = BEARER_PATTERN.sub("Bearer [redacted]", text)
+    if STACK_TRACE_PATTERN.search(text):
+        return "Error details captured on server."[:limit]
+    text = BEARER_PATTERN.sub("[redacted]", text)
     text = KEY_VALUE_SECRET_PATTERN.sub("[redacted]", text)
     text = URL_PATTERN.sub("[link hidden]", text)
+    text = SENSITIVE_TEXT_LABEL_PATTERN.sub("[redacted]", text)
     return text[:limit]
 
 

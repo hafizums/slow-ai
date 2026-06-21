@@ -643,3 +643,17 @@ headers, raw provider JSON, and unsafe error fields. It verifies
 `get_run_status`, `get_history`, and `get_run_timeline` return only safe display
 payloads, preserve enough summary fields for Canvas/Public Tool rendering, and
 create no execution/provider/billing/share side effects.
+
+Run timeline UI coverage is included in:
+
+```txt
+slow_ai/tests/integration/test_canvas_placeholder.py
+slow_ai/tests/integration/test_public_tool_page.py
+apps/slow_ai/e2e/slow_ai_canvas.spec.js
+```
+
+The integration tests verify authenticated Canvas/Public Tool clients reference
+`slow_ai.api.runs.get_run_timeline`, and the guest shared page does not. The
+browser test opens real Canvas and Public Tool run details, waits for the safe
+timeline API response, verifies safe event labels render, and confirms the
+guest shared page does not render or call the internal timeline.

@@ -35,6 +35,7 @@ slow_ai.api.public_tools.archive_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.runs.start_run
+slow_ai.api.runs.get_run_timeline
 slow_ai.api.assets.upload
 slow_ai.api.assets.view
 slow_ai.api.billing.get_balance

@@ -66,6 +66,7 @@ API_ALLOWED_CLIENT_METHODS = {
     "slow_ai.api.runs.start_run",
     "slow_ai.api.runs.get_run_status",
     "slow_ai.api.runs.get_history",
+    "slow_ai.api.runs.get_run_timeline",
     "slow_ai.api.templates.save_template",
     "slow_ai.api.templates.get_template",
     "slow_ai.api.templates.list_templates",

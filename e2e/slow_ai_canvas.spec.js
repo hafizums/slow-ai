@@ -7,6 +7,7 @@ const API = {
 	startRun: "slow_ai.api.runs.start_run",
 	runStatus: "slow_ai.api.runs.get_run_status",
 	history: "slow_ai.api.runs.get_history",
+	runTimeline: "slow_ai.api.runs.get_run_timeline",
 	assetUpload: "slow_ai.api.assets.upload",
 	assetView: "slow_ai.api.assets.view",
 	listTemplates: "slow_ai.api.templates.list_templates",
@@ -465,6 +466,7 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 	expect(assetNode.config.asset_type).toBe("IMAGE");
 	await startUploadRunResponse;
 
+	const canvasTimelineResponse = page.waitForResponse(apiPredicate(API.runTimeline));
 	await page.evaluate(async (workflowRun) => {
 		const wrappers = window.$(".page-container, .page-wrapper").toArray();
 		let instance = null;
@@ -478,7 +480,11 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 		instance.workflowRun = workflowRun;
 		await instance.refreshRun();
 	}, fixtures.asset_workflow_run);
+	const canvasTimeline = await apiJson(await canvasTimelineResponse);
+	expect(canvasTimeline.message.events.some((event) => event.event_type === "RUN_QUEUED")).toBe(true);
 	await expect(page.locator(`[data-role='asset-output'] .slow-ai-canvas__asset-card[data-asset-name="${fixtures.history_asset}"]`)).toContainText(fixtures.history_asset);
+	await expect(page.locator("[data-role='run-timeline']")).toContainText("Run queued");
+	await expect(page.locator("[data-role='run-timeline']")).toContainText("Asset created");
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Open Asset");
 	await expect(page.locator("[data-role='asset-output']")).toContainText("Refresh Asset");
 
@@ -721,6 +727,7 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 
 	const historyRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
 	const historyGalleryResponse = page.waitForResponse(apiPredicate(API.publicGetRunOutputGallery));
+	const historyTimelineResponse = page.waitForResponse(apiPredicate(API.runTimeline));
 	await page
 		.locator(`[data-run-id="${fixtures.public_asset_workflow_run}"]`)
 		.getByRole("button", { name: "Open Detail" })
@@ -728,11 +735,16 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const historyRunDetail = await apiJson(await historyRunDetailResponse);
 	expect(historyRunDetail.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
 	const historyGallery = await apiJson(await historyGalleryResponse);
+	const historyTimeline = await apiJson(await historyTimelineResponse);
 	expect(historyGallery.message.groups.length).toBeGreaterThan(0);
 	expect(historyGallery.message.assets.some((asset) => asset.name === fixtures.public_history_asset)).toBe(true);
 	expect(historyGallery.message.assets.some((asset) => asset.name === fixtures.public_video_history_asset)).toBe(true);
 	expect(historyGallery.message.assets.some((asset) => asset.name === fixtures.public_audio_history_asset)).toBe(true);
+	expect(historyTimeline.message.events.some((event) => event.event_type === "RUN_QUEUED")).toBe(true);
 	await expect(page.locator("[data-role='run-detail']")).toContainText(fixtures.public_asset_workflow_run);
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Timeline");
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Run queued");
+	await expect(page.locator("[data-role='run-timeline-detail']")).toContainText("Asset created");
 	await expect(page.locator(`[data-role='asset-output'] [data-asset-name="${fixtures.public_history_asset}"]`)).toContainText(
 		fixtures.public_history_asset
 	);
@@ -761,10 +773,14 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const guestContext = await browser.newContext();
 	const guestPage = await guestContext.newPage();
 	const guestProviderRequests = [];
+	const guestTimelineRequests = [];
 	guestPage.on("request", (request) => {
 		const url = request.url();
 		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
 			guestProviderRequests.push(url);
+		}
+		if (url.includes(`/api/method/${API.runTimeline}`)) {
+			guestTimelineRequests.push(url);
 		}
 	});
 	const shareUrl = new URL(createdShare.message.share.share_url, page.url()).toString();
@@ -798,6 +814,8 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	await expect(guestPage.getByRole("button", { name: /^Run$/ })).toHaveCount(0);
 	const guestSource = await guestPage.locator("html").innerHTML();
 	expect(guestSource).not.toContain("slow_ai.api.runs.start_run");
+	expect(guestSource).not.toContain("slow_ai.api.runs.get_run_timeline");
+	expect(guestSource).not.toContain("Timeline");
 	expect(guestSource).not.toContain("WAVESPEED_API_KEY");
 	expect(guestSource).not.toContain("REPLICATE_API_KEY");
 	expect(guestSource).not.toContain("api_key_secret");
@@ -811,6 +829,7 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(guestSource).not.toContain("api.replicate.com");
 	expect(guestSource).not.toContain("Authorization: Bearer");
 	expect(guestProviderRequests).toEqual([]);
+	expect(guestTimelineRequests).toEqual([]);
 	await guestContext.close();
 
 	const editorContext = await browser.newContext();

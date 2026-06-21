@@ -15,6 +15,7 @@ ALLOWED_CANVAS_METHODS = {
     "slow_ai.api.runs.start_run",
     "slow_ai.api.runs.get_run_status",
     "slow_ai.api.runs.get_history",
+    "slow_ai.api.runs.get_run_timeline",
     "slow_ai.api.queue.get_queue_status",
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
@@ -275,6 +276,7 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("renderLedgerSummary", page.script)
         self.assertIn("renderRunErrors", page.script)
         self.assertIn("renderRunTimeline", page.script)
+        self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
         self.assertIn("safeErrorMessage", page.script)
         self.assertIn("sanitizeErrorText", page.script)
         self.assertIn("slow_ai_workflow_run_update", page.script)
@@ -895,12 +897,12 @@ class TestCanvasPlaceholder(FrappeTestCase):
         page.load_assets()
         self.assertIn('frappe.call("slow_ai.api.runs.get_run_status"', page.script)
         self.assertIn('frappe.call("slow_ai.api.runs.get_history"', page.script)
+        self.assertIn('frappe.call("slow_ai.api.runs.get_run_timeline"', page.script)
         self.assertIn('frappe.call("slow_ai.api.assets.view"', page.script)
-        self.assertIn("Provider submitted", page.script)
-        self.assertIn("Provider completed", page.script)
-        self.assertIn("Asset created", page.script)
-        self.assertIn("Run completed", page.script)
-        self.assertIn("Run failed", page.script)
+        self.assertIn("renderRunTimeline", page.script)
+        self.assertIn("timelineEventDetails", page.script)
+        self.assertIn("event.title", page.script)
+        self.assertIn("event.message", page.script)
 
         ensure_canvas_provider_catalog()
         project = create_project()

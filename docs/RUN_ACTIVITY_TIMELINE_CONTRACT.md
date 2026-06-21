@@ -112,3 +112,9 @@ and output-gallery behavior must remain unchanged.
 The Public Tool page may render a run timeline only through this safe backend
 API. The shared guest page must not expose the internal run timeline in this
 milestone.
+
+Authenticated Canvas and Public Tool run detail views may render timeline
+events from `slow_ai.api.runs.get_run_timeline`. They may display only safe
+event fields: timestamp, title, message, status, node id/type, and safe
+amount/currency. Guest shared-output pages must not call the timeline API or
+render internal timeline events.

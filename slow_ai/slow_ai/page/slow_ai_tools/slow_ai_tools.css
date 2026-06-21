@@ -207,6 +207,31 @@
 	margin-top: 12px;
 }
 
+.slow-ai-tools__timeline {
+	display: grid;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.slow-ai-tools__timeline-row {
+	border-top: 1px solid #e5e7eb;
+	display: grid;
+	gap: 4px;
+	padding: 8px 0 0;
+}
+
+.slow-ai-tools__timeline-main {
+	align-items: baseline;
+	display: flex;
+	gap: 8px;
+	justify-content: space-between;
+}
+
+.slow-ai-tools__timeline-main span {
+	color: #6b7280;
+	font-size: 12px;
+}
+
 .slow-ai-tools__provider-row,
 .slow-ai-tools__row {
 	display: flex;

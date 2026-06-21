@@ -29,6 +29,7 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.disable_run_share",
     "slow_ai.api.public_tools.get_shared_run",
     "slow_ai.api.runs.start_run",
+    "slow_ai.api.runs.get_run_timeline",
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
     "slow_ai.api.billing.get_balance",
@@ -407,6 +408,8 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.archive_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.create_run_share", page.script)
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
+        self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
+        self.assertIn("Timeline", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
         self.assertNotIn("slow_ai.api.workflows.save_workflow", page.script)
         self.assertIn("slow_ai.api.runs.start_run", page.script)
@@ -1614,6 +1617,8 @@ class TestPublicToolPage(FrappeTestCase):
         source = page_path.read_text(encoding="utf-8")
 
         self.assertIn("slow_ai.api.public_tools.get_shared_run", source)
+        self.assertNotIn("slow_ai.api.runs.get_run_timeline", source)
+        self.assertNotIn("Timeline", source)
         self.assertNotIn("slow_ai.api.runs.start_run", source)
         self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", source)
         self.assertNotIn("slow_ai.api.workflows.save_workflow", source)

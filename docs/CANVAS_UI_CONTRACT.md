@@ -72,6 +72,7 @@ slow_ai.api.workflows.save_workflow
 slow_ai.api.runs.start_run
 slow_ai.api.runs.get_run_status
 slow_ai.api.runs.get_history
+slow_ai.api.runs.get_run_timeline
 slow_ai.api.queue.get_queue_status
 slow_ai.api.assets.upload
 slow_ai.api.assets.view
@@ -157,7 +158,8 @@ JSON only; persistence happens only when the user saves through
 The run monitor renders persisted execution state only. It reads workflow and
 node status from `slow_ai.api.runs.get_run_status`, then reads provider jobs,
 assets, ledger entries, and detailed run history from
-`slow_ai.api.runs.get_history`.
+`slow_ai.api.runs.get_history`. The run timeline must be rendered from
+`slow_ai.api.runs.get_run_timeline`.
 
 Both run APIs return safe display payloads only. The canvas must not depend on
 raw provider request/response/error JSON, provider account names, raw provider
@@ -178,15 +180,14 @@ run timeline
 ```
 
 The timeline is derived from persisted run, node, provider job, and asset rows.
-It may show:
+The backend timeline payload is safe and may show:
 
 ```txt
-workflow queued
-node started
-provider submitted
-provider completed
-asset created
-run completed or failed
+event timestamp
+event title and message
+status
+node id and node type
+safe amount and currency
 ```
 
 The UI must only display sanitized error messages. It must not render raw

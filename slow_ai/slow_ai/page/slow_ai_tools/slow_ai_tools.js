@@ -718,7 +718,7 @@ class SlowAiToolsPage {
 			if (detail.run && this.isTerminal(detail.run.status)) {
 				this.stopPolling();
 			}
-			return this.loadOutputGallery(this.workflowRun);
+			return Promise.all([this.loadOutputGallery(this.workflowRun), this.loadRunTimeline(this.workflowRun)]);
 		});
 	}
 
@@ -889,7 +889,7 @@ class SlowAiToolsPage {
 			this.renderRunStatus(detail.run || {});
 			this.renderHistory(detail);
 			this.renderRunDetail(detail);
-			return this.loadOutputGallery(runId);
+			return Promise.all([this.loadOutputGallery(runId), this.loadRunTimeline(runId)]);
 		});
 	}
 
@@ -925,7 +925,61 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetCount)}</strong></div>
 			<div class="slow-ai-tools__inline-actions">${cancelAction}${archiveAction}${rerunAction}${shareActions}</div>
 			${this.renderSafeErrors(detail)}
+			<section class="slow-ai-tools__timeline" data-role="run-timeline-detail" data-run-id="${this.escape(run.workflow_run || "")}">
+				<h4>${__("Timeline")}</h4>
+				<div class="slow-ai-tools__empty">${__("Loading timeline")}</div>
+			</section>
 		</div>`);
+	}
+
+	loadRunTimeline(runId) {
+		if (!runId) {
+			return Promise.resolve();
+		}
+		const $target = this.$runDetail.find(`[data-role="run-timeline-detail"][data-run-id="${this.escapeSelector(runId)}"]`);
+		if (!$target.length) {
+			return Promise.resolve();
+		}
+		$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("Loading timeline")}</div>`);
+		return frappe.call("slow_ai.api.runs.get_run_timeline", { workflow_run: runId }).then((response) => {
+			this.renderRunTimeline(response.message, $target);
+		});
+	}
+
+	renderRunTimeline(timeline, $target) {
+		const events = (timeline && timeline.events) || [];
+		if (!events.length) {
+			$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("No timeline events")}</div>`);
+			return;
+		}
+		const rows = events
+			.map((event) => {
+				const details = this.timelineEventDetails(event);
+				return `<div class="slow-ai-tools__timeline-row" data-timeline-event="${this.escape(event.event_type || "")}">
+					<div class="slow-ai-tools__timeline-main">
+						<strong>${this.escape(event.title || event.event_type || __("Timeline event"))}</strong>
+						<span>${this.escape(event.timestamp || "")}</span>
+					</div>
+					<div class="slow-ai-tools__muted">${this.escape(event.message || "")}</div>
+					${details ? `<div class="slow-ai-tools__muted">${this.escape(details)}</div>` : ""}
+				</div>`;
+			})
+			.join("");
+		$target.html(`<h4>${__("Timeline")}</h4>${rows}`);
+	}
+
+	timelineEventDetails(event) {
+		const details = [];
+		if (event.status) {
+			details.push(event.status);
+		}
+		if (event.node_id || event.node_type) {
+			details.push([event.node_id, event.node_type].filter(Boolean).join(" / "));
+		}
+		if (event.amount_usd) {
+			details.push(this.money(event.amount_usd, event.currency));
+		}
+		return details.join(" · ");
 	}
 
 	cancelRun(runId) {

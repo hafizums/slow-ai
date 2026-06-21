@@ -781,6 +781,17 @@ class SlowAiCanvasPlaceholder {
 		}
 		return frappe.call("slow_ai.api.runs.get_history", { workflow_run: this.workflowRun }).then((response) => {
 			this.renderHistory(response.message);
+			return this.refreshTimeline();
+		});
+	}
+
+	refreshTimeline() {
+		if (!this.workflowRun || !this.$runTimeline) {
+			return Promise.resolve();
+		}
+		this.$runTimeline.html(`<div class="slow-ai-canvas__empty">${__("Loading timeline")}</div>`);
+		return frappe.call("slow_ai.api.runs.get_run_timeline", { workflow_run: this.workflowRun }).then((response) => {
+			this.renderRunTimeline(response.message);
 		});
 	}
 
@@ -2389,7 +2400,6 @@ class SlowAiCanvasPlaceholder {
 		this.renderProviderJobs(jobs);
 		this.renderLedgerSummary(ledger);
 		this.renderRunErrors(run, nodeRuns, jobs);
-		this.renderRunTimeline(run, nodeRuns, jobs, assets);
 		this.renderAssetOutputs(assets);
 	}
 
@@ -2496,35 +2506,11 @@ class SlowAiCanvasPlaceholder {
 		);
 	}
 
-	renderRunTimeline(run, nodeRuns, jobs, assets) {
+	renderRunTimeline(timeline) {
 		if (!this.$runTimeline) {
 			return;
 		}
-		const events = [];
-		if (run && run.queued_at) {
-			events.push({ label: __("Workflow queued"), at: run.queued_at, detail: run.workflow_run });
-		} else if (run && run.workflow_run) {
-			events.push({ label: __("Workflow queued"), at: "", detail: run.workflow_run });
-		}
-		nodeRuns.forEach((nodeRun) => {
-			if (nodeRun.started_at) {
-				events.push({ label: __("Node started"), at: nodeRun.started_at, detail: `${nodeRun.node_id} · ${nodeRun.status}` });
-			}
-		});
-		jobs.forEach((job) => {
-			if (job.submitted_at || ["SUBMITTED", "WAITING_PROVIDER", "SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"].includes(job.status)) {
-				events.push({ label: __("Provider submitted"), at: job.submitted_at, detail: `${job.name} · ${job.status}` });
-			}
-			if (job.completed_at || ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"].includes(job.status)) {
-				events.push({ label: __("Provider completed"), at: job.completed_at, detail: `${job.name} · ${job.status}` });
-			}
-		});
-		assets.forEach((asset) => {
-			events.push({ label: __("Asset created"), at: "", detail: `${asset.asset_type} · ${asset.name}` });
-		});
-		if (run && (run.completed_at || this.isTerminalStatus(run.status))) {
-			events.push({ label: run.status === "SUCCEEDED" ? __("Run completed") : __("Run failed"), at: run.completed_at, detail: run.status });
-		}
+		const events = (timeline && timeline.events) || [];
 		if (!events.length) {
 			this.$runTimeline.html(`<div class="slow-ai-canvas__empty">${__("No timeline events")}</div>`);
 			return;
@@ -2532,17 +2518,33 @@ class SlowAiCanvasPlaceholder {
 		this.$runTimeline.html(
 			events
 				.map((event) => {
+					const details = this.timelineEventDetails(event);
 					return `<div class="slow-ai-canvas__timeline-row">
 						<div class="slow-ai-canvas__timeline-dot"></div>
 						<div>
-							<div class="slow-ai-canvas__monitor-row-title">${this.escape(event.label)}</div>
-							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(this.formatTime(event.at))}</div>
-							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(event.detail || "")}</div>
+							<div class="slow-ai-canvas__monitor-row-title">${this.escape(event.title || event.event_type || __("Timeline event"))}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(this.formatTime(event.timestamp))}</div>
+							<div class="slow-ai-canvas__monitor-row-meta">${this.escape(event.message || "")}</div>
+							${details ? `<div class="slow-ai-canvas__monitor-row-meta">${this.escape(details)}</div>` : ""}
 						</div>
 					</div>`;
 				})
 				.join("")
 		);
+	}
+
+	timelineEventDetails(event) {
+		const details = [];
+		if (event.status) {
+			details.push(event.status);
+		}
+		if (event.node_id || event.node_type) {
+			details.push([event.node_id, event.node_type].filter(Boolean).join(" / "));
+		}
+		if (event.amount_usd) {
+			details.push(this.money(event.amount_usd, event.currency));
+		}
+		return details.join(" · ");
 	}
 
 	renderAssetOutputs(assets) {

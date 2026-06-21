@@ -118,3 +118,12 @@ events from `slow_ai.api.runs.get_run_timeline`. They may display only safe
 event fields: timestamp, title, message, status, node id/type, and safe
 amount/currency. Guest shared-output pages must not call the timeline API or
 render internal timeline events.
+
+Authenticated timeline clients must render explicit loading, empty, success,
+and failure states. Timeline fetch failures must show only a generic safe UI
+message such as `Timeline unavailable`; clients must not display raw server
+exceptions, provider errors, response JSON, provider URLs, API keys,
+Authorization headers, provider account names, or workflow draft internals.
+Timeline rows must be backed only by this API and not reconstructed from
+history payloads. Authenticated clients should ignore stale timeline responses
+when the selected/open run changes before the request completes.

@@ -176,6 +176,15 @@ If a public-tool run timeline is shown, it must come from
 `slow_ai.api.runs.get_run_timeline` and may render only the safe event fields
 documented in `RUN_ACTIVITY_TIMELINE_CONTRACT.md`. The guest shared-output page
 must not show the internal run timeline in the first timeline milestone.
+Authenticated timeline UI states must explicitly cover loading, empty,
+successful, and failed timeline fetches. A failed timeline fetch must render
+only a generic safe message such as `Timeline unavailable`; it must not render
+raw exception text, server response JSON, stack traces, provider account names,
+provider secrets, raw provider URLs, `request_json`, `response_json`,
+`raw_error_json`, API keys, Authorization headers, or workflow draft internals.
+The public Tool page must not derive timeline rows from history/gallery
+payloads. If a user switches run detail while a timeline request is in flight,
+stale timeline responses must not overwrite the currently selected run detail.
 
 The gallery supports grouped output sections, asset preview cards, Open Asset,
 Copy URL, Select for Share, Select All, Clear Selection, and lightweight

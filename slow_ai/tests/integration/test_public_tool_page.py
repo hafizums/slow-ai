@@ -62,6 +62,24 @@ FORBIDDEN_PUBLIC_TOOL_FRAGMENTS = (
     "local model",
 )
 
+UNSAFE_TIMELINE_ERROR_FRAGMENTS = (
+    "provider_account",
+    "api_key_secret",
+    "api_key",
+    "Authorization",
+    "request_json",
+    "response_json",
+    "raw_error_json",
+    "raw provider",
+    "api.wavespeed.ai",
+    "api.replicate.com",
+    "frappe.response",
+    "exc",
+    "exception",
+    "traceback",
+    "stack",
+)
+
 
 def unique(prefix: str) -> str:
     return f"{prefix} {uuid4().hex[:8]}"
@@ -410,6 +428,8 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
         self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
         self.assertIn("Timeline", page.script)
+        self.assertIn("renderRunTimelineUnavailable", page.script)
+        self.assertIn("Timeline unavailable", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
         self.assertNotIn("slow_ai.api.workflows.save_workflow", page.script)
         self.assertIn("slow_ai.api.runs.start_run", page.script)
@@ -424,6 +444,20 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertTrue(methods.issubset(ALLOWED_PUBLIC_TOOL_METHODS))
         for fragment in FORBIDDEN_PUBLIC_TOOL_FRAGMENTS:
             self.assertNotIn(fragment, page.script)
+
+        timeline_loader = page.script.split("loadRunTimeline(runId) {", 1)[1].split(
+            "renderRunTimeline(timeline, $target)", 1
+        )[0]
+        self.assertIn("frappe", timeline_loader)
+        self.assertIn("slow_ai.api.runs.get_run_timeline", timeline_loader)
+        self.assertIn("this.workflowRun !== workflowRun", timeline_loader)
+        self.assertIn(".catch(() =>", timeline_loader)
+        failure_body = page.script.split("renderRunTimelineUnavailable($target) {", 1)[1].split(
+            "timelineEventDetails(event)", 1
+        )[0]
+        self.assertIn("Timeline unavailable", failure_body)
+        for fragment in UNSAFE_TIMELINE_ERROR_FRAGMENTS:
+            self.assertNotIn(fragment, failure_body)
 
     def test_public_tool_apis_list_only_published_templates_and_reject_unpublished(self):
         published = save_template(unique("Published Tool"), "PUBLISHED", text_tool_nodes(), text_tool_edges())

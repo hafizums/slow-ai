@@ -57,6 +57,24 @@ FORBIDDEN_CANVAS_FRAGMENTS = (
     "local model",
 )
 
+UNSAFE_TIMELINE_ERROR_FRAGMENTS = (
+    "provider_account",
+    "api_key_secret",
+    "api_key",
+    "Authorization",
+    "request_json",
+    "response_json",
+    "raw_error_json",
+    "raw provider",
+    "api.wavespeed.ai",
+    "api.replicate.com",
+    "frappe.response",
+    "exc",
+    "exception",
+    "traceback",
+    "stack",
+)
+
 
 def unique(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:10]}"
@@ -277,6 +295,8 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("renderRunErrors", page.script)
         self.assertIn("renderRunTimeline", page.script)
         self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
+        self.assertIn("renderRunTimelineUnavailable", page.script)
+        self.assertIn("Timeline unavailable", page.script)
         self.assertIn("safeErrorMessage", page.script)
         self.assertIn("sanitizeErrorText", page.script)
         self.assertIn("slow_ai_workflow_run_update", page.script)
@@ -293,6 +313,18 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("slow-ai-canvas__ledger-summary", page.style)
         self.assertIn("slow-ai-canvas__run-errors", page.style)
         self.assertIn("slow-ai-canvas__run-timeline", page.style)
+
+        timeline_loader = page.script.split("refreshTimeline() {", 1)[1].split("refreshQueue()", 1)[0]
+        self.assertIn("frappe", timeline_loader)
+        self.assertIn("slow_ai.api.runs.get_run_timeline", timeline_loader)
+        self.assertIn("this.workflowRun !== workflowRun", timeline_loader)
+        self.assertIn(".catch(() =>", timeline_loader)
+        failure_body = page.script.split("renderRunTimelineUnavailable() {", 1)[1].split(
+            "timelineEventDetails(event)", 1
+        )[0]
+        self.assertIn("Timeline unavailable", failure_body)
+        for fragment in UNSAFE_TIMELINE_ERROR_FRAGMENTS:
+            self.assertNotIn(fragment, failure_body)
         self.assertIn("slow-ai-canvas__safe-error", page.style)
         self.assertIn("Refresh Run", page.script)
         self.assertIn("renderAssetCard", page.script)
@@ -897,9 +929,10 @@ class TestCanvasPlaceholder(FrappeTestCase):
         page.load_assets()
         self.assertIn('frappe.call("slow_ai.api.runs.get_run_status"', page.script)
         self.assertIn('frappe.call("slow_ai.api.runs.get_history"', page.script)
-        self.assertIn('frappe.call("slow_ai.api.runs.get_run_timeline"', page.script)
+        self.assertIn("slow_ai.api.runs.get_run_timeline", page.script)
         self.assertIn('frappe.call("slow_ai.api.assets.view"', page.script)
         self.assertIn("renderRunTimeline", page.script)
+        self.assertIn("renderRunTimelineUnavailable", page.script)
         self.assertIn("timelineEventDetails", page.script)
         self.assertIn("event.title", page.script)
         self.assertIn("event.message", page.script)

@@ -936,14 +936,26 @@ class SlowAiToolsPage {
 		if (!runId) {
 			return Promise.resolve();
 		}
+		const workflowRun = runId;
 		const $target = this.$runDetail.find(`[data-role="run-timeline-detail"][data-run-id="${this.escapeSelector(runId)}"]`);
 		if (!$target.length) {
 			return Promise.resolve();
 		}
 		$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("Loading timeline")}</div>`);
-		return frappe.call("slow_ai.api.runs.get_run_timeline", { workflow_run: runId }).then((response) => {
-			this.renderRunTimeline(response.message, $target);
-		});
+		return frappe
+			.call("slow_ai.api.runs.get_run_timeline", { workflow_run: workflowRun })
+			.then((response) => {
+				if (this.workflowRun !== workflowRun) {
+					return;
+				}
+				this.renderRunTimeline(response.message, $target);
+			})
+			.catch(() => {
+				if (this.workflowRun !== workflowRun) {
+					return;
+				}
+				this.renderRunTimelineUnavailable($target);
+			});
 	}
 
 	renderRunTimeline(timeline, $target) {
@@ -958,7 +970,7 @@ class SlowAiToolsPage {
 				return `<div class="slow-ai-tools__timeline-row" data-timeline-event="${this.escape(event.event_type || "")}">
 					<div class="slow-ai-tools__timeline-main">
 						<strong>${this.escape(event.title || event.event_type || __("Timeline event"))}</strong>
-						<span>${this.escape(event.timestamp || "")}</span>
+						<span>${this.escape(this.formatTime(event.timestamp))}</span>
 					</div>
 					<div class="slow-ai-tools__muted">${this.escape(event.message || "")}</div>
 					${details ? `<div class="slow-ai-tools__muted">${this.escape(details)}</div>` : ""}
@@ -966,6 +978,13 @@ class SlowAiToolsPage {
 			})
 			.join("");
 		$target.html(`<h4>${__("Timeline")}</h4>${rows}`);
+	}
+
+	renderRunTimelineUnavailable($target) {
+		if (!$target || !$target.length) {
+			return;
+		}
+		$target.html(`<h4>${__("Timeline")}</h4><div class="slow-ai-tools__empty">${__("Timeline unavailable")}</div>`);
 	}
 
 	timelineEventDetails(event) {
@@ -1275,6 +1294,13 @@ class SlowAiToolsPage {
 	money(value, currency) {
 		const amount = value === undefined || value === null || value === "" ? "0.0000" : Number(value).toFixed(4);
 		return `${currency || "USD"} ${amount}`;
+	}
+
+	formatTime(value) {
+		if (!value) {
+			return "-";
+		}
+		return String(value);
 	}
 
 	safeErrorMessage(error) {

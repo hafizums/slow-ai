@@ -789,10 +789,22 @@ class SlowAiCanvasPlaceholder {
 		if (!this.workflowRun || !this.$runTimeline) {
 			return Promise.resolve();
 		}
+		const workflowRun = this.workflowRun;
 		this.$runTimeline.html(`<div class="slow-ai-canvas__empty">${__("Loading timeline")}</div>`);
-		return frappe.call("slow_ai.api.runs.get_run_timeline", { workflow_run: this.workflowRun }).then((response) => {
-			this.renderRunTimeline(response.message);
-		});
+		return frappe
+			.call("slow_ai.api.runs.get_run_timeline", { workflow_run: workflowRun })
+			.then((response) => {
+				if (this.workflowRun !== workflowRun) {
+					return;
+				}
+				this.renderRunTimeline(response.message);
+			})
+			.catch(() => {
+				if (this.workflowRun !== workflowRun) {
+					return;
+				}
+				this.renderRunTimelineUnavailable();
+			});
 	}
 
 	refreshQueue() {
@@ -2531,6 +2543,13 @@ class SlowAiCanvasPlaceholder {
 				})
 				.join("")
 		);
+	}
+
+	renderRunTimelineUnavailable() {
+		if (!this.$runTimeline) {
+			return;
+		}
+		this.$runTimeline.html(`<div class="slow-ai-canvas__empty">${__("Timeline unavailable")}</div>`);
 	}
 
 	timelineEventDetails(event) {

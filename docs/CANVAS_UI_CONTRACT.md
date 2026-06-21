@@ -190,6 +190,24 @@ node id and node type
 safe amount and currency
 ```
 
+Timeline UI states must remain explicit:
+
+```txt
+Loading timeline
+No timeline events
+Timeline unavailable
+rendered safe event rows
+```
+
+If `slow_ai.api.runs.get_run_timeline` fails, the canvas must render only a
+generic safe message such as `Timeline unavailable`. It must not render raw
+exception text, server response JSON, stack traces, provider account names,
+provider secrets, raw provider URLs, `request_json`, `response_json`,
+`raw_error_json`, API keys, Authorization headers, or workflow draft internals.
+Timeline rows must not be derived from `slow_ai.api.runs.get_history`.
+When the selected run changes while a timeline request is in flight, stale
+responses must not overwrite the currently selected run's timeline panel.
+
 The UI must only display sanitized error messages. It must not render raw
 provider responses, raw provider error JSON, provider account secrets, provider
 adapter internals, engine calls, worker calls, DB calls, or provider URLs.

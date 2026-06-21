@@ -564,7 +564,8 @@ library through scoped public tool run APIs, opens a run detail, and renders
 grouped output gallery cards from safe backend gallery data, including image,
 video, and audio preview branches when fixture assets exist.
 It also verifies the Project Members panel uses safe project membership APIs,
-an owner can add EDITOR and VIEWER members, an EDITOR can use the same project
+an owner can add and update members, non-managers see a safe unavailable state
+with membership write controls hidden, an EDITOR can use the same project
 through the backend Tool Mode path, and a VIEWER can read project runs but
 cannot create a workflow draft or start a run.
 It also archives a completed run from My Runs detail and verifies the default
@@ -608,6 +609,7 @@ Project membership coverage lives in:
 
 ```txt
 slow_ai/tests/integration/test_project_membership.py
+slow_ai/tests/integration/test_project_membership_invite_audit.py
 ```
 
 It creates real users, projects, memberships, workflows, runs, assets, billing
@@ -617,6 +619,13 @@ EDITOR save/start access, BILLING billing/provider-account access, scoped run
 library access, share creation rules, safe provider account payloads, and
 insufficient-balance preflight rejection without workflow version/run/node or
 provider-job side effects.
+
+The invite/audit coverage verifies membership add/update/disable policy,
+non-manager rejection for EDITOR/VIEWER/BILLING/non-member/Guest, safe
+membership list payloads, disabled-member access loss, immediate access changes
+after role updates, Frappe `Version` audit tracking for `AI Project Member`,
+and no workflow/run/node/provider/asset/ledger/share side effects from
+membership actions beyond intended membership row changes.
 
 Run activity timeline coverage lives in:
 

@@ -595,6 +595,19 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	await reloadAfterViewerResponse;
 	expect(addedViewer.message.member.role).toBe("VIEWER");
 	await expect(page.locator("[data-role='project-members']")).toContainText(fixtures.public_tool_viewer_user);
+	const viewerRoleControl = page.locator(`[data-member-name="${addedViewer.message.member.name}"] select`).first();
+	const updateViewerToBillingResponse = page.waitForResponse(apiPredicate(API.updateProjectMemberRole));
+	const reloadAfterViewerBillingResponse = page.waitForResponse(apiPredicate(API.listProjectMembers));
+	await viewerRoleControl.selectOption("BILLING");
+	const viewerBilling = await apiJson(await updateViewerToBillingResponse);
+	await reloadAfterViewerBillingResponse;
+	expect(viewerBilling.message.member.role).toBe("BILLING");
+	const updateViewerBackResponse = page.waitForResponse(apiPredicate(API.updateProjectMemberRole));
+	const reloadAfterViewerBackResponse = page.waitForResponse(apiPredicate(API.listProjectMembers));
+	await viewerRoleControl.selectOption("VIEWER");
+	const viewerBack = await apiJson(await updateViewerBackResponse);
+	await reloadAfterViewerBackResponse;
+	expect(viewerBack.message.member.role).toBe("VIEWER");
 
 	const templateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await page
@@ -935,6 +948,12 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	await viewerPage.locator("[data-action='refresh-my-runs']").click();
 	const viewerRuns = await apiJson(await viewerRunsResponse);
 	expect(viewerRuns.message.runs.some((run) => run.workflow_run === fixtures.public_asset_workflow_run)).toBe(true);
+	const viewerMemberResponse = viewerPage.waitForResponse(apiAnyStatusPredicate(API.listProjectMembers));
+	await viewerPage.locator("[data-action='refresh-project-members']").click();
+	const viewerMemberResult = await viewerMemberResponse;
+	expect(viewerMemberResult.status()).toBeGreaterThanOrEqual(400);
+	await expect(viewerPage.locator("[data-role='project-members']")).toContainText("Project member management unavailable");
+	await expect(viewerPage.locator("[data-role='project-member-form']")).toBeHidden();
 	const viewerTemplateResponse = viewerPage.waitForResponse(apiPredicate(API.publicGetTemplate));
 	await viewerPage
 		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)

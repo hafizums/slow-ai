@@ -988,6 +988,12 @@ owner, creation, and modified timestamps. They must not expose provider
 accounts, provider secrets, provider URLs, raw provider payloads, workflow
 draft internals, or billing ledger internals.
 
+`AI Project Member` has Frappe change tracking enabled. Membership add/update/
+disable operations may create normal Frappe `Version` audit rows for the
+membership document, but they must not create workflow versions, workflow runs,
+node runs, provider jobs, assets, credit ledger rows, enqueue workers, or call
+providers.
+
 Role enforcement:
 
 ```txt

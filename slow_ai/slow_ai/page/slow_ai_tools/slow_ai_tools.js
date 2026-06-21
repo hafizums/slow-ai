@@ -47,8 +47,10 @@ class SlowAiToolsPage {
 		this.$runLibrary = this.$root.find("[data-role='run-library']");
 		this.$runDetail = this.$root.find("[data-role='run-detail']");
 		this.$members = this.$root.find("[data-role='project-members']");
+		this.$memberForm = this.$root.find("[data-role='project-member-form']");
 		this.$memberUser = this.$root.find("[data-role='member-user']");
 		this.$memberRole = this.$root.find("[data-role='member-role']");
+		this.$memberForm.hide();
 	}
 
 	bindEvents() {
@@ -422,17 +424,20 @@ class SlowAiToolsPage {
 	loadProjectMembers() {
 		const project = this.projectName();
 		if (!project) {
+			this.$memberForm.hide();
 			this.$members.html(`<div class="slow-ai-tools__empty">${__("Enter a project to manage members")}</div>`);
 			return Promise.resolve();
 		}
+		this.$memberForm.hide();
 		this.$members.html(`<div class="slow-ai-tools__empty">${__("Loading members")}</div>`);
-		return frappe
-			.call("slow_ai.api.projects.list_members", { project })
+		return this.safeProjectMembershipCall("slow_ai.api.projects.list_members", { project })
 			.then((response) => {
 				const members = (response.message && response.message.members) || [];
+				this.$memberForm.show();
 				this.renderProjectMembers(members);
 			})
 			.catch(() => {
+				this.$memberForm.hide();
 				this.$members.html(`<div class="slow-ai-tools__empty">${__("Project member management unavailable")}</div>`);
 			});
 	}
@@ -474,11 +479,14 @@ class SlowAiToolsPage {
 			frappe.msgprint(__("Enter a project and user before adding a member."));
 			return Promise.resolve();
 		}
-		return frappe
-			.call("slow_ai.api.projects.add_member", { project, user, role })
+		return this.safeProjectMembershipCall("slow_ai.api.projects.add_member", { project, user, role })
 			.then(() => {
 				this.$memberUser.val("");
 				this.setStatus(__("Project member saved"));
+				return this.loadProjectMembers();
+			})
+			.catch(() => {
+				this.setStatus(__("Project member action failed"));
 				return this.loadProjectMembers();
 			});
 	}
@@ -487,10 +495,13 @@ class SlowAiToolsPage {
 		if (!member || !role) {
 			return Promise.resolve();
 		}
-		return frappe
-			.call("slow_ai.api.projects.update_member_role", { member, role })
+		return this.safeProjectMembershipCall("slow_ai.api.projects.update_member_role", { member, role })
 			.then(() => {
 				this.setStatus(__("Project member role updated"));
+				return this.loadProjectMembers();
+			})
+			.catch(() => {
+				this.setStatus(__("Project member action failed"));
 				return this.loadProjectMembers();
 			});
 	}
@@ -499,12 +510,33 @@ class SlowAiToolsPage {
 		if (!member) {
 			return Promise.resolve();
 		}
-		return frappe
-			.call("slow_ai.api.projects.disable_member", { member })
+		return this.safeProjectMembershipCall("slow_ai.api.projects.disable_member", { member })
 			.then(() => {
 				this.setStatus(__("Project member disabled"));
 				return this.loadProjectMembers();
+			})
+			.catch(() => {
+				this.setStatus(__("Project member action failed"));
+				return this.loadProjectMembers();
 			});
+	}
+
+	safeProjectMembershipCall(method, args) {
+		return new Promise((resolve, reject) => {
+			$.ajax({
+				url: `/api/method/${method}`,
+				type: "POST",
+				data: args || {},
+				dataType: "json",
+				headers: {
+					"X-Frappe-CSRF-Token": frappe.csrf_token,
+					Accept: "application/json",
+					"X-Frappe-CMD": method,
+				},
+			})
+				.done((response) => resolve(response))
+				.fail(() => reject(new Error("Project member action failed")));
+		});
 	}
 
 	runTool() {

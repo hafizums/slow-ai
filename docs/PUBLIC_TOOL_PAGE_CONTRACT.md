@@ -109,6 +109,13 @@ BILLING: view/manage billing and provider account settings only
 System Manager: cross-project administration
 ```
 
+The Project Members panel may call only the safe project membership APIs listed
+above. Membership write controls must be shown only after the backend
+`list_members` call succeeds for the selected project. Users without membership
+management access must see a generic safe unavailable state; failed member
+add/update/disable attempts must render generic safe status text and must not
+display raw server/provider payloads.
+
 ## Run Rules
 
 The page must:

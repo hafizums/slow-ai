@@ -16,6 +16,10 @@ System Manager: cross-project administration
 
 Only ACTIVE memberships grant access. DISABLED memberships are ignored.
 
+`AI Project Member` uses Frappe change tracking. Role and status changes should
+leave normal Frappe `Version` audit history for the membership row; no custom
+audit DocType is required in the current design.
+
 ## Central Policy
 
 Project access decisions live in:
@@ -55,6 +59,18 @@ names through public/share payloads, provider secrets, provider URLs, raw
 provider request/response/error JSON, workflow draft internals, or billing
 ledger internals.
 
+Membership API responses may include only safe membership metadata:
+
+```txt
+project
+user
+role
+status
+owner
+created
+modified
+```
+
 ## Service Enforcement
 
 ```txt
@@ -81,3 +97,9 @@ Failed access checks must happen before enqueueing workers or creating
 Membership CRUD must not call providers, create provider jobs, enqueue workers,
 execute workflows, expose provider secrets, expose raw provider payloads, or
 create anonymous paid-run paths. DocType controllers remain persistence-only.
+
+The Public Tool Project Members UI must treat the backend policy as
+authoritative. It may show membership write controls only after
+`slow_ai.api.projects.list_members` succeeds for the selected project. If the
+current user cannot manage members, the UI must show generic safe unavailable
+text and must not display raw server/provider payloads.

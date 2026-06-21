@@ -430,6 +430,10 @@ class TestCanvasPlaceholder(FrappeTestCase):
         self.assertIn("slow-ai-canvas__model-warning", page.style)
         for method in ALLOWED_CANVAS_METHODS:
             self.assertIn(method, page.script)
+        self.assertNotIn("slow_ai.api.projects.list_members", page.script)
+        self.assertNotIn("slow_ai.api.projects.add_member", page.script)
+        self.assertNotIn("slow_ai.api.projects.update_member_role", page.script)
+        self.assertNotIn("slow_ai.api.projects.disable_member", page.script)
         for fragment in FORBIDDEN_CANVAS_FRAGMENTS:
             self.assertNotIn(fragment, page.script)
 

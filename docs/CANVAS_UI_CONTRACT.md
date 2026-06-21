@@ -98,6 +98,12 @@ slow_ai.api.templates.list_template_versions
 slow_ai.api.templates.rollback_template_to_version
 ```
 
+The Canvas page does not implement project membership management in the current
+contract. It must not call `slow_ai.api.projects.list_members`,
+`slow_ai.api.projects.add_member`, `slow_ai.api.projects.update_member_role`, or
+`slow_ai.api.projects.disable_member` unless this contract and the architecture
+boundary tests are updated.
+
 Realtime subscriptions:
 
 ```txt

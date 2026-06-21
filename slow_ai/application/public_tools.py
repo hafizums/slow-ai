@@ -605,6 +605,12 @@ def _can_archive_run(row) -> bool:
 
 def _public_output_gallery(gallery: dict[str, Any]) -> dict[str, Any]:
     run = gallery.get("run") or {}
+    public_assets = [_public_gallery_asset(asset) for asset in gallery.get("assets", [])]
+    public_groups = []
+    for group in gallery.get("groups", []):
+        public_group = dict(group)
+        public_group["assets"] = [_public_gallery_asset(asset) for asset in group.get("assets", [])]
+        public_groups.append(public_group)
     return {
         **gallery,
         "run": {
@@ -618,7 +624,17 @@ def _public_output_gallery(gallery: dict[str, Any]) -> dict[str, Any]:
             "modified": run.get("modified"),
             "template_lineage": run.get("template_lineage"),
         },
+        "groups": public_groups,
+        "assets": public_assets,
     }
+
+
+def _public_gallery_asset(asset: dict[str, Any]) -> dict[str, Any]:
+    safe = _safe_shared_asset(asset)
+    safe["source_output"] = asset.get("source_output")
+    safe["selected"] = 1 if asset.get("selected") else 0
+    safe["shareable"] = 1 if asset.get("shareable") else 0
+    return safe
 
 
 def _provider_summary_for_run(workflow_run: str | None) -> dict[str, Any]:

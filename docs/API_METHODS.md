@@ -176,13 +176,16 @@ Returns: safe display history for run, node runs, provider jobs, assets, and led
 ```
 
 `get_history` enforces project view access and returns display summaries only.
-It must not return `provider_account`, `request_json`, `response_json`,
-`raw_error_json`, `external_job_id`, raw provider URLs, provider secrets, API
-keys, Authorization headers, workflow draft internals, raw node input JSON, raw
-node output JSON, asset URLs/files, or arbitrary asset metadata. Node output is
-reduced to a safe summary, provider errors are reduced to safe message/code
-fields, and asset preview URLs/files must be loaded through
-`slow_ai.api.assets.view`.
+Provider job summaries may include safe observability fields such as provider,
+model, status, node run, submitted/completed timestamps, last poll timestamp,
+poll attempt count, estimated/final display cost, and sanitized message/code
+fields. They must not return `provider_account`, `request_json`,
+`response_json`, `raw_error_json`, `external_job_id`, raw provider URLs,
+provider secrets, API keys, Authorization headers, workflow draft internals,
+raw node input JSON, raw node output JSON, asset URLs/files, or arbitrary asset
+metadata. Node output is reduced to a safe summary, provider errors are reduced
+to safe message/code fields, and asset preview URLs/files must be loaded
+through `slow_ai.api.assets.view`.
 
 ### slow_ai.api.runs.get_run_timeline
 
@@ -268,6 +271,9 @@ Returns: queued and running workflow run summaries
 ```
 
 The queue status API uses persisted workflow run state as the source of truth.
+It is a read-only queue observation surface. It must not enqueue workers,
+execute workflows, submit or poll provider jobs, create provider jobs, mutate
+run status, or call providers.
 
 ### slow_ai.api.assets.upload
 
@@ -910,7 +916,10 @@ request/response/error JSON, workflow draft internals, or unsafe errors. It
 must not start runs, enqueue workers, create provider jobs, create assets,
 create ledger rows, or call providers. It returns only assets persisted in
 `AI Tool Run Share.selected_assets_json` and must not recompute all run assets
-for guest display.
+for guest display. Guest shared output gallery payloads must also strip internal
+provider-job identifiers such as `source_provider_job`; authenticated run
+gallery and asset views may continue to expose safe source metadata to users
+with project view access.
 
 ## Layer rule
 

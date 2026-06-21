@@ -246,6 +246,12 @@ secrets, raw provider request/response/error JSON, raw provider output URLs, or
 unsafe error payloads. Node output details in run detail payloads must be
 reduced to safe summaries by the backend shared safe-payload utility and must
 not return raw node output JSON.
+Provider job observability in My Runs detail is limited to safe summaries from
+backend run detail/history/timeline services: provider, model, status, related
+node run, safe timestamps, safe poll-attempt/cost fields, and sanitized
+message/code fields. It must not expose provider account names, external job
+ids, raw provider payloads, raw provider URLs, Authorization headers, API keys,
+or secrets.
 
 Listing or viewing runs must not create provider jobs, enqueue work, call
 providers, mutate workflow state, or create assets/ledger rows.
@@ -434,6 +440,8 @@ provider secrets, expose raw provider payloads, or expose workflow draft
 internals. It must not expose project metadata through either the top-level
 shared run payload or nested `output_gallery.run`. Output previews must come
 only from backend-safe asset view data for the selected assets stored on the
-share record. Reading a shared run must not create, delete, enqueue, or mutate
-workflow versions, workflow runs, node runs, provider jobs, assets, ledger rows,
-or share records.
+share record. Guest shared output payloads must not expose provider job
+observability fields or internal source identifiers such as
+`source_provider_job`. Reading a shared run must not create, delete, enqueue, or
+mutate workflow versions, workflow runs, node runs, provider jobs, assets,
+ledger rows, or share records.

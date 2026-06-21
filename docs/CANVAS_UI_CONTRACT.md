@@ -181,6 +181,11 @@ raw provider request/response/error JSON, provider account names, raw provider
 URLs, raw node input/output JSON, asset URLs/files from history, or arbitrary
 asset metadata. Asset preview links must continue to come from
 `slow_ai.api.assets.view`.
+Provider job rows shown in the monitor are safe observability summaries only:
+provider, model, status, related node run, timestamps, poll-attempt metadata,
+safe cost fields, and sanitized message/code fields. The Canvas must not render
+or request provider account names, external provider job ids, raw provider
+request/response/error JSON, provider URLs, or secrets.
 
 The monitor sections are:
 
@@ -263,6 +268,9 @@ unless the backend project policy changes.
 Opening or refreshing Canvas run detail, history, timeline, and asset views must
 not create, delete, enqueue, or mutate workflow versions, workflow runs, node
 runs, provider jobs, assets, ledger rows, or share records.
+The Canvas must not call worker entrypoints, `frappe.enqueue`, `frappe.db`, or
+provider adapter modules; worker execution and provider polling remain backend
+worker-only boundaries.
 
 The template library panel renders persisted `AI Workflow Template` summaries
 from `slow_ai.api.templates.list_templates`. The panel may load a template

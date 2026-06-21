@@ -76,6 +76,7 @@ The timeline must not expose:
 ```txt
 provider account names
 provider secrets
+external provider job ids
 API keys
 raw request_json
 raw response_json
@@ -84,6 +85,12 @@ raw provider URLs
 workflow draft internals
 provider adapter internals
 ```
+
+Provider job events are safe observability only. They may identify the local
+`AI Provider Job` row as a related record and show safe provider/model/status,
+node id/type, timestamps, and sanitized messages. They must not include provider
+account names, external job identifiers, raw request/response/error payloads,
+or provider URLs.
 
 Failure, timeout, and cancellation events must use safe generic messages. Raw
 provider error bodies remain server-side only. Safe text redaction and

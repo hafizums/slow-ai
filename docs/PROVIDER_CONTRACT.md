@@ -106,6 +106,22 @@ when available. `ProviderOutputService` creates one debit using actual cost when
 non-zero, otherwise `AI Provider Job.estimated_cost_usd`. Failed, cancelled,
 expired, and known zero-cost jobs do not create debits.
 
+## Safe observability
+
+Provider job records may persist raw request, response, external job ids, raw
+errors, and provider account links server-side for audit and worker execution.
+Safe read APIs may expose only display summaries: local provider job name,
+provider, model, status, related node run, lifecycle timestamps, poll-attempt
+metadata, safe cost fields, and sanitized message/code fields. Public and
+Canvas clients must not receive provider account names, external provider job
+ids, request_json, response_json, raw_error_json, raw provider URLs,
+Authorization headers, API keys, or secrets.
+
+Guest shared-run payloads are stricter than authenticated project reads. They
+must not expose provider job observability or source identifiers such as
+`source_provider_job`; selected output assets are shown only through the safe
+shared asset view path.
+
 ## Timeout and retry policy
 
 Provider polling is bounded by persisted `AI Provider Job` policy fields.

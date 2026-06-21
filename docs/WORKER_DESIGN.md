@@ -81,6 +81,27 @@ It expects an existing `AI Workflow Run` created by the application layer.
 The worker does not create workflow drafts, call providers, or execute inside a
 normal HTTP request.
 
+## Queue and API boundary matrix
+
+Read APIs are observation surfaces only:
+
+```txt
+slow_ai.api.queue.get_queue_status
+slow_ai.api.runs.get_run_status
+slow_ai.api.runs.get_history
+slow_ai.api.runs.get_run_timeline
+slow_ai.api.public_tools.get_my_run
+slow_ai.api.public_tools.get_run_output_gallery
+slow_ai.api.public_tools.get_shared_run
+slow_ai.api.assets.view
+```
+
+Calling these APIs must not enqueue workers, execute workflow nodes, submit
+providers, poll providers, create provider jobs, mutate run or provider-job
+status, or create asset/ledger/share side effects. Worker execution remains
+inside the worker entrypoints below. Client assets must not import worker
+modules, provider adapters, `frappe.enqueue`, or direct `frappe.db` access.
+
 ## Task 08 implementation
 
 Worker entrypoints:
@@ -169,5 +190,8 @@ slow_ai.workers.poll_provider_job.poll_pending_provider_jobs
 The scheduled entrypoint runs on Frappe's `all` scheduler event. It does not
 submit provider jobs, create provider jobs, or execute downstream graph nodes
 inline. It only polls provider jobs that have already been submitted and have a
-persisted `external_job_id`. Provider output materialization and workflow resume
-remain inside the existing single-job poll worker path.
+persisted `external_job_id`. Jobs without an external id, terminal provider
+jobs, cancelled parent runs, and jobs already expired by timeout or max-attempt
+policy are skipped or finalized safely without provider calls. Provider output
+materialization and workflow resume remain inside the existing single-job poll
+worker path.

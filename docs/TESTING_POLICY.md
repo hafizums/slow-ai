@@ -156,6 +156,36 @@ provider job through the worker entrypoint, verifies idempotent `AI Asset` and
 outputs. It uses a deterministic provider adapter inside the provider contract
 boundary and does not make external provider calls in the normal suite.
 
+Queue and worker boundary matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_queue_worker_boundary_matrix.py
+```
+
+This test uses real workflow, run, node run, provider job, provider account,
+model, and ledger records. It verifies read APIs and queue status do not execute
+workers, poll providers, create provider jobs, mutate provider attempts, or
+create execution side effects; provider job creation stays in the worker/engine
+path after `start_run`; terminal and cancelled runs remain no-ops for worker and
+poller entrypoints; `poll_pending_provider_jobs` processes only eligible
+external jobs; and API/frontend source boundaries do not import providers,
+workers, direct DB access, enqueue calls, or raw provider payload fields.
+
+Provider job safe observability coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_provider_job_safe_observability.py
+```
+
+This test creates real project users, memberships, workflow runs, node runs,
+provider jobs, assets, ledger rows, and shares. It verifies OWNER, EDITOR,
+VIEWER, BILLING, and System Manager users can see only safe provider job
+observability through run status/history/timeline, My Runs, gallery, and
+`assets.view`; non-members and Guest are denied from authenticated surfaces;
+guest shared runs expose selected assets only and omit provider job identifiers;
+and client assets do not expose provider adapters, direct DB/worker calls, raw
+provider payload fields, raw provider URLs, or secrets.
+
 Run idempotency and recovery coverage lives in:
 
 ```txt

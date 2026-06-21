@@ -45,7 +45,8 @@ slow_ai.api.public_tools.get_shared_run
 `get_shared_run` may internally reuse the gallery service, but it must return
 only assets explicitly selected on the share record. Shared responses must also
 strip project and workflow draft identifiers from the nested gallery `run`
-metadata.
+metadata and strip internal provider-job source identifiers from shared gallery
+assets.
 
 ## Payload Shape
 
@@ -88,6 +89,11 @@ assets[]:
   shareable
 selected_assets[]
 ```
+
+For authenticated gallery reads, `source_provider_job` is safe source metadata
+for project members. For guest shared reads, top-level assets, grouped assets,
+and any nested gallery assets must omit `source_provider_job` and must include
+only the selected assets stored on `AI Tool Run Share.selected_assets_json`.
 
 Asset preview URLs/files must come from the backend asset view application
 service. The browser must not reconstruct output assets from raw run history or

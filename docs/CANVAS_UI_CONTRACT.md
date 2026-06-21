@@ -236,6 +236,13 @@ source node run, source provider job, dimensions, duration, created timestamp,
 and modified timestamp when those values exist. The asset panel may provide
 Open Asset, Copy URL, and Refresh Asset controls, but those controls must use
 only the URL or file reference returned by `slow_ai.api.assets.view`.
+Canvas asset previews must treat `assets.view` as a safe display API only:
+sensitive asset metadata keys and raw provider URLs/secrets are removed or
+redacted by the backend before rendering.
+
+Opening or refreshing Canvas run detail, history, timeline, and asset views must
+not create, delete, enqueue, or mutate workflow versions, workflow runs, node
+runs, provider jobs, assets, ledger rows, or share records.
 
 The template library panel renders persisted `AI Workflow Template` summaries
 from `slow_ai.api.templates.list_templates`. The panel may load a template

@@ -107,6 +107,13 @@ provider request
 Existing archive, cancel, reservation, quota, idempotency, timeout, cleanup,
 and output-gallery behavior must remain unchanged.
 
+The same read-only side-effect guard applies to adjacent run detail reads used
+by authenticated Canvas/Public Tool pages and guest shared pages:
+`get_run_status`, `get_history`, `get_my_run`, `get_run_output_gallery`,
+`list_my_runs`, `get_shared_run`, and `assets.view` must not create, delete,
+enqueue, or mutate execution, billing, asset, or share records merely by being
+called.
+
 ## Public Tool Usage
 
 The Public Tool page may render a run timeline only through this safe backend

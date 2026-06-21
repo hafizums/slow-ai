@@ -644,6 +644,22 @@ headers, raw provider JSON, and unsafe error fields. It verifies
 payloads, preserve enough summary fields for Canvas/Public Tool rendering, and
 create no execution/provider/billing/share side effects.
 
+Authenticated and guest run detail read-only side-effect guard coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_detail_read_only_side_effect_guard.py
+```
+
+It uses real queued, succeeded-with-assets, failed-provider-like, archived, and
+guest-shared run records. It calls `get_run_status`, `get_history`,
+`get_run_timeline`, `get_my_run`, `get_run_output_gallery`, `list_my_runs`,
+`get_shared_run`, and `assets.view`, then compares before/after counts and
+mutation-sensitive fields for workflow versions, workflow runs, node runs,
+provider jobs, assets, credit ledger rows, and tool run shares. It also verifies
+payloads omit provider account names, secrets, raw provider URLs, raw
+request/response/error JSON, Authorization headers, stack traces, and workflow
+draft internals. The test uses real DocTypes and application/API calls only.
+
 Run timeline UI coverage is included in:
 
 ```txt

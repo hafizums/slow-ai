@@ -216,7 +216,8 @@ Run library payloads may include safe run ids, workflow titles, project names,
 statuses, timestamps, provider status counts, ledger cost totals, and asset
 names/source metadata. They must not include provider account names, provider
 secrets, raw provider request/response/error JSON, raw provider output URLs, or
-unsafe error payloads.
+unsafe error payloads. Node output details in run detail payloads must be
+reduced to safe summaries and must not return raw node output JSON.
 
 Listing or viewing runs must not create provider jobs, enqueue work, call
 providers, mutate workflow state, or create assets/ledger rows.
@@ -405,4 +406,6 @@ provider secrets, expose raw provider payloads, or expose workflow draft
 internals. It must not expose project metadata through either the top-level
 shared run payload or nested `output_gallery.run`. Output previews must come
 only from backend-safe asset view data for the selected assets stored on the
-share record.
+share record. Reading a shared run must not create, delete, enqueue, or mutate
+workflow versions, workflow runs, node runs, provider jobs, assets, ledger rows,
+or share records.

@@ -395,7 +395,7 @@ def _safe_top_level_keys(value: Any) -> list[str]:
 def _sanitize_text(value: Any) -> str:
     text = str(value or "")
     text = BEARER_PATTERN.sub("Bearer [redacted]", text)
-    text = KEY_VALUE_SECRET_PATTERN.sub(lambda match: f"{match.group(1)}: [redacted]", text)
+    text = KEY_VALUE_SECRET_PATTERN.sub("[redacted]", text)
     text = URL_PATTERN.sub("[link hidden]", text)
     return text[:240]
 

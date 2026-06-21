@@ -55,6 +55,11 @@ CANCELLABLE_WORKFLOW_STATUSES = frozenset(
 )
 CANCELLATION_ERROR = {"type": "RunCancelled", "message": "Run cancelled by user."}
 DEFAULT_TOOL_DRAFT_CLEANUP_AGE_HOURS = 24
+SENSITIVE_OUTPUT_KEY_PATTERN = re.compile(
+    r"(api[_-]?key|authorization|bearer|secret|token|password|provider_account|request_json|response_json|raw_error_json|raw|url)",
+    re.IGNORECASE,
+)
+URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
 
 
 def list_templates(category: str | None = None) -> dict[str, Any]:
@@ -682,7 +687,7 @@ def _node_run_summary(row) -> dict[str, Any]:
         "status": row.status,
         "provider_job": row.provider_job,
         "cost_usd": _decimal_string(row.cost_usd),
-        "output": output,
+        "output": _safe_node_output_summary(output),
         "asset_names": _asset_names_from_value(output),
         "error": _safe_error(row.error_json),
         "started_at": row.started_at,
@@ -854,7 +859,8 @@ def _safe_error(value: Any) -> str | None:
 def _sanitize_error(value: Any) -> str:
     message = str(value or "Run failed.")
     message = re.sub(r"Bearer\s+[A-Za-z0-9._:-]+", "Bearer [redacted]", message)
-    message = re.sub(r"(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*[^,\s}]+", r"\1=[redacted]", message)
+    message = re.sub(r"(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*[^,\s}]+", "[redacted]", message)
+    message = URL_PATTERN.sub("[link hidden]", message)
     return message[:240]
 
 
@@ -886,6 +892,21 @@ def _collect_asset_names(value: Any, names: set[str]) -> None:
     if isinstance(value, dict):
         for item in value.values():
             _collect_asset_names(item, names)
+
+
+def _safe_node_output_summary(value: Any) -> dict[str, Any]:
+    return {
+        "has_output": bool(value),
+        "asset_names": _asset_names_from_value(value),
+        "keys": _safe_top_level_output_keys(value),
+    }
+
+
+def _safe_top_level_output_keys(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    keys = [str(key) for key in value if not SENSITIVE_OUTPUT_KEY_PATTERN.search(str(key))]
+    return sorted(keys)[:10]
 
 
 def _as_limit(value: int | str) -> int:

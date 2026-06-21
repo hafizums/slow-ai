@@ -278,7 +278,9 @@ Returns: safe AI Asset metadata, created/modified timestamps, source links, dime
 
 The returned URL/file reference is the only asset preview source the canvas may
 render. The method must not return provider account secrets, provider adapter
-internals, raw provider responses, or raw provider errors.
+internals, raw provider responses, or raw provider errors. Asset metadata is
+returned only after sensitive metadata keys and unsafe provider URLs/secrets are
+redacted or removed; raw provider payload metadata remains server-side only.
 
 ### slow_ai.api.billing.create_top_up
 
@@ -724,6 +726,15 @@ Library. It may include the reusable `output_gallery` payload assembled by
 `slow_ai.application.run_outputs`; preview URLs and files inside that gallery
 come from the backend asset view service. Provider raw request/response/error
 JSON, provider account names, API keys, and provider URLs must not be returned.
+Node output details are reduced to a safe summary of asset names and non-sensitive
+top-level keys; raw node output JSON is not returned.
+
+All authenticated run detail reads are read-only. Calling `get_my_run`,
+`get_run_output_gallery`, `list_my_runs`, `get_run_status`, `get_history`,
+`get_run_timeline`, or `assets.view` must not create, delete, enqueue, or mutate
+workflow versions, workflow runs, node runs, provider jobs, assets, ledger rows,
+or share records. Guest `get_shared_run` has the same read-only side-effect
+contract for shared output views.
 
 ### slow_ai.api.public_tools.get_run_output_gallery
 

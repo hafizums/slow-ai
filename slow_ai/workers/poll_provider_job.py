@@ -9,6 +9,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
+from slow_ai.application.billing import release_provider_reservation
 from slow_ai.domain.status import (
     NODE_TERMINAL_STATUSES,
     PROVIDER_JOB_TERMINAL_STATUSES,
@@ -346,6 +347,12 @@ def _update_waiting_node_from_provider_result(provider_job, result, workflow_run
             error=result.error,
             provider_job_name=provider_job.name,
         )
+        release_provider_reservation(
+            workflow_run=workflow_run,
+            node_run=node_run.name,
+            provider_job=provider_job.name,
+            description="Released cancelled provider reservation",
+        )
         return
 
     if target_status in {ProviderJobStatus.FAILED, ProviderJobStatus.EXPIRED}:
@@ -354,6 +361,12 @@ def _update_waiting_node_from_provider_result(provider_job, result, workflow_run
             status=NodeRunStatus.FAILED,
             error=result.error or {"message": f"Provider job ended with status {result.status}."},
             provider_job_name=provider_job.name,
+        )
+        release_provider_reservation(
+            workflow_run=workflow_run,
+            node_run=node_run.name,
+            provider_job=provider_job.name,
+            description=f"Released {result.status.lower()} provider reservation",
         )
 
 

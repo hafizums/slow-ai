@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import frappe
 from frappe.utils import now_datetime
 
+from slow_ai.application.billing import link_reservation_to_provider_job
 from slow_ai.application.models import pricing_summary_from_json
 from slow_ai.domain.exceptions import ProviderInvariantError
 from slow_ai.domain.snapshots import canonical_json
@@ -54,6 +55,7 @@ class ProviderJobRepository:
                 "request_json": canonical_json(request.input_data),
             }
         ).insert(ignore_permissions=True)
+        link_reservation_to_provider_job(request.node_run_name, provider_job.name)
         return provider_job.name
 
     def _resolve_provider_account(

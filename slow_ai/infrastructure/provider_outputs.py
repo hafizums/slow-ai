@@ -9,6 +9,10 @@ from typing import Any, Mapping
 
 import frappe
 
+from slow_ai.application.billing import (
+    assert_provider_debit_within_reserved_or_available,
+    release_provider_reservation,
+)
 from slow_ai.application.models import pricing_summary_from_json
 from slow_ai.domain.exceptions import ProviderInvariantError
 from slow_ai.domain.snapshots import canonical_json
@@ -157,6 +161,12 @@ class CreditLedgerService:
         amount = _as_decimal_or_zero(amount_usd)
         if amount == 0:
             self._record_provider_debit_metadata(provider_job_name, amount, cost_source)
+            release_provider_reservation(
+                workflow_run=workflow_run_name,
+                node_run=node_run_name,
+                provider_job=provider_job_name,
+                description="Released zero-cost provider reservation",
+            )
             return None
         existing = frappe.db.get_value(
             "AI Credit Ledger",
@@ -168,7 +178,19 @@ class CreditLedgerService:
         )
         if existing:
             self._record_existing_provider_debit_metadata(provider_job_name, existing, cost_source)
+            release_provider_reservation(
+                workflow_run=workflow_run_name,
+                node_run=node_run_name,
+                provider_job=provider_job_name,
+                description="Released settled provider reservation",
+            )
             return existing
+
+        assert_provider_debit_within_reserved_or_available(
+            project=project_name,
+            provider_job=provider_job_name,
+            amount_usd=amount,
+        )
 
         ledger = frappe.get_doc(
             {
@@ -186,6 +208,12 @@ class CreditLedgerService:
             }
         ).insert(ignore_permissions=True)
         self._record_provider_debit_metadata(provider_job_name, amount, cost_source)
+        release_provider_reservation(
+            workflow_run=workflow_run_name,
+            node_run=node_run_name,
+            provider_job=provider_job_name,
+            description="Released settled provider reservation",
+        )
         return ledger.name
 
     def _record_existing_provider_debit_metadata(

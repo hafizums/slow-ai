@@ -8,6 +8,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import now_datetime
 
+from slow_ai.application.billing import create_run_reservations
 from slow_ai.application.contracts import (
     NodeRunRepository,
     WorkflowDraft,
@@ -77,9 +78,15 @@ class RunService:
         draft = self.draft_repository.get_draft(workflow_name)
         assert_can_run_project(draft.project)
         graph = validate_workflow(draft.as_workflow_json(), node_registry=self.node_registry)
-        self.run_preflight.assert_can_start(draft, graph)
+        preflight = self.run_preflight.assert_can_start(draft, graph)
         existing = self._find_recent_equivalent_active_run(draft, graph)
         if existing:
+            create_run_reservations(
+                project=draft.project,
+                workflow_run=existing.workflow_run,
+                provider_runs=preflight.provider_runs,
+                node_runs_by_node_id=_node_runs_by_node_id(existing.workflow_run),
+            )
             queue_job_id = None
             if existing.status == WorkflowRunStatus.QUEUED.value:
                 queue_job_id = self.workflow_queue.enqueue_workflow_run(existing.workflow_run)
@@ -92,6 +99,12 @@ class RunService:
         workflow_version = self.version_repository.create_immutable_version(draft, graph)
         workflow_run = self.run_repository.create_workflow_run(workflow_version)
         node_runs = self.node_run_repository.create_node_runs(workflow_run, graph)
+        create_run_reservations(
+            project=draft.project,
+            workflow_run=workflow_run,
+            provider_runs=preflight.provider_runs,
+            node_runs_by_node_id=_node_runs_by_node_id(workflow_run),
+        )
         queue_job_id = self.workflow_queue.enqueue_workflow_run(workflow_run)
         return StartRunResult(
             workflow_version=workflow_version,
@@ -163,3 +176,13 @@ class RunService:
 
 def start_run(workflow_name: str) -> StartRunResult:
     return RunService().start_run(workflow_name)
+
+
+def _node_runs_by_node_id(workflow_run: str) -> dict[str, str]:
+    rows = frappe.get_all(
+        "AI Node Run",
+        filters={"workflow_run": workflow_run},
+        fields=["name", "node_id"],
+        order_by="creation asc",
+    )
+    return {row.node_id: row.name for row in rows}

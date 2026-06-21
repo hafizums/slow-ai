@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import frappe
 from frappe.utils import now_datetime
 
+from slow_ai.application.billing import release_run_reservations
 from slow_ai.application.contracts import WorkflowDraft
 from slow_ai.domain.snapshots import canonical_json, snapshot_hash
 from slow_ai.domain.status import NodeRunStatus, WorkflowRunStatus
@@ -175,6 +176,13 @@ class FrappeEngineRepository:
         if error is not None:
             values["error_json"] = canonical_json(error)
         frappe.db.set_value("AI Workflow Run", workflow_run_name, values)
+        if status in {
+            WorkflowRunStatus.SUCCEEDED,
+            WorkflowRunStatus.FAILED,
+            WorkflowRunStatus.CANCELLED,
+            WorkflowRunStatus.EXPIRED,
+        }:
+            release_run_reservations(workflow_run_name, description=f"Released reservation for {status.value} run")
         publish_workflow_run_update(
             workflow_run_name,
             status.value,

@@ -178,8 +178,11 @@ from API methods.
 
 Append-only.
 
-`CREDIT` rows increase project balance, `DEBIT` rows decrease project balance,
-and `ADJUSTMENT` rows apply signed balance corrections. Balance calculation and
+`CREDIT` rows increase project balance, `RESERVE` rows hold estimated provider
+cost before enqueue, `RELEASE` rows offset reservation holds, `DEBIT` rows
+record final provider cost, and `ADJUSTMENT` rows apply signed balance
+corrections. `metadata_json` may store safe provider/model estimate context for
+reservation rows. Balance calculation, reservation, release, settlement, and
 top-up orchestration live in application services, not in the DocType
 controller.
 

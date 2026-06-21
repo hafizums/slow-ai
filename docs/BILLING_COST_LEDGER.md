@@ -14,6 +14,8 @@ The ledger is the source of truth for project credit balance.
 
 ```txt
 CREDIT
+RESERVE
+RELEASE
 DEBIT
 ADJUSTMENT
 ```
@@ -47,7 +49,7 @@ AI Provider Job.estimated_cost_usd when actual cost is unavailable
 Project balance is calculated from real `AI Credit Ledger` rows:
 
 ```txt
-balance_usd = CREDIT + ADJUSTMENT - DEBIT
+available_balance_usd = CREDIT + ADJUSTMENT + RELEASE - DEBIT - RESERVE
 ```
 
 `slow_ai.application.billing.get_balance` returns project totals. Passing a
@@ -63,9 +65,17 @@ slow_ai.application.run_preflight
   -> compare with slow_ai.application.billing project balance
 ```
 
-If the estimate exceeds balance, `start_run` rejects before creating workflow
-versions, workflow runs, node runs, provider jobs, assets, ledger rows, or queue
-jobs. Balance checks read persisted ledger data only and do not call providers.
+If the estimate exceeds available balance, `start_run` rejects before creating
+workflow versions, workflow runs, node runs, provider jobs, assets, ledger rows,
+or queue jobs. Balance checks read persisted ledger data only and do not call
+providers.
+
+After preflight passes and the immutable workflow/run/node rows exist,
+`start_run` creates one `RESERVE` row per priced provider node before enqueue.
+Reservation rows link to project, workflow run, node run, and model metadata.
+When the provider job is later created, the reservation is linked to the
+`AI Provider Job` as enrichment metadata. Duplicate `start_run` or worker
+retries must reuse existing reservation rows.
 
 When execution later creates an `AI Provider Job`, the same model-pricing parser
 persists `estimated_cost_usd` before submit. This gives the output
@@ -108,18 +118,30 @@ slow_ai/infrastructure/provider_outputs.py
 Rules:
 
 ```txt
+Create at most one RESERVE ledger row for each priced provider node run before enqueue.
 Create at most one DEBIT ledger row for a successful provider job.
+Create at most one RELEASE ledger row for each reservation when the job/run settles.
 Link provider debits to AI Project, AI Workflow Run, AI Node Run, and AI Provider Job.
 Use the normalized provider result cost_usd as the actual provider cost when it is non-zero.
 If actual cost is zero or unavailable, use AI Provider Job.estimated_cost_usd.
 If both actual and estimated cost are zero for a known zero-cost model, create no DEBIT.
 If cost is unknown at materialization time, refuse to materialize the output instead of silently creating an unpaid asset.
+If actual cost exceeds the reservation, allow only the extra amount that fits current available balance.
 Keep billing provider-agnostic; ledger rows link to `AI Provider Job` and use
 normalized provider results plus persisted ProviderJob estimate fields instead of provider-specific response fields.
 Do not create duplicate provider debits when a provider job is polled more than once.
-Do not create ledger rows for failed, cancelled, expired, or known zero-cost provider results.
+Do not create duplicate provider releases when a provider job is polled, cancelled, or timed out more than once.
+Do not create final DEBIT rows for failed, cancelled, expired, or known zero-cost provider results.
 ```
 
 `AI Provider Job.debit_cost_source` records whether a debit came from
 `ACTUAL`, `ESTIMATED`, or `ZERO_COST`, and `debit_cost_usd` records the amount
 used for run history display.
+
+`RELEASE` offsets the reservation hold. On successful settlement, the full
+reservation is released and the final `DEBIT` records the actual or estimated
+provider cost. The unused available credit restored by settlement is therefore
+`RESERVE - DEBIT` when the debit is lower than the reservation. On provider
+failure, timeout, expiry, cancellation, or workflow failure before provider
+completion, the reservation is released and no output asset/final debit is
+created unless a future explicit policy records a real provider charge.

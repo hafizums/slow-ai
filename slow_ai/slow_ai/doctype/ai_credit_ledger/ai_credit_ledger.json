@@ -13,6 +13,7 @@
   "amount_usd",
   "currency",
   "description",
+  "metadata_json",
   "reference_doctype",
   "reference_name"
  ],
@@ -50,7 +51,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Ledger Type",
-   "options": "CREDIT\nDEBIT\nADJUSTMENT",
+   "options": "CREDIT\nRESERVE\nRELEASE\nDEBIT\nADJUSTMENT",
    "reqd": 1
   },
   {
@@ -71,6 +72,12 @@
    "fieldname": "description",
    "fieldtype": "Small Text",
    "label": "Description"
+  },
+  {
+   "fieldname": "metadata_json",
+   "fieldtype": "Code",
+   "label": "Metadata JSON",
+   "options": "JSON"
   },
   {
    "fieldname": "reference_doctype",

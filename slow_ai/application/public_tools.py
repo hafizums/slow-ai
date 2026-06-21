@@ -685,6 +685,8 @@ def _cost_summary(ledger_rows: list[dict[str, Any]]) -> dict[str, Any]:
     debits = Decimal("0")
     credits = Decimal("0")
     adjustments = Decimal("0")
+    reserves = Decimal("0")
+    releases = Decimal("0")
     for row in ledger_rows:
         amount = _as_decimal(row.get("amount_usd"))
         if row.get("ledger_type") == "DEBIT":
@@ -693,12 +695,18 @@ def _cost_summary(ledger_rows: list[dict[str, Any]]) -> dict[str, Any]:
             credits += amount
         elif row.get("ledger_type") == "ADJUSTMENT":
             adjustments += amount
+        elif row.get("ledger_type") == "RESERVE":
+            reserves += amount
+        elif row.get("ledger_type") == "RELEASE":
+            releases += amount
     return {
         "currency": "USD",
         "debits_usd": str(debits),
         "credits_usd": str(credits),
         "adjustments_usd": str(adjustments),
-        "net_usd": str(credits + adjustments - debits),
+        "reserved_usd": str(reserves),
+        "released_usd": str(releases),
+        "net_usd": str(credits + adjustments + releases - debits - reserves),
     }
 
 

@@ -382,6 +382,22 @@ to persisted ProviderJob estimates, verifies zero-cost/failed jobs do not debit,
 verifies run history exposes ledger and debit source fields safely, and verifies
 billing APIs expose no provider secrets.
 
+Billing credit reservation coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_billing_credit_reservation.py
+```
+
+This test creates real projects, models, provider accounts, workflows, runs,
+provider jobs, assets, and `AI Credit Ledger` rows. It verifies insufficient
+balance rejects before run/provider/reservation side effects, `start_run`
+creates exactly one `RESERVE`, duplicate starts/workers do not duplicate
+reservations, provider success creates one `DEBIT` and one `RELEASE`, provider
+failure/timeout/cancel releases reservations without output assets or final
+debits, repeated poll/cancel/timeout paths do not duplicate release/debit rows,
+and public run detail exposes only safe reserve/release/debit summaries without
+raw provider payloads or provider account names.
+
 Multi-provider foundation coverage lives in:
 
 ```txt

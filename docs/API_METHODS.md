@@ -256,12 +256,14 @@ enqueue workers, or expose provider secrets.
 ```txt
 Arguments: project, user
 Application service: slow_ai.application.billing.get_balance
-Returns: current credit, debit, adjustment, and balance totals
+Returns: current credit, reserve, release, debit, adjustment, and balance totals
 ```
 
 When `user` is omitted, balance is calculated for the project. When `user` is
 provided, balance is calculated from ledger rows owned by that user within the
 project. The API reads `AI Credit Ledger` only and does not call providers.
+Available balance is calculated as `CREDIT + ADJUSTMENT + RELEASE - DEBIT -
+RESERVE`.
 
 ### slow_ai.api.billing.get_ledger
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -25,6 +26,11 @@ LEDGER_SAFE_FIELDS = [
     "creation",
     "owner",
 ]
+RESERVE = "RESERVE"
+RELEASE = "RELEASE"
+DEBIT = "DEBIT"
+CREDIT = "CREDIT"
+ADJUSTMENT = "ADJUSTMENT"
 
 
 def create_top_up(
@@ -41,7 +47,7 @@ def create_top_up(
         {
             "doctype": "AI Credit Ledger",
             "project": project_name,
-            "ledger_type": "CREDIT",
+            "ledger_type": CREDIT,
             "amount_usd": str(amount),
             "currency": "USD",
             "description": description or "Credit top-up",
@@ -59,16 +65,22 @@ def get_balance(project: str, user: str | None = None) -> dict[str, Any]:
     credits = Decimal("0")
     debits = Decimal("0")
     adjustments = Decimal("0")
+    reserves = Decimal("0")
+    releases = Decimal("0")
     for row in rows:
         amount = _as_decimal(row.amount_usd)
-        if row.ledger_type == "CREDIT":
+        if row.ledger_type == CREDIT:
             credits += amount
-        elif row.ledger_type == "DEBIT":
+        elif row.ledger_type == DEBIT:
             debits += amount
-        elif row.ledger_type == "ADJUSTMENT":
+        elif row.ledger_type == ADJUSTMENT:
             adjustments += amount
+        elif row.ledger_type == RESERVE:
+            reserves += amount
+        elif row.ledger_type == RELEASE:
+            releases += amount
 
-    balance = credits + adjustments - debits
+    balance = credits + adjustments + releases - debits - reserves
     return {
         "project": project_name,
         "user": user,
@@ -76,6 +88,8 @@ def get_balance(project: str, user: str | None = None) -> dict[str, Any]:
         "credits_usd": str(credits),
         "debits_usd": str(debits),
         "adjustments_usd": str(adjustments),
+        "reserved_usd": str(reserves),
+        "released_usd": str(releases),
         "balance_usd": str(balance),
     }
 
@@ -103,15 +117,21 @@ def get_project_balance_usd(project: str) -> Decimal:
     credits = Decimal("0")
     debits = Decimal("0")
     adjustments = Decimal("0")
+    reserves = Decimal("0")
+    releases = Decimal("0")
     for row in rows:
         amount = _as_decimal(row.amount_usd)
-        if row.ledger_type == "CREDIT":
+        if row.ledger_type == CREDIT:
             credits += amount
-        elif row.ledger_type == "DEBIT":
+        elif row.ledger_type == DEBIT:
             debits += amount
-        elif row.ledger_type == "ADJUSTMENT":
+        elif row.ledger_type == ADJUSTMENT:
             adjustments += amount
-    return credits + adjustments - debits
+        elif row.ledger_type == RESERVE:
+            reserves += amount
+        elif row.ledger_type == RELEASE:
+            releases += amount
+    return credits + adjustments + releases - debits - reserves
 
 
 def assert_project_has_balance(project: str, estimated_cost_usd: Decimal) -> None:
@@ -123,6 +143,181 @@ def assert_project_has_balance(project: str, estimated_cost_usd: Decimal) -> Non
             "Workflow estimated provider cost "
             f"{estimated_cost_usd} USD exceeds available project credit balance "
             f"{balance} USD."
+        )
+
+
+def create_run_reservations(
+    *,
+    project: str,
+    workflow_run: str,
+    provider_runs: tuple[Any, ...],
+    node_runs_by_node_id: dict[str, str],
+) -> tuple[str, ...]:
+    project_name = _require_project(project)
+    reservation_names: list[str] = []
+    for provider_run in provider_runs:
+        amount = _as_decimal(getattr(provider_run, "estimated_cost_usd", 0))
+        if amount <= 0:
+            continue
+        node_run_name = node_runs_by_node_id.get(provider_run.node_id)
+        if not node_run_name:
+            continue
+        existing = frappe.db.get_value(
+            "AI Credit Ledger",
+            {
+                "workflow_run": workflow_run,
+                "node_run": node_run_name,
+                "ledger_type": RESERVE,
+            },
+            "name",
+        )
+        if existing:
+            reservation_names.append(existing)
+            continue
+        assert_project_has_balance(project_name, amount)
+        ledger = frappe.get_doc(
+            {
+                "doctype": "AI Credit Ledger",
+                "project": project_name,
+                "workflow_run": workflow_run,
+                "node_run": node_run_name,
+                "ledger_type": RESERVE,
+                "amount_usd": amount,
+                "currency": "USD",
+                "description": "Reserved estimated provider cost",
+                "reference_doctype": "AI Model",
+                "reference_name": provider_run.model_name,
+                "metadata_json": _json(
+                    {
+                        "provider": provider_run.provider,
+                        "model": provider_run.model,
+                        "model_name": provider_run.model_name,
+                        "node_id": provider_run.node_id,
+                        "node_type": provider_run.node_type,
+                        "estimated_cost_usd": str(amount),
+                    }
+                ),
+            }
+        ).insert(ignore_permissions=True)
+        reservation_names.append(ledger.name)
+    return tuple(reservation_names)
+
+
+def link_reservation_to_provider_job(node_run: str | None, provider_job: str) -> None:
+    if not node_run or not provider_job:
+        return
+    for reservation in frappe.get_all(
+        "AI Credit Ledger",
+        filters={"node_run": node_run, "ledger_type": RESERVE},
+        fields=["name", "metadata_json"],
+    ):
+        metadata = _loads_json(reservation.metadata_json, {})
+        if metadata.get("provider_job"):
+            continue
+        metadata["provider_job"] = provider_job
+        frappe.db.set_value("AI Credit Ledger", reservation.name, "metadata_json", _json(metadata))
+
+
+def release_provider_reservation(
+    *,
+    workflow_run: str,
+    node_run: str | None = None,
+    provider_job: str | None = None,
+    description: str = "Released provider cost reservation",
+) -> tuple[str, ...]:
+    filters: dict[str, Any] = {"workflow_run": workflow_run, "ledger_type": RESERVE}
+    if node_run:
+        filters["node_run"] = node_run
+    elif provider_job:
+        job_node_run = frappe.db.get_value("AI Provider Job", provider_job, "node_run")
+        if job_node_run:
+            filters["node_run"] = job_node_run
+        else:
+            filters["provider_job"] = provider_job
+    reservations = frappe.get_all(
+        "AI Credit Ledger",
+        filters=filters,
+        fields=["name", "project", "workflow_run", "node_run", "provider_job", "amount_usd", "metadata_json"],
+        order_by="creation asc",
+    )
+    release_names: list[str] = []
+    for reservation in reservations:
+        existing = frappe.db.get_value(
+            "AI Credit Ledger",
+            {
+                "ledger_type": RELEASE,
+                "reference_doctype": "AI Credit Ledger",
+                "reference_name": reservation.name,
+            },
+            "name",
+        )
+        if existing:
+            release_names.append(existing)
+            continue
+        metadata = _loads_json(reservation.metadata_json, {})
+        if provider_job and not metadata.get("provider_job"):
+            metadata["provider_job"] = provider_job
+        release = frappe.get_doc(
+            {
+                "doctype": "AI Credit Ledger",
+                "project": reservation.project,
+                "workflow_run": reservation.workflow_run,
+                "node_run": reservation.node_run,
+                "ledger_type": RELEASE,
+                "amount_usd": _as_decimal(reservation.amount_usd),
+                "currency": "USD",
+                "description": description,
+                "reference_doctype": "AI Credit Ledger",
+                "reference_name": reservation.name,
+                "metadata_json": _json(metadata),
+            }
+        ).insert(ignore_permissions=True)
+        release_names.append(release.name)
+    return tuple(release_names)
+
+
+def release_run_reservations(workflow_run: str, description: str = "Released run cost reservation") -> tuple[str, ...]:
+    if not workflow_run:
+        return ()
+    if not frappe.db.exists("AI Workflow Run", workflow_run):
+        return ()
+    return release_provider_reservation(workflow_run=workflow_run, description=description)
+
+
+def get_reserved_amount_for_provider_job(provider_job: str) -> Decimal:
+    doc = frappe.get_doc("AI Provider Job", provider_job)
+    filters: dict[str, Any] = {"ledger_type": RESERVE}
+    if doc.node_run:
+        filters["node_run"] = doc.node_run
+    else:
+        filters["provider_job"] = provider_job
+    rows = frappe.get_all("AI Credit Ledger", filters=filters, fields=["amount_usd"])
+    total = Decimal("0")
+    for row in rows:
+        total += _as_decimal(row.amount_usd)
+    return total
+
+
+def assert_provider_debit_within_reserved_or_available(
+    *,
+    project: str,
+    provider_job: str,
+    amount_usd: Decimal,
+) -> None:
+    if frappe.db.exists("AI Credit Ledger", {"provider_job": provider_job, "ledger_type": DEBIT}):
+        return
+    reserved = get_reserved_amount_for_provider_job(provider_job)
+    if reserved <= 0:
+        return
+    extra = amount_usd - reserved
+    if extra <= 0:
+        return
+    balance = get_project_balance_usd(project)
+    if extra > balance:
+        from slow_ai.domain.exceptions import ProviderInvariantError
+
+        raise ProviderInvariantError(
+            "Provider actual cost exceeds reserved estimate and available project credit balance."
         )
 
 
@@ -147,6 +342,20 @@ def _ledger_payload(row) -> dict[str, Any]:
     if "amount_usd" in payload:
         payload["amount_usd"] = str(_as_decimal(payload["amount_usd"]))
     return payload
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def _loads_json(value: Any, default: Any) -> Any:
+    if not value:
+        return default
+    if isinstance(value, str):
+        return json.loads(value)
+    if isinstance(value, dict):
+        return dict(value)
+    return default
 
 
 def _require_project(project: str) -> str:

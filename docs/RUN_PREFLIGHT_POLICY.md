@@ -109,9 +109,18 @@ published template, but provider-node runs still pass through this preflight
 before any version/run/node/provider-job/queue side effects are created.
 
 Credit balance checks use `slow_ai.application.billing` and persisted
-`AI Credit Ledger` rows. A provider-node run with a non-zero estimated cost must
-have enough project credit balance before `start_run` creates any workflow
-version, run, node run, provider job, asset, ledger row, or queue entry.
+`AI Credit Ledger` rows. Available balance includes active reservations:
+
+```txt
+CREDIT + ADJUSTMENT + RELEASE - DEBIT - RESERVE
+```
+
+A provider-node run with a non-zero estimated cost must have enough project
+available credit balance before `start_run` creates any workflow version, run,
+node run, provider job, asset, ledger row, or queue entry. After preflight and
+run/node creation, `start_run` reserves the estimate in `AI Credit Ledger`
+before enqueue. If reservation creation cannot be completed, the run is not
+enqueued.
 
 Provider node execution persists the resolved `AI Provider Account` and resolved
 `AI Model` document name on `AI Provider Job`, along with the model-derived

@@ -159,6 +159,12 @@ node status from `slow_ai.api.runs.get_run_status`, then reads provider jobs,
 assets, ledger entries, and detailed run history from
 `slow_ai.api.runs.get_history`.
 
+Both run APIs return safe display payloads only. The canvas must not depend on
+raw provider request/response/error JSON, provider account names, raw provider
+URLs, raw node input/output JSON, asset URLs/files from history, or arbitrary
+asset metadata. Asset preview links must continue to come from
+`slow_ai.api.assets.view`.
+
 The monitor sections are:
 
 ```txt

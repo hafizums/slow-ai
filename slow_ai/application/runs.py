@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -12,6 +13,17 @@ import frappe
 from slow_ai.application.project_access import assert_can_view_project
 from slow_ai.application.run_service import RunService
 from slow_ai.application.template_lineage import safe_template_lineage
+
+
+SENSITIVE_KEY_PATTERN = re.compile(
+    r"(api[_-]?key|authorization|bearer|secret|token|password|provider_account|request_json|response_json|raw_error_json)",
+    re.IGNORECASE,
+)
+URL_PATTERN = re.compile(r"https?://\S+", re.IGNORECASE)
+BEARER_PATTERN = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+KEY_VALUE_SECRET_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|bearer|secret|token|password)\b\s*[:=]\s*[^,\s}]+"
+)
 
 
 def start_run(workflow: str) -> dict[str, Any]:
@@ -42,7 +54,7 @@ def get_run_status(workflow_run: str) -> dict[str, Any]:
         "queued_at": run.queued_at,
         "started_at": run.started_at,
         "completed_at": run.completed_at,
-        "error": _loads_json(run.error_json, None),
+        "error": _safe_error_message(run.error_json),
         "template_lineage": safe_template_lineage(
             getattr(run, "source_template", None),
             getattr(run, "source_template_version", None),
@@ -80,9 +92,7 @@ def get_history(workflow_run: str) -> dict[str, Any]:
                 "name",
                 "node_run",
                 "provider",
-                "provider_account",
                 "model",
-                "external_job_id",
                 "status",
                 "cost_usd",
                 "estimated_cost_usd",
@@ -90,7 +100,8 @@ def get_history(workflow_run: str) -> dict[str, Any]:
                 "debit_cost_source",
                 "submitted_at",
                 "completed_at",
-                "response_json",
+                "last_polled_at",
+                "poll_attempts",
                 "raw_error_json",
             ],
             order_by="creation asc",
@@ -101,12 +112,14 @@ def get_history(workflow_run: str) -> dict[str, Any]:
         fields=[
             "name",
             "asset_type",
-            "file",
-            "url",
             "mime_type",
+            "width",
+            "height",
+            "duration_seconds",
             "source_node_run",
             "source_provider_job",
-            "metadata_json",
+            "creation",
+            "modified",
         ],
         order_by="creation asc",
     )
@@ -118,30 +131,9 @@ def get_history(workflow_run: str) -> dict[str, Any]:
     )
     return {
         "run": status,
-        "node_runs": [
-            {
-                **_row_dict(row),
-                "input": _loads_json(row.input_json, {}),
-                "output": _loads_json(row.output_json, {}),
-                "error": _loads_json(row.error_json, None),
-            }
-            for row in node_runs
-        ],
-        "provider_jobs": [
-            {
-                **_row_dict(row),
-                "response": _loads_json(row.response_json, {}),
-                "error": _loads_json(row.raw_error_json, None),
-            }
-            for row in provider_jobs
-        ],
-        "assets": [
-            {
-                **_row_dict(row),
-                "metadata": _loads_json(row.metadata_json, {}),
-            }
-            for row in assets
-        ],
+        "node_runs": [_safe_node_run_payload(row) for row in node_runs],
+        "provider_jobs": [_safe_provider_job_payload(row) for row in provider_jobs],
+        "assets": [_row_dict(row) for row in assets],
         "ledger": [_row_dict(row) for row in ledger_entries],
     }
 
@@ -272,11 +264,140 @@ def get_run_timeline(workflow_run: str) -> dict[str, Any]:
 def _loads_json(value: str | None, default: Any) -> Any:
     if not value:
         return default
-    return json.loads(value)
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
 
 
 def _row_dict(row) -> dict[str, Any]:
     return dict(row)
+
+
+def _safe_node_run_payload(row) -> dict[str, Any]:
+    return {
+        "name": row.name,
+        "node_id": row.node_id,
+        "node_type": row.node_type,
+        "status": row.status,
+        "provider_job": row.provider_job,
+        "cost_usd": row.cost_usd,
+        "started_at": row.started_at,
+        "completed_at": row.completed_at,
+        "input_summary": {"has_input": bool(row.input_json)},
+        "output": _safe_node_output_summary(row.output_json),
+        "error": _safe_error_payload(row.error_json),
+    }
+
+
+def _safe_provider_job_payload(row) -> dict[str, Any]:
+    return {
+        "name": row.name,
+        "node_run": row.node_run,
+        "provider": row.provider,
+        "model": row.model,
+        "status": row.status,
+        "cost_usd": row.cost_usd,
+        "estimated_cost_usd": row.estimated_cost_usd,
+        "debit_cost_usd": row.debit_cost_usd,
+        "debit_cost_source": row.debit_cost_source,
+        "submitted_at": row.submitted_at,
+        "completed_at": row.completed_at,
+        "last_polled_at": row.last_polled_at,
+        "poll_attempts": row.poll_attempts,
+        "error": _safe_error_payload(row.raw_error_json),
+    }
+
+
+def _safe_error_message(value: str | None, fallback: str | None = None) -> str | None:
+    payload = _loads_json(value, None)
+    if payload is None:
+        return fallback
+    if isinstance(payload, str):
+        return _sanitize_text(payload) or fallback
+    if isinstance(payload, dict):
+        for key in ("message", "error", "status", "code", "type"):
+            candidate = payload.get(key)
+            if candidate is None or isinstance(candidate, (dict, list)):
+                continue
+            message = _sanitize_text(candidate)
+            if message:
+                return message
+    return fallback or "Error details captured on server."
+
+
+def _safe_error_payload(value: str | None) -> dict[str, str] | None:
+    payload = _loads_json(value, None)
+    if payload is None:
+        return None
+    message = _safe_error_message(value, "Error details captured on server.")
+    safe: dict[str, str] = {"message": message or "Error details captured on server."}
+    if isinstance(payload, dict):
+        for key in ("code", "status", "type"):
+            candidate = payload.get(key)
+            if candidate is None or isinstance(candidate, (dict, list)):
+                continue
+            sanitized = _sanitize_text(candidate)
+            if sanitized:
+                safe[key] = sanitized
+    return safe
+
+
+def _safe_node_output_summary(value: str | None) -> dict[str, Any]:
+    payload = _loads_json(value, None)
+    if payload is None:
+        return {"has_output": False, "asset_names": [], "keys": []}
+    return {
+        "has_output": True,
+        "asset_names": sorted(_extract_asset_names(payload)),
+        "keys": _safe_top_level_keys(payload),
+    }
+
+
+def _extract_asset_names(value: Any) -> set[str]:
+    names: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if SENSITIVE_KEY_PATTERN.search(str(key)):
+                continue
+            if key in {"asset", "asset_name", "asset_names"}:
+                names.update(_extract_asset_name_values(child))
+                continue
+            names.update(_extract_asset_names(child))
+    elif isinstance(value, list):
+        for child in value:
+            names.update(_extract_asset_names(child))
+    elif isinstance(value, str) and value.startswith("AI-ASSET-") and frappe.db.exists("AI Asset", value):
+        names.add(value)
+    return names
+
+
+def _extract_asset_name_values(value: Any) -> set[str]:
+    names: set[str] = set()
+    if isinstance(value, str) and value.startswith("AI-ASSET-") and frappe.db.exists("AI Asset", value):
+        names.add(value)
+    elif isinstance(value, list):
+        for child in value:
+            names.update(_extract_asset_name_values(child))
+    elif isinstance(value, dict):
+        for child in value.values():
+            names.update(_extract_asset_name_values(child))
+    return names
+
+
+def _safe_top_level_keys(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    keys = [str(key) for key in value.keys() if not SENSITIVE_KEY_PATTERN.search(str(key))]
+    return sorted(keys)[:10]
+
+
+def _sanitize_text(value: Any) -> str:
+    text = str(value or "")
+    text = BEARER_PATTERN.sub("Bearer [redacted]", text)
+    text = KEY_VALUE_SECRET_PATTERN.sub(lambda match: f"{match.group(1)}: [redacted]", text)
+    text = URL_PATTERN.sub("[link hidden]", text)
+    return text[:240]
 
 
 @dataclass

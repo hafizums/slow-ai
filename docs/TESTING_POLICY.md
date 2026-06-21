@@ -630,3 +630,16 @@ timeline events for successful, provider, expired, cancelled, and archived runs,
 project view-access enforcement, no timeline read side effects, and no exposure
 of provider account names, provider secrets, raw request/response/error JSON, or
 raw provider URLs. It does not mock provider success or call external providers.
+
+Run status/history safe payload coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_run_safe_payloads.py
+```
+
+It creates real run, node run, provider job, asset, ledger, and share records
+with embedded provider secrets, raw provider URLs, API keys, Authorization
+headers, raw provider JSON, and unsafe error fields. It verifies
+`get_run_status`, `get_history`, and `get_run_timeline` return only safe display
+payloads, preserve enough summary fields for Canvas/Public Tool rendering, and
+create no execution/provider/billing/share side effects.

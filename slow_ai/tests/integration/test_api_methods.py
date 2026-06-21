@@ -155,7 +155,9 @@ class TestAPIMethods(FrappeTestCase):
         self.assertIn(provider_job.name, {row["name"] for row in history["provider_jobs"]})
         self.assertIn(asset.name, {row["name"] for row in history["assets"]})
         self.assertIn(ledger.name, {row["name"] for row in history["ledger"]})
-        self.assertEqual(history["assets"][0]["metadata"]["source"], "api-history-test")
+        self.assertEqual(history["assets"][0]["asset_type"], "IMAGE")
+        self.assertNotIn("metadata_json", history["assets"][0])
+        self.assertNotIn("url", history["assets"][0])
 
     def test_upload_and_view_asset_api_create_real_asset(self):
         project = create_project()

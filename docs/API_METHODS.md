@@ -145,16 +145,31 @@ clients must not implement authoritative quota checks.
 ```txt
 Arguments: workflow_run
 Application service: slow_ai.application.runs.get_run_status
-Returns: workflow run status plus node run summaries
+Returns: safe workflow run status plus safe node run summaries
 ```
+
+`get_run_status` enforces project view access and may return only safe run
+identity/status/timestamps, safe template lineage, safe node run summaries, and
+a sanitized run error message. It must not expose raw error dictionaries,
+provider secrets, provider account names, raw provider URLs, API keys,
+Authorization headers, or workflow draft internals.
 
 ### slow_ai.api.runs.get_history
 
 ```txt
 Arguments: workflow_run
 Application service: slow_ai.application.runs.get_history
-Returns: run, node runs, provider jobs, assets, and ledger rows
+Returns: safe display history for run, node runs, provider jobs, assets, and ledger rows
 ```
+
+`get_history` enforces project view access and returns display summaries only.
+It must not return `provider_account`, `request_json`, `response_json`,
+`raw_error_json`, `external_job_id`, raw provider URLs, provider secrets, API
+keys, Authorization headers, workflow draft internals, raw node input JSON, raw
+node output JSON, asset URLs/files, or arbitrary asset metadata. Node output is
+reduced to a safe summary, provider errors are reduced to safe message/code
+fields, and asset preview URLs/files must be loaded through
+`slow_ai.api.assets.view`.
 
 ### slow_ai.api.runs.get_run_timeline
 

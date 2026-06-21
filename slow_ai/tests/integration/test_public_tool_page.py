@@ -24,6 +24,7 @@ ALLOWED_PUBLIC_TOOL_METHODS = {
     "slow_ai.api.public_tools.get_my_run",
     "slow_ai.api.public_tools.get_run_output_gallery",
     "slow_ai.api.public_tools.cancel_my_run",
+    "slow_ai.api.public_tools.archive_my_run",
     "slow_ai.api.public_tools.create_run_share",
     "slow_ai.api.public_tools.disable_run_share",
     "slow_ai.api.public_tools.get_shared_run",
@@ -370,6 +371,7 @@ def lineage_side_effect_counts():
         "AI Workflow Version": frappe.db.count("AI Workflow Version"),
         "AI Workflow Run": frappe.db.count("AI Workflow Run"),
         "AI Node Run": frappe.db.count("AI Node Run"),
+        "AI Tool Run Share": frappe.db.count("AI Tool Run Share"),
     }
 
 
@@ -401,6 +403,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.get_run_output_gallery", page.script)
         self.assertIn("slow_ai.api.public_tools.cancel_my_run", page.script)
+        self.assertIn("slow_ai.api.public_tools.archive_my_run", page.script)
         self.assertIn("slow_ai.api.public_tools.create_run_share", page.script)
         self.assertIn("slow_ai.api.public_tools.disable_run_share", page.script)
         self.assertIn("Select output assets to include in the share link", page.script)
@@ -904,6 +907,108 @@ class TestPublicToolPage(FrappeTestCase):
         frappe.set_user(self.user)
         with self.assertRaises(frappe.ValidationError):
             frappe.call("slow_ai.api.public_tools.cancel_my_run", workflow_run=terminal["run"]["workflow_run"])
+
+    def test_public_tool_archive_hides_terminal_run_without_deleting_audit_records(self):
+        created = create_shareable_asset_run(self.user, title="Archived Public Tool Run")
+        workflow_run = created["run"]["workflow_run"]
+        share = frappe.call(
+            "slow_ai.api.public_tools.create_run_share",
+            workflow_run=workflow_run,
+            selected_assets=[created["asset"].name],
+        )
+        counts_before_archive = lineage_side_effect_counts()
+
+        archived = frappe.call("slow_ai.api.public_tools.archive_my_run", workflow_run=workflow_run)
+        default_list = frappe.call("slow_ai.api.public_tools.list_my_runs", project=created["project"].name)
+        archived_list = frappe.call(
+            "slow_ai.api.public_tools.list_my_runs",
+            project=created["project"].name,
+            include_archived=1,
+        )
+        detail = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=workflow_run)
+
+        self.assertEqual(archived["run"]["workflow_run"], workflow_run)
+        self.assertEqual(archived["run"]["is_archived"], 1)
+        self.assertEqual(archived["run"]["archived_by"], self.user)
+        self.assertTrue(archived["run"]["archived_at"])
+        self.assertFalse(archived["run"]["can_archive"])
+        self.assertNotIn(workflow_run, {row["workflow_run"] for row in default_list["runs"]})
+        self.assertIn(workflow_run, {row["workflow_run"] for row in archived_list["runs"]})
+        self.assertEqual(detail["run"]["workflow_run"], workflow_run)
+        self.assertEqual(detail["run"]["is_archived"], 1)
+        self.assertTrue(frappe.db.exists("AI Asset", created["asset"].name))
+        self.assertTrue(frappe.db.exists("AI Tool Run Share", share["share"]["name"]))
+        for doctype, count in counts_before_archive.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+
+        editor = ensure_user(f"slow.ai.public.archive.editor.{uuid4().hex[:8]}@example.test")
+        editor_run = create_text_tool_run(self.user, title="Editor Archive Public Tool Run")
+        run_workflow(editor_run["run"]["workflow_run"])
+        add_member(editor_run["project"].name, editor, "EDITOR")
+        frappe.set_user(editor)
+        editor_archived = frappe.call(
+            "slow_ai.api.public_tools.archive_my_run",
+            workflow_run=editor_run["run"]["workflow_run"],
+        )
+        self.assertEqual(editor_archived["run"]["is_archived"], 1)
+
+    def test_public_tool_archive_rejects_viewer_billing_and_active_runs_safely(self):
+        editor = ensure_user(f"slow.ai.public.archive.editor.{uuid4().hex[:8]}@example.test")
+        viewer = ensure_user(f"slow.ai.public.archive.viewer.{uuid4().hex[:8]}@example.test")
+        billing = ensure_user(f"slow.ai.public.archive.billing.{uuid4().hex[:8]}@example.test")
+        created = create_text_tool_run(self.user, title="Archive Permission Public Tool Run")
+        project_name = created["project"].name
+        add_member(project_name, editor, "EDITOR")
+        add_member(project_name, viewer, "VIEWER")
+        add_member(project_name, billing, "BILLING")
+        run_workflow(created["run"]["workflow_run"])
+        node_run = frappe.db.get_value(
+            "AI Node Run",
+            {"workflow_run": created["run"]["workflow_run"], "node_id": "prompt_1"},
+            "name",
+        )
+        provider_job = insert_doc(
+            {
+                "doctype": "AI Provider Job",
+                "node_run": node_run,
+                "provider": "archive-safe-provider",
+                "status": "SUCCEEDED",
+                "idempotency_key": unique("archive-safe-provider-job"),
+                "request_json": json.dumps({"secret": "archive-provider-secret"}),
+                "response_json": json.dumps({"raw": "archive-raw-provider-payload"}),
+                "raw_error_json": json.dumps({"token": "archive-secret-token"}),
+            }
+        )
+        active = create_text_tool_run(self.user, title="Active Archive Rejection Run")
+        add_member(active["project"].name, editor, "EDITOR")
+        counts_before_denials = lineage_side_effect_counts()
+
+        frappe.set_user(viewer)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call("slow_ai.api.public_tools.archive_my_run", workflow_run=created["run"]["workflow_run"])
+        detail_for_viewer = frappe.call("slow_ai.api.public_tools.get_my_run", workflow_run=created["run"]["workflow_run"])
+
+        frappe.set_user(billing)
+        with self.assertRaises(frappe.PermissionError):
+            frappe.call("slow_ai.api.public_tools.archive_my_run", workflow_run=created["run"]["workflow_run"])
+
+        frappe.set_user(editor)
+        with self.assertRaises(frappe.ValidationError) as exc:
+            frappe.call("slow_ai.api.public_tools.archive_my_run", workflow_run=active["run"]["workflow_run"])
+
+        self.assertIn("Only terminal tool runs can be archived", str(exc.exception))
+        encoded = json.dumps(detail_for_viewer, default=str)
+        self.assertNotIn("archive-provider-secret", encoded)
+        self.assertNotIn("archive-raw-provider-payload", encoded)
+        self.assertNotIn("archive-secret-token", encoded)
+        self.assertNotIn("request_json", encoded)
+        self.assertNotIn("response_json", encoded)
+        self.assertNotIn("raw_error_json", encoded)
+        self.assertTrue(frappe.db.exists("AI Provider Job", provider_job.name))
+        for doctype, count in counts_before_denials.items():
+            self.assertEqual(frappe.db.count(doctype), count, doctype)
+        self.assertEqual(frappe.db.get_value("AI Workflow Run", active["run"]["workflow_run"], "status"), "QUEUED")
+        self.assertFalse(frappe.db.get_value("AI Workflow Run", active["run"]["workflow_run"], "is_archived"))
 
     def test_public_tool_cancel_persists_state_and_worker_noops(self):
         created = create_text_tool_run(self.user, title="Waiting Provider Cancel Run")

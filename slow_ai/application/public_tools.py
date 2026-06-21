@@ -211,11 +211,17 @@ def update_rerun_draft_values(
     )
 
 
-def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str, Any]:
+def list_my_runs(
+    project: str | None = None,
+    limit: int | str = 50,
+    include_archived: bool | str | int = False,
+) -> dict[str, Any]:
     _require_logged_in_user()
     filters = _run_filters(project)
     if filters is None:
         return {"runs": []}
+    if not _as_bool(include_archived):
+        filters["is_archived"] = 0
 
     rows = frappe.get_all(
         "AI Workflow Run",
@@ -230,6 +236,9 @@ def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict[str,
             "queued_at",
             "started_at",
             "completed_at",
+            "is_archived",
+            "archived_by",
+            "archived_at",
             "creation",
             "modified",
         ],
@@ -329,6 +338,23 @@ def cancel_my_run(workflow_run: str) -> dict[str, Any]:
     transition_workflow_run(current, WorkflowRunStatus.CANCELLED)
     repository.set_workflow_status(run.name, WorkflowRunStatus.CANCELLED, CANCELLATION_ERROR)
     run.reload()
+    return {"run": _run_summary(run.as_dict()) | {"error": _safe_error(run.error_json)}}
+
+
+def archive_my_run(workflow_run: str) -> dict[str, Any]:
+    _require_logged_in_user()
+    run = frappe.get_doc("AI Workflow Run", workflow_run)
+    assert_can_edit_project(run.project)
+
+    current = WorkflowRunStatus(run.status)
+    if current not in WORKFLOW_TERMINAL_STATUSES:
+        frappe.throw("Only terminal tool runs can be archived.", frappe.ValidationError)
+
+    if not run.get("is_archived"):
+        run.is_archived = 1
+        run.archived_by = frappe.session.user
+        run.archived_at = now_datetime()
+        run.save(ignore_permissions=True)
     return {"run": _run_summary(run.as_dict()) | {"error": _safe_error(run.error_json)}}
 
 
@@ -436,11 +462,15 @@ def _run_summary(row) -> dict[str, Any]:
         "completed_at": row.get("completed_at"),
         "created": row.get("creation"),
         "modified": row.get("modified"),
+        "is_archived": 1 if row.get("is_archived") else 0,
+        "archived_by": row.get("archived_by"),
+        "archived_at": row.get("archived_at"),
         "provider_summary": _provider_summary_for_run(row.get("name")),
         "cost_summary": _cost_summary(_ledger_summaries(row.get("name"))),
         "asset_count": frappe.db.count("AI Asset", {"source_workflow_run": row.get("name")}) if row.get("name") else 0,
         "share": _share_summary_for_run(row.get("name")),
         "can_cancel": _can_cancel_run(row),
+        "can_archive": _can_archive_run(row),
         "template_lineage": safe_template_lineage(
             row.get("source_template"),
             row.get("source_template_version"),
@@ -473,6 +503,20 @@ def _can_cancel_run(row) -> bool:
         return False
     project = row.get("project")
     if not project or status not in CANCELLABLE_WORKFLOW_STATUSES:
+        return False
+    try:
+        return can_edit_project(project)
+    except frappe.PermissionError:
+        return False
+
+
+def _can_archive_run(row) -> bool:
+    try:
+        status = WorkflowRunStatus(row.get("status"))
+    except ValueError:
+        return False
+    project = row.get("project")
+    if not project or status not in WORKFLOW_TERMINAL_STATUSES or row.get("is_archived"):
         return False
     try:
         return can_edit_project(project)
@@ -773,6 +817,12 @@ def _as_limit(value: int | str) -> int:
     except (TypeError, ValueError):
         return 50
     return max(1, min(limit, 100))
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _as_decimal(value: Any) -> Decimal:

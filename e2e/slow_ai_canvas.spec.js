@@ -29,6 +29,7 @@ const API = {
 	publicGetMyRun: "slow_ai.api.public_tools.get_my_run",
 	publicGetRunOutputGallery: "slow_ai.api.public_tools.get_run_output_gallery",
 	publicCancelMyRun: "slow_ai.api.public_tools.cancel_my_run",
+	publicArchiveMyRun: "slow_ai.api.public_tools.archive_my_run",
 	publicCreateRunShare: "slow_ai.api.public_tools.create_run_share",
 	publicDisableRunShare: "slow_ai.api.public_tools.disable_run_share",
 	publicGetSharedRun: "slow_ai.api.public_tools.get_shared_run",
@@ -656,25 +657,17 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	const legacyRerunStarted = await apiJson(await startLegacyRerunResponse);
 	expect(legacyRerunStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
 
-	const cancelTemplateResponse = page.waitForResponse(apiPredicate(API.publicGetTemplate));
-	await page
-		.locator(`[data-template-name="${fixtures.public_tool_template}"]`)
-		.getByRole("button", { name: "Select" })
-		.click();
-	await apiJson(await cancelTemplateResponse);
-	await page.locator("[data-input-id='prompt']").fill(`${fixtures.public_tool_prompt} cancel`);
-	await page.locator("[data-input-id='style']").selectOption("natural");
-	await page.locator("[data-input-id='steps']").fill("5");
-	const prepareCancelWorkflowResponse = page.waitForResponse(apiPredicate(API.publicPrepareWorkflowFromTemplate));
-	const startCancelRunResponse = page.waitForResponse(apiPredicate(API.startRun));
+	const refreshBeforeCancelResponse = page.waitForResponse(apiPredicate(API.publicListMyRuns));
+	await page.locator("[data-action='refresh-my-runs']").click();
+	await apiJson(await refreshBeforeCancelResponse);
 	const cancelRunDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
-	await page.locator("[data-action='run-tool']").click();
-	await apiJson(await prepareCancelWorkflowResponse);
-	const cancelStarted = await apiJson(await startCancelRunResponse);
-	expect(cancelStarted.message.workflow_run).toMatch(/^AI-WORKFLOW-RUN-/);
+	await page
+		.locator(`[data-run-id="${fixtures.public_cancellable_workflow_run}"]`)
+		.getByRole("button", { name: "Open Detail" })
+		.click();
 	const cancelRunDetail = await apiJson(await cancelRunDetailResponse);
 	expect(cancelRunDetail.message.run.can_cancel).toBe(true);
-	await expect(page.locator("[data-role='run-detail']")).toContainText(cancelStarted.message.workflow_run);
+	await expect(page.locator("[data-role='run-detail']")).toContainText(fixtures.public_cancellable_workflow_run);
 	const cancelResponse = page.waitForResponse(apiPredicate(API.publicCancelMyRun));
 	const cancelledDetailResponse = page.waitForResponse(apiPredicate(API.publicGetMyRun));
 	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Cancel" }).click();
@@ -886,6 +879,18 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(viewerCreateWorkflow.status()).toBeGreaterThanOrEqual(400);
 	expect(viewerStartRequests).toEqual([]);
 	await viewerContext.close();
+
+	await expect(page.locator("[data-role='run-detail']")).toContainText(fixtures.public_asset_workflow_run);
+	const archiveRunResponse = page.waitForResponse(apiPredicate(API.publicArchiveMyRun));
+	const reloadAfterArchiveResponse = page.waitForResponse(apiPredicate(API.publicListMyRuns));
+	await page.locator("[data-role='run-detail']").getByRole("button", { name: "Archive" }).click();
+	const archivedRun = await apiJson(await archiveRunResponse);
+	expect(archivedRun.message.run.workflow_run).toBe(fixtures.public_asset_workflow_run);
+	expect(archivedRun.message.run.is_archived).toBe(1);
+	const runsAfterArchive = await apiJson(await reloadAfterArchiveResponse);
+	expect(runsAfterArchive.message.runs.some((run) => run.workflow_run === fixtures.public_asset_workflow_run)).toBe(false);
+	await expect(page.locator("[data-role='status']")).toContainText("Run archived");
+	await expect(page.locator("[data-role='run-library']")).not.toContainText(fixtures.public_asset_workflow_run);
 
 	const pageSource = await page.locator("html").innerHTML();
 	expect(pageSource).not.toContain("WAVESPEED_API_KEY");

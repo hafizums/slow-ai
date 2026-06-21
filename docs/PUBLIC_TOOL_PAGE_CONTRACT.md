@@ -31,6 +31,7 @@ slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
 slow_ai.api.public_tools.cancel_my_run
+slow_ai.api.public_tools.archive_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.runs.start_run
@@ -193,6 +194,11 @@ unsafe error payloads.
 Listing or viewing runs must not create provider jobs, enqueue work, call
 providers, mutate workflow state, or create assets/ledger rows.
 
+Archived runs are hidden from default My Runs listings. The backend
+`include_archived` option may return archived runs only to callers with normal
+run/project access. `get_my_run` may still open an archived run for users with
+view access.
+
 ## Cancellation Rules
 
 The My Runs detail view may show a Cancel action only when the selected run is
@@ -222,6 +228,32 @@ call providers. Public cancel and run-detail payloads may show only a safe
 cancellation message and must not expose provider account names, provider
 secrets, raw provider request/response/error JSON, provider URLs, or raw
 errors.
+
+## Archive Rules
+
+The My Runs detail view may show an Archive action only for terminal runs when
+the current user has archive permission. The Archive button must call only:
+
+```txt
+slow_ai.api.public_tools.archive_my_run
+```
+
+The backend archive service is authoritative. Only the run project owner,
+OWNER, EDITOR, or System Manager may archive. VIEWER and BILLING members must be
+rejected.
+
+Archiving hides a run from default My Runs results and records safe archive
+metadata on the existing `AI Workflow Run`. It must not cancel or stop active
+runs; active runs are rejected. It must not delete records, call providers,
+enqueue workers, execute workflow logic, create workflow versions, workflow
+runs, node runs, provider jobs, assets, credit ledger rows, or share rows.
+Archiving must not mutate existing `AI Workflow Version`, `AI Node Run`,
+`AI Provider Job`, `AI Asset`, `AI Credit Ledger`, or `AI Tool Run Share`
+records.
+
+Archive payloads may expose safe run status and archive metadata only. They
+must not expose provider account names, provider secrets, raw provider
+request/response/error JSON, provider URLs, or unsafe errors.
 
 ## Rerun Rules
 

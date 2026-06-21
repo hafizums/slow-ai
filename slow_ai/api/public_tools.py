@@ -6,6 +6,7 @@ import frappe
 
 from slow_ai.application.public_tools import create_run_share as create_run_share_service
 from slow_ai.application.public_tools import create_workflow_from_template as create_workflow_from_template_service
+from slow_ai.application.public_tools import archive_my_run as archive_my_run_service
 from slow_ai.application.public_tools import cancel_my_run as cancel_my_run_service
 from slow_ai.application.public_tools import disable_run_share as disable_run_share_service
 from slow_ai.application.public_tools import get_my_run as get_my_run_service
@@ -50,8 +51,8 @@ def update_rerun_draft_values(workflow: str, values=None) -> dict:
 
 
 @frappe.whitelist()
-def list_my_runs(project: str | None = None, limit: int | str = 50) -> dict:
-    return list_my_runs_service(project=project, limit=limit)
+def list_my_runs(project: str | None = None, limit: int | str = 50, include_archived: bool | str | int = False) -> dict:
+    return list_my_runs_service(project=project, limit=limit, include_archived=include_archived)
 
 
 @frappe.whitelist()
@@ -67,6 +68,11 @@ def get_run_output_gallery(workflow_run: str) -> dict:
 @frappe.whitelist()
 def cancel_my_run(workflow_run: str) -> dict:
     return cancel_my_run_service(workflow_run)
+
+
+@frappe.whitelist()
+def archive_my_run(workflow_run: str) -> dict:
+    return archive_my_run_service(workflow_run)
 
 
 @frappe.whitelist()

@@ -60,6 +60,22 @@ Must be created before AI Workflow Run
 Must not be replaced by draft workflow
 ```
 
+## AI Workflow Run
+
+Suggested archive fields:
+
+```txt
+is_archived
+archived_by
+archived_at
+```
+
+Archive fields are user-library visibility metadata only. They must not drive
+workflow execution, provider polling, billing, asset materialization, or share
+visibility. Active-run rejection, project access checks, and hide/show listing
+rules live in application services; the DocType controller remains
+persistence-only.
+
 ## AI Node Run
 
 Suggested fields:

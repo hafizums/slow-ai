@@ -67,6 +67,7 @@ def setup_canvas_e2e() -> dict:
     catalog_model = _create_catalog_model()
     asset_run = _create_history_asset_run(project.name)
     public_asset_run = _create_history_asset_run(public_tool_project.name)
+    public_cancellable_run = _create_cancellable_run(public_tool_project.name)
     frappe.db.commit()
     return {
         "user": user,
@@ -99,6 +100,7 @@ def setup_canvas_e2e() -> dict:
         "public_unshared_history_asset": public_asset_run["unshared_asset"],
         "public_video_history_asset": public_asset_run["video_asset"],
         "public_audio_history_asset": public_asset_run["audio_asset"],
+        "public_cancellable_workflow_run": public_cancellable_run["workflow_run"],
         "project": project.name,
         "canvas_title": f"Browser E2E Canvas {uuid4().hex[:8]}",
         "tool_template": tool_template["name"],
@@ -575,6 +577,83 @@ def _create_history_asset_run(project: str) -> dict:
         "video_asset": video_asset.name,
         "audio_asset": audio_asset.name,
     }
+
+
+def _create_cancellable_run(project: str) -> dict:
+    nodes = [
+        {
+            "id": "prompt_1",
+            "type": "text_prompt",
+            "label": "Prompt",
+            "position": {"x": 96, "y": 128},
+            "config": {"text": "Queued public run for cancellation"},
+        },
+        {
+            "id": "tool_output_1",
+            "type": "tool_output",
+            "label": "Tool Output",
+            "position": {"x": 376, "y": 128},
+            "config": {
+                "output_name": "answer",
+                "description": "Cancellable output",
+                "schema": {"type": "string"},
+            },
+        },
+    ]
+    edges = [
+        {
+            "id": "edge_1",
+            "source": "prompt_1",
+            "source_port": "text",
+            "target": "tool_output_1",
+            "target_port": "text",
+        }
+    ]
+    layout = {"nodes": [{"id": "tool_output_1", "x": 376, "y": 128}]}
+    workflow = frappe.call(
+        "slow_ai.api.workflows.save_workflow",
+        project=project,
+        title="Browser E2E Cancellable Public Run",
+        nodes=json.dumps(nodes),
+        edges=json.dumps(edges),
+        layout=json.dumps(layout),
+    )
+    version = frappe.get_doc(
+        {
+            "doctype": "AI Workflow Version",
+            "workflow": workflow["name"],
+            "version_no": 1,
+            "snapshot_hash": f"browser-e2e-cancellable-{uuid4().hex}",
+            "created_by": frappe.session.user,
+            "created_at": now_datetime(),
+            "nodes_json": json.dumps(nodes),
+            "edges_json": json.dumps(edges),
+            "layout_json": json.dumps(layout),
+        }
+    ).insert(ignore_permissions=True)
+    run = frappe.get_doc(
+        {
+            "doctype": "AI Workflow Run",
+            "project": project,
+            "workflow": workflow["name"],
+            "workflow_version": version.name,
+            "status": "QUEUED",
+            "queued_at": now_datetime(),
+        }
+    ).insert(ignore_permissions=True)
+    for node in nodes:
+        frappe.get_doc(
+            {
+                "doctype": "AI Node Run",
+                "workflow_run": run.name,
+                "node_id": node["id"],
+                "node_type": node["type"],
+                "status": "PENDING",
+                "attempt_no": 1,
+                "config_json": json.dumps(node.get("config") or {}),
+            }
+        ).insert(ignore_permissions=True)
+    return {"workflow_run": run.name}
 
 
 def _unique(prefix: str) -> str:

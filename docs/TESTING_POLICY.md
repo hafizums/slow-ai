@@ -275,7 +275,12 @@ coverage proves OWNER/EDITOR users can cancel non-terminal runs, VIEWER/BILLING
 users are rejected, terminal runs are rejected, node/provider job rows are
 marked only through local persisted state, workers and pollers do not progress
 cancelled runs, and cancel actions create no new execution/provider/billing
-records.
+records. Archive coverage proves OWNER/EDITOR users can hide terminal runs
+from the default My Runs listing, VIEWER/BILLING users are rejected, active runs
+are rejected without cancellation, archived runs remain openable through
+`get_my_run`, `include_archived` returns archived runs for authorized callers,
+and archive actions do not create or mutate execution/provider/output/billing
+or share audit records.
 
 The Run Output Gallery coverage in the same module proves grouped gallery
 payloads are built from real `AI Asset` and `AI Node Run` records, only safe
@@ -547,6 +552,8 @@ It also verifies the Project Members panel uses safe project membership APIs,
 an owner can add EDITOR and VIEWER members, an EDITOR can use the same project
 through the backend Tool Mode path, and a VIEWER can read project runs but
 cannot create a workflow draft or start a run.
+It also archives a completed run from My Runs detail and verifies the default
+run library reload hides that run through `slow_ai.api.public_tools.archive_my_run`.
 The browser suite also submits a draft template for review from the canvas,
 approves it as a System Manager, verifies it appears in the public tool page,
 and verifies rejected/archived templates remain hidden from the public catalog.

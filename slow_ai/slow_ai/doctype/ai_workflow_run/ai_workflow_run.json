@@ -14,6 +14,10 @@
   "queued_at",
   "started_at",
   "completed_at",
+  "archive_section",
+  "is_archived",
+  "archived_by",
+  "archived_at",
   "error_json"
  ],
  "fields": [
@@ -81,6 +85,31 @@
    "fieldname": "completed_at",
    "fieldtype": "Datetime",
    "label": "Completed At"
+  },
+  {
+   "fieldname": "archive_section",
+   "fieldtype": "Section Break",
+   "label": "Archive"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_archived",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Is Archived"
+  },
+  {
+   "fieldname": "archived_by",
+   "fieldtype": "Link",
+   "label": "Archived By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "archived_at",
+   "fieldtype": "Datetime",
+   "label": "Archived At",
+   "read_only": 1
   },
   {
    "fieldname": "error_json",

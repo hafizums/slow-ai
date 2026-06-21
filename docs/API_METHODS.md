@@ -38,6 +38,7 @@ slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
 slow_ai.api.public_tools.cancel_my_run
+slow_ai.api.public_tools.archive_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.public_tools.get_shared_run
@@ -623,7 +624,7 @@ through `slow_ai.api.runs.start_run`.
 ### slow_ai.api.public_tools.list_my_runs
 
 ```txt
-Arguments: project, limit
+Arguments: project, limit, include_archived
 Application service: slow_ai.application.public_tools.list_my_runs
 Returns: scoped AI Workflow Run summaries
 ```
@@ -633,7 +634,9 @@ may list all runs. Normal users may list only runs for projects they own unless
 a future project membership model extends this rule. Summaries include safe run
 status, workflow title, project, timestamps, provider status counts, asset
 count, and cost totals. They must not expose provider accounts, provider
-secrets, raw provider responses, raw provider errors, or provider URLs.
+secrets, raw provider responses, raw provider errors, or provider URLs. Archived
+runs are hidden by default and returned only when `include_archived` is truthy
+and the caller still has run/project access.
 
 ### slow_ai.api.public_tools.get_my_run
 
@@ -687,6 +690,31 @@ user-facing cancellation message. Non-terminal node runs are marked
 
 The API must not call providers, enqueue workers, create workflow versions,
 workflow runs, node runs, provider jobs, assets, or ledger rows. Public payloads
+must not expose provider account names, provider secrets, raw provider
+request/response/error JSON, provider URLs, or unsafe errors.
+
+### slow_ai.api.public_tools.archive_my_run
+
+```txt
+Arguments: workflow_run
+Application service: slow_ai.application.public_tools.archive_my_run
+Writes: existing AI Workflow Run archive fields only
+Returns: safe archived run summary
+```
+
+This API requires a logged-in user with project edit access: project owner,
+OWNER, EDITOR, or System Manager. VIEWER and BILLING members must be rejected.
+
+Archiving is allowed only for terminal workflow runs. Active runs are rejected;
+archive does not cancel runs, stop provider polling, or change execution state.
+Archiving hides the run from default `list_my_runs` results while preserving
+audit records and allowing `get_my_run` to open the archived run for users with
+view access.
+
+The API must not delete records, call providers, enqueue workers, create
+workflow versions, workflow runs, node runs, provider jobs, assets, ledger rows,
+or share rows. It must not mutate AI Workflow Version, AI Node Run, AI Provider
+Job, AI Asset, AI Credit Ledger, or AI Tool Run Share records. Public payloads
 must not expose provider account names, provider secrets, raw provider
 request/response/error JSON, provider URLs, or unsafe errors.
 
@@ -823,6 +851,7 @@ slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
 slow_ai.api.public_tools.cancel_my_run
+slow_ai.api.public_tools.archive_my_run
 slow_ai.api.public_tools.create_run_share
 slow_ai.api.public_tools.disable_run_share
 slow_ai.api.runs.start_run

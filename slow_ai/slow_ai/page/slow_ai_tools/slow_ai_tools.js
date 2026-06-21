@@ -86,6 +86,9 @@ class SlowAiToolsPage {
 		this.$root.on("click", "[data-action='cancel-run']", (event) => {
 			this.cancelRun($(event.currentTarget).attr("data-run-id"));
 		});
+		this.$root.on("click", "[data-action='archive-run']", (event) => {
+			this.archiveRun($(event.currentTarget).attr("data-run-id"));
+		});
 		this.$root.on("click", "[data-action='create-run-share']", (event) => {
 			this.createRunShare($(event.currentTarget).attr("data-run-id"));
 		});
@@ -803,6 +806,7 @@ class SlowAiToolsPage {
 						<div class="slow-ai-tools__row"><span>${__("Project")}</span><strong>${this.escape(run.project)}</strong></div>
 						${lineageRows}
 						<div class="slow-ai-tools__row"><span>${__("Status")}</span><strong>${this.escape(run.status)}</strong></div>
+						${run.is_archived ? `<div class="slow-ai-tools__row"><span>${__("Archived")}</span><strong>${this.escape(run.archived_at || "Yes")}</strong></div>` : ""}
 						<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 						<div class="slow-ai-tools__row"><span>${__("Outputs")}</span><strong>${this.escape(run.asset_count || 0)}</strong></div>
@@ -898,6 +902,9 @@ class SlowAiToolsPage {
 		const cancelAction = run.can_cancel
 			? `<button class="btn btn-xs btn-default" type="button" data-action="cancel-run" data-run-id="${this.escape(run.workflow_run)}">${__("Cancel")}</button>`
 			: "";
+		const archiveAction = run.can_archive
+			? `<button class="btn btn-xs btn-default" type="button" data-action="archive-run" data-run-id="${this.escape(run.workflow_run)}">${__("Archive")}</button>`
+			: "";
 		const rerunAction = run.template_lineage && run.template_lineage.source_template_version
 			? `<button class="btn btn-xs btn-primary" type="button" data-action="prepare-rerun" data-run-id="${this.escape(run.workflow_run)}">${__("Rerun")}</button>`
 			: "";
@@ -909,13 +916,14 @@ class SlowAiToolsPage {
 			<div class="slow-ai-tools__row"><span>${__("Title")}</span><strong>${this.escape(run.workflow_title || run.workflow || "")}</strong></div>
 			${lineageRows}
 			<div class="slow-ai-tools__row"><span>${__("Status")}</span><strong>${this.escape(run.status)}</strong></div>
+			${run.is_archived ? `<div class="slow-ai-tools__row"><span>${__("Archived")}</span><strong>${this.escape(run.archived_at || "Yes")}</strong></div>` : ""}
 			<div class="slow-ai-tools__row"><span>${__("Queued")}</span><strong>${this.escape(run.queued_at || "-")}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Started")}</span><strong>${this.escape(run.started_at || "-")}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Completed")}</span><strong>${this.escape(run.completed_at || "-")}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Provider Tasks")}</span><strong>${this.escape(provider.total || 0)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Cost")}</span><strong>${this.money(cost.debits_usd, cost.currency)}</strong></div>
 			<div class="slow-ai-tools__row"><span>${__("Output Assets")}</span><strong>${this.escape(assetCount)}</strong></div>
-			<div class="slow-ai-tools__inline-actions">${cancelAction}${rerunAction}${shareActions}</div>
+			<div class="slow-ai-tools__inline-actions">${cancelAction}${archiveAction}${rerunAction}${shareActions}</div>
 			${this.renderSafeErrors(detail)}
 		</div>`);
 	}
@@ -932,6 +940,23 @@ class SlowAiToolsPage {
 				return this.openRunDetail(runId);
 			})
 			.then(() => this.loadMyRuns());
+	}
+
+	archiveRun(runId) {
+		if (!runId) {
+			return Promise.resolve();
+		}
+		this.setStatus(__("Archiving run"));
+		return frappe
+			.call("slow_ai.api.public_tools.archive_my_run", { workflow_run: runId })
+			.then(() => {
+				this.setStatus(__("Run archived"));
+				this.$runDetail.empty();
+				if (this.workflowRun === runId) {
+					this.workflowRun = null;
+				}
+				return this.loadMyRuns();
+			});
 	}
 
 	prepareRerun(runId) {

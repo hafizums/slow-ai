@@ -161,6 +161,12 @@ Provider account secret in client code
 provider, account label, status, default flag, project, user, owner, creation,
 and modified timestamps.
 
+Project-scoped provider account CRUD requires project provider-account
+management access: project owner, OWNER member, BILLING member, or System
+Manager. EDITOR, VIEWER, non-member, Guest, and DISABLED members are rejected.
+For project-scoped accounts, record ownership or user scope does not bypass the
+current project membership policy.
+
 Run preflight and provider job persistence both enforce:
 
 ```txt

@@ -292,9 +292,12 @@ Writes: AI Credit Ledger CREDIT
 Returns: safe ledger row and current project balance
 ```
 
-`create_top_up` is an admin billing operation for `System Manager`. It creates
-one append-only credit ledger row. It does not call providers, create runs,
-enqueue workers, or expose provider secrets.
+`create_top_up` is an admin billing operation for project billing
+administrators. It creates one append-only credit ledger row. Project owners,
+OWNER members, BILLING members, and System Managers may create top-ups
+according to the central project access policy. EDITOR, VIEWER, non-member, and
+Guest users are rejected before ledger or execution side effects. It does not
+call providers, create runs, enqueue workers, or expose provider secrets.
 
 ### slow_ai.api.billing.get_balance
 
@@ -321,6 +324,11 @@ Returns: safe ledger rows plus current balance
 The ledger API returns safe accounting fields only. It must not return provider
 account secrets, raw provider responses, provider credentials, or provider
 adapter internals.
+
+Billing read/write APIs enforce `slow_ai.application.project_access` policy.
+Project owners, OWNER members, BILLING members, and System Managers may read
+balance/ledger data. EDITOR, VIEWER, non-member, Guest, and DISABLED members
+are rejected without mutating ledger or execution records.
 
 ### slow_ai.api.models.get_model_metadata
 
@@ -414,6 +422,13 @@ and modified timestamps. They never include API keys, Password fields, raw auth
 data, provider URLs, or provider adapter internals, and they do not call
 providers.
 
+Project-scoped provider account reads and writes require provider-account
+management access for the project: project owner, OWNER member, BILLING member,
+or System Manager. EDITOR, VIEWER, non-member, Guest, and DISABLED members are
+rejected without creating or mutating provider accounts or execution records.
+Owning a project-scoped `AI Provider Account` row does not bypass disabled
+membership or role policy.
+
 ### slow_ai.api.provider_accounts.get_account
 
 ```txt
@@ -435,6 +450,9 @@ Returns: safe AI Provider Account summary
 field. The return payload must not include the key or Password field value.
 Creating an account must not call providers, create provider jobs, create runs,
 or enqueue workers.
+Allowed create operations create exactly one `AI Provider Account` row. Denied
+create operations create no provider account, workflow, run, provider job,
+asset, ledger, or share records.
 
 ### slow_ai.api.provider_accounts.set_default
 

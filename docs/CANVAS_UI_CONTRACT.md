@@ -338,6 +338,10 @@ The create form may accept an API key in a password input, but the key must be
 cleared after save and must never be rendered from API responses. The panel must
 not test keys, call provider URLs, display provider secrets, create provider
 jobs, start runs, or bypass backend run preflight.
+The backend provider-account policy is authoritative. The panel may display
+safe backend rejection messages, but it must not expose API keys, Password
+field values, raw provider payloads, provider URLs, or account secrets after
+create/list/view/default/disable actions.
 
 The Model Catalog panel may list, filter, inspect, and administer persisted
 `AI Model` records through `slow_ai.api.models.*` only. It may display safe

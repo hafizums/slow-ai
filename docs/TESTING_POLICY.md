@@ -320,6 +320,7 @@ BYOK provider account coverage lives in:
 
 ```txt
 slow_ai/tests/integration/test_provider_account_byok.py
+slow_ai/tests/integration/test_provider_account_access_matrix.py
 ```
 
 This test uses real `AI Provider Account`, `AI Project`, `AI Model`,
@@ -329,6 +330,11 @@ account resolution, preflight rejection before enqueue for inactive/mismatched
 or disallowed accounts, persisted `AI Provider Job.provider_account`, and
 WaveSpeed server-side credential lookup. Account CRUD and preflight tests do not
 call providers.
+The access matrix adds real owner, OWNER/BILLING member, EDITOR, VIEWER,
+non-member, Guest, and System Manager coverage. It verifies safe payloads,
+disabled-member access loss, immediate role-change effects, exact create/default/
+disable side effects, and no workflow/run/node/provider-job/asset/ledger/share
+side effects from denied provider-account actions.
 
 Provider account UI coverage is part of:
 
@@ -391,6 +397,7 @@ Billing credit balance coverage lives in:
 
 ```txt
 slow_ai/tests/integration/test_billing_credit_balance.py
+slow_ai/tests/integration/test_billing_topup_ledger_access_matrix.py
 ```
 
 This test creates real `AI Credit Ledger` credit top-ups, calculates balance
@@ -401,6 +408,11 @@ actual-cost debits win over estimates, verifies missing actual cost falls back
 to persisted ProviderJob estimates, verifies zero-cost/failed jobs do not debit,
 verifies run history exposes ledger and debit source fields safely, and verifies
 billing APIs expose no provider secrets.
+The top-up/ledger access matrix verifies project owner, BILLING member, and
+System Manager top-up/read access, EDITOR/VIEWER/non-member/Guest rejection,
+disabled-member access loss, read-only balance/ledger calls, exact top-up
+ledger side effects, and insufficient-balance preflight rejection before
+workflow version/run/node/provider-job/asset/ledger debit side effects.
 
 Billing credit reservation coverage lives in:
 

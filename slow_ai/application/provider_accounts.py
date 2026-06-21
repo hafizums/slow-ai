@@ -129,8 +129,8 @@ def _can_view_account(row) -> bool:
     if _is_system_manager():
         return True
     current_user = frappe.session.user
-    if row.get("project") and can_manage_provider_accounts(row.get("project")):
-        return True
+    if row.get("project"):
+        return can_manage_provider_accounts(row.get("project"))
     return row.owner == current_user or row.get("user") == current_user
 
 
@@ -138,16 +138,18 @@ def _assert_can_manage_account(account) -> None:
     if _is_system_manager():
         return
     current_user = frappe.session.user
-    if account.project and can_manage_provider_accounts(account.project):
-        return
+    if account.project:
+        if can_manage_provider_accounts(account.project):
+            return
+        frappe.throw("You are not allowed to manage this provider account.", frappe.PermissionError)
     if account.owner == current_user or account.user == current_user:
         return
-    frappe.throw("You are not allowed to manage this provider account.")
+    frappe.throw("You are not allowed to manage this provider account.", frappe.PermissionError)
 
 
 def _assert_not_guest() -> None:
     if frappe.session.user == "Guest":
-        frappe.throw("Login is required to manage provider accounts.")
+        frappe.throw("Login is required to manage provider accounts.", frappe.PermissionError)
 
 
 def _is_system_manager() -> bool:

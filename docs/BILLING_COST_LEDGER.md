@@ -105,8 +105,11 @@ slow_ai.application.billing.create_top_up()
 slow_ai.api.billing.create_top_up()
 ```
 
-The API is restricted to `System Manager`, creates a `CREDIT` row, and returns a
-safe ledger payload plus current balance.
+The API is restricted by project billing policy: project owner, OWNER member,
+BILLING member, or System Manager. EDITOR, VIEWER, non-member, Guest, and
+DISABLED members are rejected before ledger or execution side effects. A
+successful top-up creates exactly one `CREDIT` row and returns a safe ledger
+payload plus current balance.
 
 Read APIs:
 
@@ -118,6 +121,9 @@ slow_ai.api.billing.get_ledger
 These APIs return safe accounting fields only. They must not expose provider
 account secrets, raw provider responses, provider credentials, or provider
 adapter internals.
+Balance and ledger reads are read-only and use the same project billing-view
+policy. Allowed reads create or mutate no workflow, run, node, provider job,
+asset, ledger, or share records.
 
 ## Task 09 implementation
 

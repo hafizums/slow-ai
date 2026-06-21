@@ -35,7 +35,19 @@ draft_nodes_json
 draft_edges_json
 layout_json
 current_version
+source_template
+source_template_version
+is_temporary_tool_draft
+tool_draft_type
+tool_draft_prepared_at
 ```
+
+`is_temporary_tool_draft`, `tool_draft_type`, and
+`tool_draft_prepared_at` are cleanup metadata for public Tool Mode preparation
+and rerun preparation. They are persistence fields only. Cleanup eligibility,
+age thresholds, run/version guards, deletion, and permission checks live in
+application services. Normal canvas/user-created workflow drafts must not set
+these fields.
 
 ## AI Workflow Version
 

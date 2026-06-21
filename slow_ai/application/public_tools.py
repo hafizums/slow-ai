@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import secrets
+from datetime import timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -53,6 +54,7 @@ CANCELLABLE_WORKFLOW_STATUSES = frozenset(
     }
 )
 CANCELLATION_ERROR = {"type": "RunCancelled", "message": "Run cancelled by user."}
+DEFAULT_TOOL_DRAFT_CLEANUP_AGE_HOURS = 24
 
 
 def list_templates(category: str | None = None) -> dict[str, Any]:
@@ -115,6 +117,8 @@ def prepare_workflow_from_template(
         status="DRAFT",
         source_template=payload["template"],
         source_template_version=payload["template_version"],
+        is_temporary_tool_draft=True,
+        tool_draft_type="PREPARED",
     )
 
 
@@ -156,6 +160,8 @@ def prepare_rerun_from_run(
         status="DRAFT",
         source_template=payload["template"],
         source_template_version=payload["template_version"],
+        is_temporary_tool_draft=True,
+        tool_draft_type="RERUN",
     )
     return {
         "workflow": draft,
@@ -209,6 +215,72 @@ def update_rerun_draft_values(
         source_template=payload["template"],
         source_template_version=payload["template_version"],
     )
+
+
+def cleanup_stale_tool_drafts(
+    *,
+    max_age_hours: int | str | None = DEFAULT_TOOL_DRAFT_CLEANUP_AGE_HOURS,
+    limit: int | str = 100,
+    dry_run: bool | str | int = False,
+) -> dict[str, Any]:
+    _require_logged_in_user()
+    _require_system_manager()
+    hours = _as_positive_hours(max_age_hours)
+    cutoff = now_datetime() - timedelta(hours=hours)
+    delete_enabled = not _as_bool(dry_run)
+    rows = frappe.get_all(
+        "AI Workflow",
+        filters={
+            "status": "DRAFT",
+            "is_temporary_tool_draft": 1,
+        },
+        fields=[
+            "name",
+            "source_template",
+            "source_template_version",
+            "tool_draft_type",
+            "tool_draft_prepared_at",
+            "modified",
+        ],
+        order_by="modified asc",
+        limit=_as_limit(limit),
+    )
+    deleted: list[str] = []
+    skipped: list[dict[str, str]] = []
+    for row in rows:
+        workflow = row.get("name")
+        if not workflow:
+            continue
+        if not row.get("source_template") or not row.get("source_template_version"):
+            skipped.append({"workflow": workflow, "reason": "missing_template_lineage"})
+            continue
+        prepared_at = get_datetime(row.get("tool_draft_prepared_at") or row.get("modified"))
+        if prepared_at > cutoff:
+            skipped.append({"workflow": workflow, "reason": "fresh"})
+            continue
+        if frappe.db.exists("AI Workflow Run", {"workflow": workflow}):
+            skipped.append({"workflow": workflow, "reason": "has_run"})
+            continue
+        if frappe.db.exists("AI Workflow Version", {"workflow": workflow}):
+            skipped.append({"workflow": workflow, "reason": "has_workflow_version"})
+            continue
+        deleted.append(workflow)
+        if delete_enabled:
+            frappe.delete_doc(
+                "AI Workflow",
+                workflow,
+                ignore_permissions=True,
+                ignore_missing=True,
+                delete_permanently=True,
+            )
+    return {
+        "deleted_count": len(deleted),
+        "deleted_workflows": deleted,
+        "skipped": skipped,
+        "dry_run": not delete_enabled,
+        "max_age_hours": hours,
+        "cutoff": cutoff,
+    }
 
 
 def list_my_runs(
@@ -422,6 +494,11 @@ def get_shared_run(share_token: str) -> dict[str, Any]:
 def _require_logged_in_user() -> None:
     if frappe.session.user == "Guest":
         frappe.throw("Login is required to run Slow AI tools.", frappe.PermissionError)
+
+
+def _require_system_manager() -> None:
+    if not is_system_manager():
+        frappe.throw("System Manager is required to clean public tool drafts.", frappe.PermissionError)
 
 
 def _assert_template_published(template: dict[str, Any]) -> None:
@@ -823,6 +900,16 @@ def _as_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _as_positive_hours(value: int | str | None) -> int:
+    try:
+        hours = int(value or DEFAULT_TOOL_DRAFT_CLEANUP_AGE_HOURS)
+    except (TypeError, ValueError):
+        frappe.throw("Cleanup age threshold must be a positive number of hours.", frappe.ValidationError)
+    if hours < 1:
+        frappe.throw("Cleanup age threshold must be at least 1 hour.", frappe.ValidationError)
+    return hours
 
 
 def _as_decimal(value: Any) -> Decimal:

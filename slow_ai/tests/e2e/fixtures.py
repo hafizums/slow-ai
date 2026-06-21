@@ -18,11 +18,111 @@ PUBLIC_TOOL_EDITOR_USER = "slow.ai.public.editor.e2e@example.test"
 PUBLIC_TOOL_EDITOR_PASSWORD = "SlowAiPublicEditorE2E!2345"
 PUBLIC_TOOL_VIEWER_USER = "slow.ai.public.viewer.e2e@example.test"
 PUBLIC_TOOL_VIEWER_PASSWORD = "SlowAiPublicViewerE2E!2345"
+E2E_TEST_USERS = {
+    E2E_USER,
+    PUBLIC_TOOL_USER,
+    PUBLIC_TOOL_EDITOR_USER,
+    PUBLIC_TOOL_VIEWER_USER,
+}
+
+
+def cleanup_canvas_e2e() -> dict:
+    """Delete records created by browser E2E fixtures while keeping test users."""
+
+    frappe.set_user("Administrator")
+    projects = set(_pluck("AI Project", {"project_name": ["like", "Browser E2E Project%"]}))
+    workflows = set()
+    if projects:
+        workflows.update(_pluck("AI Workflow", {"project": ["in", sorted(projects)]}))
+    workflows.update(_pluck("AI Workflow", {"title": ["like", "Browser E2E%"]}))
+    workflows.update(_pluck("AI Workflow", {"title": ["like", "Rerun of Browser E2E%"]}))
+
+    workflow_runs = set()
+    if projects:
+        workflow_runs.update(_pluck("AI Workflow Run", {"project": ["in", sorted(projects)]}))
+    if workflows:
+        workflow_runs.update(_pluck("AI Workflow Run", {"workflow": ["in", sorted(workflows)]}))
+
+    node_runs = set()
+    if workflow_runs:
+        node_runs.update(_pluck("AI Node Run", {"workflow_run": ["in", sorted(workflow_runs)]}))
+
+    provider_jobs = set()
+    if node_runs:
+        provider_jobs.update(_pluck("AI Provider Job", {"node_run": ["in", sorted(node_runs)]}))
+    provider_jobs.update(_pluck("AI Provider Job", {"provider": ["like", "browser-e2e-%"]}))
+
+    assets = set()
+    if projects:
+        assets.update(_pluck("AI Asset", {"project": ["in", sorted(projects)]}))
+    if workflow_runs:
+        assets.update(_pluck("AI Asset", {"source_workflow_run": ["in", sorted(workflow_runs)]}))
+    assets.update(_pluck("AI Asset", {"url": ["like", "https://example.invalid/e2e-%"]}))
+
+    ledger_rows = set()
+    if projects:
+        ledger_rows.update(_pluck("AI Credit Ledger", {"project": ["in", sorted(projects)]}))
+    if workflow_runs:
+        ledger_rows.update(_pluck("AI Credit Ledger", {"workflow_run": ["in", sorted(workflow_runs)]}))
+    if node_runs:
+        ledger_rows.update(_pluck("AI Credit Ledger", {"node_run": ["in", sorted(node_runs)]}))
+    if provider_jobs:
+        ledger_rows.update(_pluck("AI Credit Ledger", {"provider_job": ["in", sorted(provider_jobs)]}))
+
+    shares = set()
+    if projects:
+        shares.update(_pluck("AI Tool Run Share", {"project": ["in", sorted(projects)]}))
+    if workflow_runs:
+        shares.update(_pluck("AI Tool Run Share", {"workflow_run": ["in", sorted(workflow_runs)]}))
+
+    workflow_versions = set()
+    if workflows:
+        workflow_versions.update(_pluck("AI Workflow Version", {"workflow": ["in", sorted(workflows)]}))
+
+    templates = set(_pluck("AI Workflow Template", {"category": "Browser E2E"}))
+    templates.update(_pluck("AI Workflow Template", {"template_name": ["like", "Browser E2E%"]}))
+    template_versions = set()
+    if templates:
+        template_versions.update(_pluck("AI Workflow Template Version", {"template": ["in", sorted(templates)]}))
+
+    project_members = set()
+    if projects:
+        project_members.update(_pluck("AI Project Member", {"project": ["in", sorted(projects)]}))
+    project_members.update(_pluck("AI Project Member", {"user": ["in", sorted(E2E_TEST_USERS)]}))
+
+    provider_accounts = set(_pluck("AI Provider Account", {"provider": ["like", "browser-e2e-provider-%"]}))
+    provider_accounts.update(_pluck("AI Provider Account", {"account_label": ["like", "Browser E2E Provider Account%"]}))
+
+    models = set(_pluck("AI Model", {"provider": ["like", "browser-e2e-model-provider-%"]}))
+    models.update(_pluck("AI Model", {"model_name": ["like", "Browser E2E%"]}))
+
+    deletion_plan = [
+        ("AI Credit Ledger", ledger_rows),
+        ("AI Tool Run Share", shares),
+        ("AI Asset", assets),
+        ("AI Provider Job", provider_jobs),
+        ("AI Node Run", node_runs),
+        ("AI Workflow Run", workflow_runs),
+        ("AI Workflow Version", workflow_versions),
+        ("AI Workflow", workflows),
+        ("AI Workflow Template Version", template_versions),
+        ("AI Workflow Template", templates),
+        ("AI Project Member", project_members),
+        ("AI Provider Account", provider_accounts),
+        ("AI Model", models),
+        ("AI Project", projects),
+    ]
+    deleted = {}
+    for doctype, names in deletion_plan:
+        deleted[doctype] = _delete_docs(doctype, names)
+    frappe.db.commit()
+    return {"deleted": deleted}
 
 
 def setup_canvas_e2e() -> dict:
     """Create real Frappe documents used by the browser test suite."""
 
+    cleanup_canvas_e2e()
     user = _ensure_user()
     public_tool_user = _ensure_public_tool_user()
     public_tool_editor_user = _ensure_public_tool_member_user(PUBLIC_TOOL_EDITOR_USER, PUBLIC_TOOL_EDITOR_PASSWORD)
@@ -654,6 +754,27 @@ def _create_cancellable_run(project: str) -> dict:
             }
         ).insert(ignore_permissions=True)
     return {"workflow_run": run.name}
+
+
+def _pluck(doctype: str, filters: dict) -> list[str]:
+    return frappe.get_all(doctype, filters=filters, pluck="name")
+
+
+def _delete_docs(doctype: str, names: set[str]) -> int:
+    count = 0
+    for name in sorted(names):
+        if not frappe.db.exists(doctype, name):
+            continue
+        frappe.delete_doc(
+            doctype,
+            name,
+            force=True,
+            ignore_permissions=True,
+            ignore_missing=True,
+            delete_permanently=True,
+        )
+        count += 1
+    return count
 
 
 def _unique(prefix: str) -> str:

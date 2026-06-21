@@ -282,6 +282,21 @@ are rejected without cancellation, archived runs remain openable through
 and archive actions do not create or mutate execution/provider/output/billing
 or share audit records.
 
+Public tool stale draft cleanup coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_public_tool_draft_cleanup.py
+```
+
+This test uses real published templates, projects, workflow drafts, rerun
+drafts, and API calls. It verifies stale marked public tool drafts with no run
+are deleted, fresh drafts are retained, drafts with existing workflow runs are
+retained, normal canvas workflow drafts are retained, stale rerun drafts are
+deleted, cleanup is System Manager-only, dry-run does not delete, cleanup
+creates no workflow version, workflow run, node run, provider job, asset,
+ledger, or share side effects, and cleanup responses expose no provider
+accounts, secrets, raw provider payloads, or provider URLs.
+
 The Run Output Gallery coverage in the same module proves grouped gallery
 payloads are built from real `AI Asset` and `AI Node Run` records, only safe
 asset view metadata is returned, provider account names/secrets/raw provider

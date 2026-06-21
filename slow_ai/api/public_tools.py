@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import frappe
 
+from slow_ai.application.public_tools import cleanup_stale_tool_drafts as cleanup_stale_tool_drafts_service
 from slow_ai.application.public_tools import create_run_share as create_run_share_service
 from slow_ai.application.public_tools import create_workflow_from_template as create_workflow_from_template_service
 from slow_ai.application.public_tools import archive_my_run as archive_my_run_service
@@ -48,6 +49,11 @@ def prepare_rerun_from_run(workflow_run: str, title: str | None = None) -> dict:
 @frappe.whitelist()
 def update_rerun_draft_values(workflow: str, values=None) -> dict:
     return update_rerun_draft_values_service(workflow=workflow, values=values)
+
+
+@frappe.whitelist()
+def cleanup_stale_tool_drafts(max_age_hours: int | str | None = 24, limit: int | str = 100, dry_run=False) -> dict:
+    return cleanup_stale_tool_drafts_service(max_age_hours=max_age_hours, limit=limit, dry_run=dry_run)
 
 
 @frappe.whitelist()

@@ -48,6 +48,10 @@ slow_ai.api.projects.disable_member
 No other `slow_ai` API method may be called from this page without updating this
 contract and the architecture boundary tests.
 
+The public Tool page must not call
+`slow_ai.api.public_tools.cleanup_stale_tool_drafts`. Stale draft cleanup is a
+backend/admin maintenance operation only.
+
 ## Template Rules
 
 Only `PUBLISHED` templates are listed or loaded. `DRAFT`, `IN_REVIEW`,
@@ -320,6 +324,26 @@ slow_ai.api.runs.start_run
 
 Backend run preflight and billing balance checks remain authoritative for the
 rerun.
+
+## Draft Cleanup Rules
+
+Public tool preparation and rerun preparation mark their editable `AI Workflow`
+drafts as temporary public tool drafts. The backend cleanup service may delete
+only stale marked drafts that have no `AI Workflow Run` and no immutable
+`AI Workflow Version`.
+
+Cleanup may be invoked through the System Manager-only backend API:
+
+```txt
+slow_ai.api.public_tools.cleanup_stale_tool_drafts
+```
+
+The public Tool page must not call this API and must not directly delete
+records. Cleanup must not delete or mutate workflow versions, runs, node runs,
+provider jobs, assets, credit ledger rows, or tool run shares. It must not call
+providers, enqueue workers, expose provider account names, expose provider
+secrets, expose raw provider payloads, expose provider URLs, or return unsafe
+errors.
 
 ## Tool Run Sharing Rules
 

@@ -34,6 +34,7 @@ slow_ai.api.public_tools.create_workflow_from_template
 slow_ai.api.public_tools.prepare_workflow_from_template
 slow_ai.api.public_tools.prepare_rerun_from_run
 slow_ai.api.public_tools.update_rerun_draft_values
+slow_ai.api.public_tools.cleanup_stale_tool_drafts
 slow_ai.api.public_tools.list_my_runs
 slow_ai.api.public_tools.get_my_run
 slow_ai.api.public_tools.get_run_output_gallery
@@ -619,7 +620,42 @@ the legacy node-derived public-tool field allow-list.
 `prepare_workflow_from_template` must not start a run, create an immutable
 workflow version, enqueue workers, create node runs, create provider jobs,
 create assets, create ledger rows, or call providers. Runs still start only
-through `slow_ai.api.runs.start_run`.
+through `slow_ai.api.runs.start_run`. Drafts created by this method are marked
+as temporary public tool drafts so stale unstarted drafts can be cleaned later.
+
+### slow_ai.api.public_tools.prepare_rerun_from_run
+
+```txt
+Arguments: workflow_run, title
+Application service: slow_ai.application.public_tools.prepare_rerun_from_run
+Writes: AI Workflow draft
+Returns: editable rerun draft payload
+```
+
+This method creates a new editable draft from the immutable template version
+recorded on the source run. It must not create workflow versions, workflow
+runs, node runs, provider jobs, assets, ledger rows, enqueue workers, or call
+providers. Rerun drafts created by this method are marked as temporary public
+tool drafts so stale unstarted reruns can be cleaned later.
+
+### slow_ai.api.public_tools.cleanup_stale_tool_drafts
+
+```txt
+Arguments: max_age_hours, limit, dry_run
+Application service: slow_ai.application.public_tools.cleanup_stale_tool_drafts
+Writes: deletes stale AI Workflow drafts only
+Returns: safe cleanup counts, deleted workflow ids, skipped workflow ids/reasons
+```
+
+This API is System Manager-only. It deletes only `AI Workflow` rows that are
+explicitly marked as temporary public tool drafts, are older than the configured
+age threshold, still have template-version lineage, and have no `AI Workflow
+Run` or `AI Workflow Version`. It must not delete or mutate `AI Workflow
+Version`, `AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`,
+`AI Credit Ledger`, or `AI Tool Run Share` records. It must not call providers,
+enqueue workers, expose provider accounts, expose provider secrets, expose raw
+provider payloads, or expose provider URLs. The public Tool page must not call
+this API.
 
 ### slow_ai.api.public_tools.list_my_runs
 

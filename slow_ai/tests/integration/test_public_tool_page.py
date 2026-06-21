@@ -398,6 +398,7 @@ class TestPublicToolPage(FrappeTestCase):
         self.assertIn("slow_ai.api.public_tools.prepare_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.prepare_rerun_from_run", page.script)
         self.assertIn("slow_ai.api.public_tools.update_rerun_draft_values", page.script)
+        self.assertNotIn("slow_ai.api.public_tools.cleanup_stale_tool_drafts", page.script)
         self.assertNotIn("slow_ai.api.public_tools.create_workflow_from_template", page.script)
         self.assertIn("slow_ai.api.public_tools.list_my_runs", page.script)
         self.assertIn("slow_ai.api.public_tools.get_my_run", page.script)

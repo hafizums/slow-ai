@@ -11,6 +11,9 @@ cleanup() {
 		kill "${STARTED_PID}" >/dev/null 2>&1 || true
 		wait "${STARTED_PID}" >/dev/null 2>&1 || true
 	fi
+	if [[ "${SLOW_AI_E2E_CLEANUP_DATA:-1}" != "0" ]]; then
+		bench --site "${SITE}" execute slow_ai.tests.e2e.fixtures.cleanup_canvas_e2e >/dev/null 2>&1 || true
+	fi
 }
 trap cleanup EXIT
 

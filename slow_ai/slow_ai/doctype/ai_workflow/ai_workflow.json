@@ -13,6 +13,10 @@
   "lineage_section",
   "source_template",
   "source_template_version",
+  "tool_draft_section",
+  "is_temporary_tool_draft",
+  "tool_draft_type",
+  "tool_draft_prepared_at",
   "draft_nodes_json",
   "draft_edges_json",
   "layout_json"
@@ -68,6 +72,32 @@
    "fieldtype": "Link",
    "label": "Source Template Version",
    "options": "AI Workflow Template Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tool_draft_section",
+   "fieldtype": "Section Break",
+   "label": "Public Tool Draft Cleanup"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_temporary_tool_draft",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Is Temporary Tool Draft",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tool_draft_type",
+   "fieldtype": "Select",
+   "label": "Tool Draft Type",
+   "options": "\nPREPARED\nRERUN",
+   "read_only": 1
+  },
+  {
+   "fieldname": "tool_draft_prepared_at",
+   "fieldtype": "Datetime",
+   "label": "Tool Draft Prepared At",
    "read_only": 1
   },
   {

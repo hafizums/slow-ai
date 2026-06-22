@@ -831,15 +831,46 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 
 	const guestContext = await browser.newContext();
 	const guestPage = await guestContext.newPage();
+	const guestApiCalls = [];
 	const guestProviderRequests = [];
-	const guestTimelineRequests = [];
+	const forbiddenGuestMethods = new Set([
+		API.assetView,
+		API.startRun,
+		API.runStatus,
+		API.history,
+		API.runTimeline,
+		API.publicListMyRuns,
+		API.publicGetMyRun,
+		API.publicGetRunOutputGallery,
+		API.publicCancelMyRun,
+		API.publicArchiveMyRun,
+		API.publicPrepareRerunFromRun,
+		API.publicUpdateRerunDraftValues,
+		API.publicDisableRunShare,
+		API.billingBalance,
+		API.modelMetadata,
+		API.listProviderAccounts,
+		API.getProviderAccount,
+		API.createProviderAccount,
+		API.setDefaultProviderAccount,
+		API.disableProviderAccount,
+		API.listModels,
+		API.getModel,
+		API.updateModelStatus,
+		API.updateModelPricing,
+		API.listProjectMembers,
+		API.addProjectMember,
+		API.updateProjectMemberRole,
+		API.disableProjectMember,
+	]);
 	guestPage.on("request", (request) => {
 		const url = request.url();
+		const marker = "/api/method/";
+		if (url.includes(marker)) {
+			guestApiCalls.push(decodeURIComponent(url.split(marker)[1].split("?")[0]));
+		}
 		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
 			guestProviderRequests.push(url);
-		}
-		if (url.includes(`/api/method/${API.runTimeline}`)) {
-			guestTimelineRequests.push(url);
 		}
 	});
 	const shareUrl = new URL(createdShare.message.share.share_url, page.url()).toString();
@@ -864,21 +895,48 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(sharedPayload).not.toContain('"project"');
 	expect(sharedPayload).not.toContain('"workflow"');
 	expect(sharedPayload).not.toContain(fixtures.public_tool_project);
+	expect(sharedPayload).not.toContain(fixtures.public_unshared_history_asset);
+	expect(sharedPayload).not.toContain(fixtures.public_video_history_asset);
+	expect(sharedPayload).not.toContain(fixtures.public_audio_history_asset);
+	expect(sharedPayload).not.toContain("provider_account");
+	expect(sharedPayload).not.toContain("source_provider_job");
+	expect(sharedPayload).not.toContain("external_job_id");
 	expect(sharedPayload).not.toContain("request_json");
 	expect(sharedPayload).not.toContain("response_json");
 	expect(sharedPayload).not.toContain("raw_error_json");
+	expect(sharedPayload).not.toContain("Authorization");
+	expect(sharedPayload).not.toContain("Bearer ");
+	expect(sharedPayload).not.toContain("Traceback");
 	await expect(guestPage.locator("[data-page='slow-ai-shared']")).toBeVisible();
 	await expect(guestPage.locator("[data-role='shared-assets']")).toContainText(fixtures.public_history_asset);
 	await expect(guestPage.locator("[data-role='shared-assets']")).not.toContainText(fixtures.public_unshared_history_asset);
 	await expect(guestPage.locator("[data-role='shared-assets']")).not.toContainText(fixtures.public_video_history_asset);
 	await expect(guestPage.locator("[data-role='shared-assets']")).not.toContainText(fixtures.public_audio_history_asset);
-	await expect(guestPage.getByRole("button", { name: /^Run$/ })).toHaveCount(0);
+	await expect(guestPage.getByRole("button", { name: /^(Run|Cancel|Archive|Rerun|Create Share Link|Disable Share)$/ })).toHaveCount(0);
+	await expect(guestPage.getByText("Project Members")).toHaveCount(0);
+	await expect(guestPage.getByText("Timeline")).toHaveCount(0);
+	await expect(guestPage.getByText("Provider Accounts")).toHaveCount(0);
+	await expect(guestPage.getByText("Model Catalog")).toHaveCount(0);
+	await expect(guestPage.getByText("Current Balance")).toHaveCount(0);
 	const guestSource = await guestPage.locator("html").innerHTML();
+	expect(guestApiCalls).toEqual([API.publicGetSharedRun]);
+	for (const method of forbiddenGuestMethods) {
+		expect(guestApiCalls).not.toContain(method);
+	}
 	expect(guestSource).not.toContain("slow_ai.api.runs.start_run");
 	expect(guestSource).not.toContain("slow_ai.api.runs.get_run_timeline");
+	expect(guestSource).not.toContain("slow_ai.api.public_tools.get_run_output_gallery");
+	expect(guestSource).not.toContain("slow_ai.api.assets.view");
+	expect(guestSource).not.toContain("slow_ai.api.billing.");
+	expect(guestSource).not.toContain("slow_ai.api.provider_accounts.");
+	expect(guestSource).not.toContain("slow_ai.api.models.");
+	expect(guestSource).not.toContain("slow_ai.api.projects.");
 	expect(guestSource).not.toContain("Timeline");
 	expect(guestSource).not.toContain("data-timeline-filter");
 	expect(guestSource).not.toContain("No timeline events match these filters");
+	expect(guestSource).not.toContain("Project Members");
+	expect(guestSource).not.toContain("Provider Accounts");
+	expect(guestSource).not.toContain("Model Catalog");
 	expect(guestSource).not.toContain("WAVESPEED_API_KEY");
 	expect(guestSource).not.toContain("REPLICATE_API_KEY");
 	expect(guestSource).not.toContain("api_key_secret");
@@ -891,8 +949,31 @@ test("Slow AI public tool page runs published templates through backend APIs", a
 	expect(guestSource).not.toContain("api.wavespeed.ai");
 	expect(guestSource).not.toContain("api.replicate.com");
 	expect(guestSource).not.toContain("Authorization: Bearer");
+	expect(guestSource).not.toContain("Traceback");
 	expect(guestProviderRequests).toEqual([]);
-	expect(guestTimelineRequests).toEqual([]);
+
+	for (const unavailableUrl of [
+		new URL(fixtures.public_disabled_share_url, page.url()).toString(),
+		new URL(fixtures.public_expired_share_url, page.url()).toString(),
+		new URL(`/slow-ai/shared/browser-e2e-missing-${Date.now()}`, page.url()).toString(),
+	]) {
+		const unavailableResponse = guestPage.waitForResponse(apiAnyStatusPredicate(API.publicGetSharedRun));
+		await guestPage.goto(unavailableUrl);
+		const response = await unavailableResponse;
+		expect(response.status()).toBeGreaterThanOrEqual(400);
+		await expect(guestPage.locator("[data-page='slow-ai-shared']")).toContainText("Shared run unavailable");
+		await expect(guestPage.locator("[data-role='shared-assets'] [data-asset-name]")).toHaveCount(0);
+		await expect(guestPage.getByRole("button", { name: /^(Run|Cancel|Archive|Rerun)$/ })).toHaveCount(0);
+		const unavailableSource = await guestPage.locator("html").innerHTML();
+		expect(unavailableSource).not.toContain("Traceback");
+		expect(unavailableSource).not.toContain("request_json");
+		expect(unavailableSource).not.toContain("response_json");
+		expect(unavailableSource).not.toContain("raw_error_json");
+		expect(unavailableSource).not.toContain("provider_account");
+	}
+	for (const method of guestApiCalls) {
+		expect(method).toBe(API.publicGetSharedRun);
+	}
 	await guestContext.close();
 
 	const editorContext = await browser.newContext();

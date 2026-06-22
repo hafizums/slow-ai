@@ -46,7 +46,9 @@ slow_ai.api.public_tools.get_shared_run
 only assets explicitly selected on the share record. Shared responses must also
 strip project and workflow draft identifiers from the nested gallery `run`
 metadata and strip internal provider-job source identifiers from shared gallery
-assets.
+assets. Disabled, expired, malformed, unknown, or empty share tokens must fail
+with a safe unavailable response and must not reveal whether a token ever
+existed.
 
 ## Payload Shape
 

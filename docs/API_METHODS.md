@@ -931,11 +931,15 @@ Writes: AI Tool Run Share
 Returns: safe share metadata and read-only share URL
 ```
 
-This API requires a logged-in user with access to the run project. Only
-completed successful tool runs may be shared. `selected_assets` is required,
-must contain at least one AI Asset name, and every selected asset must belong to
-the workflow run. Empty selection is rejected; there is no implicit share-all
-fallback. It must not create workflow versions, workflow runs, node runs,
+This API requires a logged-in user with share/manage access to the run project.
+Project OWNER/EDITOR and System Manager may create shares; VIEWER, BILLING,
+disabled members, non-members, and Guest must be rejected. Only completed
+successful tool runs may be shared. `selected_assets` is required, must contain
+at least one AI Asset name, and every selected asset must belong to the
+workflow run. Empty selection is rejected; there is no implicit share-all
+fallback. Repeating the same share request for the same owner/run/selected
+asset set should reuse the existing active share instead of creating unbounded
+tokens. It must not create workflow versions, workflow runs, node runs,
 provider jobs, assets, ledger rows, workers, or provider calls.
 
 ### slow_ai.api.public_tools.disable_run_share
@@ -947,8 +951,10 @@ Writes: AI Tool Run Share.status = DISABLED
 Returns: safe share metadata
 ```
 
-Only the share owner or System Manager may disable a share. Disabling a share
-must not mutate the underlying workflow run or output records.
+Only the share owner or System Manager may disable a share. Repeated disable
+must be idempotent or safely rejected without creating additional records.
+Disabling a share must not mutate the underlying workflow run or output
+records.
 
 ### slow_ai.api.public_tools.get_shared_run
 
@@ -959,8 +965,10 @@ Guest access: allowed
 Returns: safe read-only run metadata, selected output asset previews, and aggregate cost summary
 ```
 
-This API allows guest reads only for ACTIVE, non-expired share tokens. It must
-not return provider account names, provider secrets, raw provider
+This API allows guest reads only for ACTIVE, non-expired, well-formed share
+tokens. Disabled, expired, unknown, malformed, or empty tokens must return the
+same safe denial behavior without leaking token state. It must not return
+project metadata, provider account names, provider secrets, raw provider
 request/response/error JSON, workflow draft internals, or unsafe errors. It
 must not start runs, enqueue workers, create provider jobs, create assets,
 create ledger rows, or call providers. It returns only assets persisted in

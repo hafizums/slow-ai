@@ -6,6 +6,7 @@ import json
 from uuid import uuid4
 
 import frappe
+from frappe.utils import add_days
 from frappe.utils import now_datetime
 from frappe.utils.password import update_password
 
@@ -167,6 +168,18 @@ def setup_canvas_e2e() -> dict:
     catalog_model = _create_catalog_model()
     asset_run = _create_history_asset_run(project.name)
     public_asset_run = _create_history_asset_run(public_tool_project.name)
+    disabled_share = _create_share_fixture(
+        public_tool_project.name,
+        public_asset_run["workflow_run"],
+        public_asset_run["asset"],
+        status="DISABLED",
+    )
+    expired_share = _create_share_fixture(
+        public_tool_project.name,
+        public_asset_run["workflow_run"],
+        public_asset_run["asset"],
+        expires_at=add_days(now_datetime(), -1),
+    )
     public_cancellable_run = _create_cancellable_run(public_tool_project.name)
     frappe.db.commit()
     return {
@@ -200,6 +213,8 @@ def setup_canvas_e2e() -> dict:
         "public_unshared_history_asset": public_asset_run["unshared_asset"],
         "public_video_history_asset": public_asset_run["video_asset"],
         "public_audio_history_asset": public_asset_run["audio_asset"],
+        "public_disabled_share_url": disabled_share["url"],
+        "public_expired_share_url": expired_share["url"],
         "public_cancellable_workflow_run": public_cancellable_run["workflow_run"],
         "project": project.name,
         "canvas_title": f"Browser E2E Canvas {uuid4().hex[:8]}",
@@ -677,6 +692,29 @@ def _create_history_asset_run(project: str) -> dict:
         "video_asset": video_asset.name,
         "audio_asset": audio_asset.name,
     }
+
+
+def _create_share_fixture(
+    project: str,
+    workflow_run: str,
+    selected_asset: str,
+    *,
+    status: str = "ACTIVE",
+    expires_at=None,
+) -> dict:
+    token = f"browser-e2e-share-{uuid4().hex}"
+    share = frappe.get_doc(
+        {
+            "doctype": "AI Tool Run Share",
+            "workflow_run": workflow_run,
+            "project": project,
+            "share_token": token,
+            "status": status,
+            "selected_assets_json": json.dumps([selected_asset]),
+            "expires_at": expires_at,
+        }
+    ).insert(ignore_permissions=True)
+    return {"name": share.name, "token": token, "url": f"/slow-ai/shared/{token}"}
 
 
 def _create_cancellable_run(project: str) -> dict:

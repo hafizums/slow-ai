@@ -434,14 +434,19 @@ The shared page is read-only and may call only:
 slow_ai.api.public_tools.get_shared_run
 ```
 
-The shared page must not show a Run button, call `start_run`, create workflows,
-enqueue workers, create provider jobs, expose provider account names, expose
-provider secrets, expose raw provider payloads, or expose workflow draft
-internals. It must not expose project metadata through either the top-level
-shared run payload or nested `output_gallery.run`. Output previews must come
-only from backend-safe asset view data for the selected assets stored on the
-share record. Guest shared output payloads must not expose provider job
+The shared page must not show Run, Cancel, Archive, Rerun, Project Members,
+Timeline, Provider Accounts, Model Catalog, billing, or admin controls. It must
+not call `start_run`, authenticated run detail APIs, authenticated gallery
+APIs, asset view APIs, billing APIs, model APIs, provider-account APIs, project
+membership APIs, worker/recovery APIs, or provider URLs. It must not create
+workflows, enqueue workers, create provider jobs, expose provider account
+names, expose provider secrets, expose raw provider payloads, or expose
+workflow draft internals. It must not expose project metadata through either
+the top-level shared run payload or nested `output_gallery.run`. Output previews
+must come only from backend-safe asset view data for the selected assets stored
+on the share record. Guest shared output payloads must not expose provider job
 observability fields or internal source identifiers such as
-`source_provider_job`. Reading a shared run must not create, delete, enqueue, or
-mutate workflow versions, workflow runs, node runs, provider jobs, assets,
-ledger rows, or share records.
+`source_provider_job`. Disabled, expired, unknown, malformed, or empty tokens
+must render the same safe unavailable state without raw server errors. Reading
+a shared run must not create, delete, enqueue, or mutate workflow versions,
+workflow runs, node runs, provider jobs, assets, ledger rows, or share records.

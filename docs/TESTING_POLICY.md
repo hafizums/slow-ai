@@ -831,6 +831,27 @@ selected-only guest shared payloads; no side effects from view/gallery/share
 reads; and inaccessible asset rejection in public-tool prepare and rerun update
 paths.
 
+Share-token security matrix coverage is included in:
+
+```txt
+slow_ai/tests/integration/test_share_token_security_matrix.py
+apps/slow_ai/e2e/slow_ai_canvas.spec.js
+```
+
+The integration matrix uses real users, project memberships, completed and
+active runs, selected/unselected assets, unsafe provider-job payload fields,
+active/disabled/expired shares, and guest tokens. It verifies OWNER/EDITOR
+share creation, VIEWER/BILLING/disabled-member/non-member/Guest denial,
+terminal-only sharing, selected asset ownership validation, bounded repeated
+share creation, safe repeated disable behavior, disabled/expired/malformed token
+rejection, selected-only guest payloads, project-scoped authenticated gallery
+reads, and no execution/billing/share side effects except the intended share
+row creation or status update. The browser E2E opens a guest shared page with
+one selected output, verifies unselected outputs and internal controls are
+hidden, tracks `/api/method` calls to ensure only `get_shared_run` is used, and
+checks disabled/expired/missing token pages render the same safe unavailable
+state.
+
 Run timeline UI coverage is included in:
 
 ```txt

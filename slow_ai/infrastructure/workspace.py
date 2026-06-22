@@ -11,6 +11,7 @@ WORKSPACE_TITLE = "Slow AI"
 WORKSPACE_MODULE = "Slow Ai"
 WORKSPACE_ICON = "image"
 WORKSPACE_PAGE = "slow-ai-canvas"
+ADMIN_PAGE = "slow-ai-admin"
 
 
 def sync_private_workspaces() -> None:
@@ -89,6 +90,7 @@ def _workspace_content() -> list[dict]:
     return [
         _header("Workflow"),
         _shortcut("Canvas", 3),
+        _shortcut("Admin Health", 3),
         _shortcut("AI Project", 3),
         _shortcut("AI Workflow", 3),
         _shortcut("AI Workflow Run", 3),
@@ -104,6 +106,7 @@ def _workspace_content() -> list[dict]:
 def _workspace_shortcuts() -> list[dict]:
     return [
         {"label": "Canvas", "type": "Page", "link_to": WORKSPACE_PAGE},
+        {"label": "Admin Health", "type": "Page", "link_to": ADMIN_PAGE},
         {"label": "AI Project", "type": "DocType", "link_to": "AI Project", "doc_view": "List"},
         {"label": "AI Workflow", "type": "DocType", "link_to": "AI Workflow", "doc_view": "List"},
         {
@@ -119,6 +122,7 @@ def _workspace_links() -> list[dict]:
     return [
         _card_break("Create and Run"),
         _link("Canvas", "Page", WORKSPACE_PAGE),
+        _link("Admin Health", "Page", ADMIN_PAGE),
         _link("AI Project", "DocType", "AI Project"),
         _link("AI Project Member", "DocType", "AI Project Member"),
         _link("AI Workflow", "DocType", "AI Workflow"),

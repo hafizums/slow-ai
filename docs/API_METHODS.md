@@ -1170,7 +1170,8 @@ traces, provider secrets, or workflow draft internals.
 The admin observability APIs are read-only. Allowed and rejected calls must not
 create, update, delete, enqueue, or mutate workflow versions, workflow runs,
 node runs, provider jobs, assets, credit ledger rows, or tool run shares.
-Canvas, Public Tool, and guest shared client assets must not call
+The System Manager Desk page at `/app/slow-ai-admin` may call only these admin
+APIs. Canvas, Public Tool, and guest shared client assets must not call
 `slow_ai.api.admin.*`.
 
 ## System Manager audit expectations

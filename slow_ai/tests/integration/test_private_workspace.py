@@ -6,6 +6,7 @@ from frappe.tests.utils import FrappeTestCase
 
 from slow_ai.doctype.contracts import PERMANENT_DOCTYPES
 from slow_ai.infrastructure.workspace import (
+    ADMIN_PAGE,
     WORKSPACE_PAGE,
     WORKSPACE_TITLE,
     sync_private_workspace_for_user,
@@ -30,9 +31,11 @@ FORBIDDEN_WORKSPACE_FRAGMENTS = (
 
 
 class TestPrivateWorkspace(FrappeTestCase):
-    def test_private_workspace_is_created_for_system_user(self):
+    def setUp(self):
         frappe.reload_doc("slow_ai", "page", "slow_ai_canvas")
+        frappe.reload_doc("slow_ai", "page", "slow_ai_admin")
 
+    def test_private_workspace_is_created_for_system_user(self):
         workspace_name = sync_private_workspace_for_user("Administrator")
         sync_private_workspace_for_user("Administrator")
         workspace = frappe.get_doc("Workspace", workspace_name)
@@ -54,8 +57,13 @@ class TestPrivateWorkspace(FrappeTestCase):
         source = json.dumps(workspace.as_dict(), default=str, sort_keys=True)
 
         self.assertIn({"type": "shortcut", "data": {"shortcut_name": "Canvas", "col": 3}}, content)
+        self.assertIn({"type": "shortcut", "data": {"shortcut_name": "Admin Health", "col": 3}}, content)
         self.assertIn(
             ("Canvas", "Page", WORKSPACE_PAGE),
+            {(link.label, link.link_type, link.link_to) for link in workspace.links if link.type == "Link"},
+        )
+        self.assertIn(
+            ("Admin Health", "Page", ADMIN_PAGE),
             {(link.label, link.link_type, link.link_to) for link in workspace.links if link.type == "Link"},
         )
         workspace_doctypes = {

@@ -29,6 +29,10 @@ PRODUCTION_DIRS = (
 )
 
 API_ALLOWED_CLIENT_METHODS = {
+    "slow_ai.api.admin.get_system_overview",
+    "slow_ai.api.admin.list_billing_health",
+    "slow_ai.api.admin.list_provider_job_health",
+    "slow_ai.api.admin.list_run_health",
     "slow_ai.api.assets.upload",
     "slow_ai.api.assets.view",
     "slow_ai.api.models.get_model",

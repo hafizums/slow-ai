@@ -946,10 +946,16 @@ Admin safe observability coverage lives in:
 
 ```txt
 slow_ai/tests/integration/test_admin_safe_observability.py
+slow_ai/tests/integration/test_admin_observability_page.py
+apps/slow_ai/e2e/slow_ai_canvas.spec.js
 ```
 
 It creates real run, node run, provider job, provider account, reservation, and
 raw unsafe provider payload records. It verifies System Manager-only overview,
 run health, provider job health, and billing health APIs are read-only, expose
 only safe summaries, deny non-manager and Guest users without side effects, and
-are not referenced by Canvas, Public Tool, or guest shared client assets.
+are not referenced by Canvas, Public Tool, or guest shared client assets. The
+admin page coverage verifies `/app/slow-ai-admin` references only
+`slow_ai.api.admin.*`, renders loading, empty, permission-denied, and generic
+section failure states, keeps unsafe raw/provider fragments out of client
+assets, and exposes the page to browser E2E as a real Frappe Desk page.

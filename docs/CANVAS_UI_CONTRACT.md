@@ -34,6 +34,9 @@ Copy ComfyUI source code, UI code, assets, or branding
 Implement local model loading or inference
 ```
 
+Admin observability has a separate System Manager Desk page at
+`/app/slow-ai-admin`. The Canvas must not embed or call that page's admin APIs.
+
 ## Task 10 implementation
 
 The initial Desk Page lives in:
@@ -56,8 +59,9 @@ slow_ai/infrastructure/workspace.py
 
 It creates or updates a private `Workspace` for each enabled system user on
 install, migrate, and login. The workspace is navigation-only: it links to the
-Slow AI canvas page and persisted DocTypes, but it must not call providers,
-execute workflows, expose provider secrets, or contain engine logic.
+Slow AI canvas page, the System Manager Admin Health page, and persisted
+DocTypes, but it must not call providers, execute workflows, expose provider
+secrets, or contain engine logic.
 
 Every permanent Slow AI DocType must have a navigation link in this workspace.
 Add workspace charts only when the DocType has an admin-relevant aggregate or

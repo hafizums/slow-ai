@@ -123,6 +123,7 @@ def cleanup_canvas_e2e() -> dict:
 def setup_canvas_e2e() -> dict:
     """Create real Frappe documents used by the browser test suite."""
 
+    frappe.reload_doc("slow_ai", "page", "slow_ai_admin")
     cleanup_canvas_e2e()
     user = _ensure_user()
     public_tool_user = _ensure_public_tool_user()

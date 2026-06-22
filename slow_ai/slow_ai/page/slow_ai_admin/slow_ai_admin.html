@@ -1,0 +1,54 @@
+<div class="slow-ai-admin" data-page="slow-ai-admin">
+	<div class="slow-ai-admin__topbar">
+		<div>
+			<div class="slow-ai-admin__eyebrow">System Health</div>
+			<h2 class="slow-ai-admin__title">Slow AI Admin</h2>
+		</div>
+		<div class="slow-ai-admin__actions" data-role="admin-controls">
+			<select class="form-control input-sm" data-filter="run-status" aria-label="Run status filter">
+				<option value="ALL">All Runs</option>
+				<option value="QUEUED">Queued</option>
+				<option value="RUNNING">Running</option>
+				<option value="WAITING_PROVIDER">Waiting Provider</option>
+				<option value="SUCCEEDED">Succeeded</option>
+				<option value="FAILED">Failed</option>
+				<option value="CANCELLED">Cancelled</option>
+				<option value="EXPIRED">Expired</option>
+			</select>
+			<select class="form-control input-sm" data-filter="provider-status" aria-label="Provider job status filter">
+				<option value="ALL">All Provider Jobs</option>
+				<option value="QUEUED">Queued</option>
+				<option value="SUBMITTING">Submitting</option>
+				<option value="SUBMITTED">Submitted</option>
+				<option value="WAITING_PROVIDER">Waiting Provider</option>
+				<option value="SUCCEEDED">Succeeded</option>
+				<option value="FAILED">Failed</option>
+				<option value="CANCELLED">Cancelled</option>
+				<option value="EXPIRED">Expired</option>
+			</select>
+			<button class="btn btn-sm btn-primary" type="button" data-action="refresh-admin-health">Refresh</button>
+		</div>
+	</div>
+	<div class="slow-ai-admin__status" data-role="admin-status">Loading system health</div>
+	<div class="slow-ai-admin__unavailable hidden" data-role="admin-unavailable">
+		System health unavailable
+	</div>
+	<div class="slow-ai-admin__content hidden" data-role="admin-content">
+		<section class="slow-ai-admin__section">
+			<div class="slow-ai-admin__section-head">Overview</div>
+			<div class="slow-ai-admin__metrics" data-role="overview-metrics"></div>
+		</section>
+		<section class="slow-ai-admin__section">
+			<div class="slow-ai-admin__section-head">Run Health</div>
+			<div data-role="run-health"></div>
+		</section>
+		<section class="slow-ai-admin__section">
+			<div class="slow-ai-admin__section-head">Provider Job Health</div>
+			<div data-role="provider-job-health"></div>
+		</section>
+		<section class="slow-ai-admin__section">
+			<div class="slow-ai-admin__section-head">Project Billing Health</div>
+			<div data-role="billing-health"></div>
+		</section>
+	</div>
+</div>

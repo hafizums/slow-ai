@@ -49,6 +49,10 @@ const API = {
 	addProjectMember: "slow_ai.api.projects.add_member",
 	updateProjectMemberRole: "slow_ai.api.projects.update_member_role",
 	disableProjectMember: "slow_ai.api.projects.disable_member",
+	adminOverview: "slow_ai.api.admin.get_system_overview",
+	adminRunHealth: "slow_ai.api.admin.list_run_health",
+	adminProviderJobHealth: "slow_ai.api.admin.list_provider_job_health",
+	adminBillingHealth: "slow_ai.api.admin.list_billing_health",
 };
 
 let fixtures;
@@ -114,6 +118,16 @@ async function callApi(page, method, args = {}) {
 	expect(response.status()).toBe(200);
 	const payload = await response.json();
 	return payload.message;
+}
+
+function slowAiMethodFromUrl(url) {
+	const marker = "/api/method/";
+	const index = url.indexOf(marker);
+	if (index === -1) {
+		return "";
+	}
+	const method = url.slice(index + marker.length).split("?")[0];
+	return method.startsWith("slow_ai.") ? method : "";
 }
 
 async function canvas(page) {
@@ -526,6 +540,84 @@ test("Slow AI canvas and Tool Mode use real backend APIs only", async ({ page })
 
 	const instance = await canvas(page);
 	expect(await instance.evaluate((value) => Boolean(value.workflowRun))).toBe(true);
+});
+
+test("Slow AI admin page shows safe System Manager health only", async ({ page, browser }) => {
+	const allowedAdminMethods = new Set([
+		API.adminOverview,
+		API.adminRunHealth,
+		API.adminProviderJobHealth,
+		API.adminBillingHealth,
+	]);
+	const providerRequests = [];
+	const slowAiMethods = [];
+	page.on("request", (request) => {
+		const url = request.url();
+		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
+			providerRequests.push(url);
+		}
+		const method = slowAiMethodFromUrl(url);
+		if (method) {
+			slowAiMethods.push(method);
+		}
+	});
+	await page.request.post("/api/method/login", {
+		form: {
+			usr: fixtures.user,
+			pwd: fixtures.password,
+		},
+	});
+	const overviewResponse = page.waitForResponse(apiPredicate(API.adminOverview));
+	await page.goto("/app/slow-ai-admin");
+	const overview = await apiJson(await overviewResponse);
+	expect(overview.message.workflow_runs).toBeTruthy();
+	await expect(page.locator("[data-page='slow-ai-admin']")).toBeVisible();
+	await expect(page.locator("[data-role='admin-status']")).toContainText("System health loaded");
+	await expect(page.locator("[data-role='overview-metrics']")).toContainText("Active Runs");
+	await expect(page.locator("[data-role='run-health']")).toBeVisible();
+	await expect(page.locator("[data-role='provider-job-health']")).toBeVisible();
+	await expect(page.locator("[data-role='billing-health']")).toBeVisible();
+	await page.locator("[data-filter='run-status']").selectOption("ALL");
+	await page.locator("[data-filter='provider-status']").selectOption("ALL");
+	expect(slowAiMethods.every((method) => allowedAdminMethods.has(method))).toBe(true);
+	expect(providerRequests).toEqual([]);
+	const pageSource = await page.locator("html").innerHTML();
+	for (const fragment of [
+		"WAVESPEED_API_KEY",
+		"REPLICATE_API_KEY",
+		"api_key_secret",
+		"provider_account",
+		"external_job_id",
+		"request_json",
+		"response_json",
+		"raw_error_json",
+		"Authorization: Bearer",
+		"api.wavespeed.ai",
+		"api.replicate.com",
+	]) {
+		expect(pageSource).not.toContain(fragment);
+	}
+
+	const userContext = await browser.newContext();
+	const userPage = await userContext.newPage();
+	const userProviderRequests = [];
+	userPage.on("request", (request) => {
+		const url = request.url();
+		if (url.includes("api.wavespeed.ai") || url.includes("wavespeed.ai/api") || url.includes("api.replicate.com")) {
+			userProviderRequests.push(url);
+		}
+	});
+	await userPage.request.post("/api/method/login", {
+		form: {
+			usr: fixtures.public_tool_user,
+			pwd: fixtures.public_tool_password,
+		},
+	});
+	await userPage.goto("/app/slow-ai-admin");
+	await expect(userPage.locator("[data-role='admin-unavailable']")).toContainText("System health unavailable");
+	await expect(userPage.locator("[data-role='admin-controls']")).toBeHidden();
+	expect(userProviderRequests).toEqual([]);
+	await userContext.close();
 });
 
 test("Slow AI public tool page runs published templates through backend APIs", async ({ page, browser }) => {

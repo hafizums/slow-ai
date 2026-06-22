@@ -543,6 +543,22 @@ engine changes, verifies configured/default provider accounts are persisted on
 `AI Provider Job`, and verifies wrong provider/model/account combinations are
 rejected before enqueue without provider calls or provider jobs.
 
+Shared provider adapter contract coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_provider_adapter_contracts.py
+```
+
+This test uses deterministic provider adapters by default and performs
+network-free WaveSpeed/Replicate normalizer checks. It verifies provider
+registry registration, stable provider names, safe cost estimate metadata,
+provider-job creation before submit, waiting provider jobs polled through the
+real worker path, successful normalized outputs materializing real assets and
+debits, failed/cancelled/expired/waiting states avoiding output/debit side
+effects, and safe run status/history/timeline payloads with no provider
+account names, secrets, raw provider URLs, raw request/response/error JSON, API
+keys, Authorization headers, or stack traces.
+
 This test creates a real private `Workspace` for a system user, verifies that it
 appears in that user's Frappe Desk sidebar, and checks that its links remain
 navigation-only with no provider secrets or execution logic.
@@ -702,6 +718,20 @@ It calls real `slow_ai.api.runs.start_run`, creates real `AI Model` and
 before enqueue when model, account, pricing, or budget policy fails. Rejected
 preflight must not create `AI Workflow Version`, `AI Workflow Run`,
 `AI Node Run`, or `AI Provider Job` records and must not call providers.
+
+Provider/model compatibility matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_provider_model_compatibility_matrix.py
+```
+
+It creates real `AI Model`, `AI Provider Account`, `AI Workflow`, workflow run,
+node run, and reservation ledger rows through `slow_ai.api.runs.start_run`.
+Positive provider-node combinations create exactly the immutable workflow
+version, workflow run, node runs, and `RESERVE` rows, with no `AI Provider Job`
+before worker execution. Negative provider/model/account/pricing/scope cases
+are rejected before workflow version/run/node/provider-job/asset/ledger/share
+side effects, and returned errors are checked for secret-safe content.
 
 Project membership coverage lives in:
 

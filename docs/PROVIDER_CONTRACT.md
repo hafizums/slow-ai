@@ -106,6 +106,32 @@ when available. `ProviderOutputService` creates one debit using actual cost when
 non-zero, otherwise `AI Provider Job.estimated_cost_usd`. Failed, cancelled,
 expired, and known zero-cost jobs do not create debits.
 
+## Adapter contract test matrix
+
+Every provider adapter must satisfy the shared adapter contract tested by:
+
+```txt
+slow_ai/tests/integration/test_provider_adapter_contracts.py
+```
+
+The default test suite must not call external providers. Deterministic provider
+adapters run by default and exercise the real worker/provider-job path:
+provider-job creation before submit, normalized waiting states, poll success,
+failed/cancelled/expired terminal states, idempotent asset/debit boundaries,
+and safe run status/history/timeline payloads. Real provider adapters such as
+WaveSpeed and Replicate must at minimum expose stable provider names, register
+through `ProviderRegistry`, return safe cost-estimate metadata, and normalize
+success, waiting, failure, and cancellation responses without network calls.
+Gated real-provider tests may validate live API behavior only when explicit env
+vars and credentials are present.
+
+Adapter contract tests may persist raw request/response/error fields on
+`AI Provider Job`, but safe APIs must never return API keys, Authorization or
+Bearer values, provider account names, raw provider URLs, `request_json`,
+`response_json`, `raw_error_json`, or stack traces. External output URLs are
+allowed only as normalized provider outputs that are then materialized as
+`AI Asset` records and exposed through the safe asset/view path.
+
 ## Safe observability
 
 Provider job records may persist raw request, response, external job ids, raw
@@ -209,3 +235,30 @@ default account is ACTIVE and allowed for the workflow project and current user
 Provider adapters receive only the resolved `AI Provider Job`; they read
 credentials server-side from the resolved `provider_account`. Provider account
 CRUD and preflight must not call providers.
+
+## Provider/model compatibility
+
+Run preflight is the authoritative compatibility gate before queueing a
+provider-node workflow. It must reject before creating `AI Workflow Version`,
+`AI Workflow Run`, `AI Node Run`, `AI Provider Job`, `AI Asset`, `AI Credit
+Ledger` reservation rows, shares, or worker enqueue when:
+
+```txt
+node config provider does not match the selected AI Model provider
+AI Model is disabled
+AI Model category is not provider
+AI Model node_type does not match the provider node type
+known-pricing policy is enabled and pricing is unknown
+configured provider account belongs to another provider
+configured provider account is inactive
+configured provider account is outside project/user scope
+no active default account is available for the provider
+project balance/quota policy rejects the estimated cost
+```
+
+Positive preflight may create only the immutable workflow version, workflow
+run, node runs, and estimated `RESERVE` ledger rows. `AI Provider Job` records
+are created later by the worker/provider node path, immediately before submit.
+Preflight denial messages must be safe: no provider secrets, provider account
+document names, raw provider URLs, raw request/response/error JSON, API keys,
+Authorization headers, stack traces, or workflow draft internals.

@@ -78,16 +78,16 @@ def _resolve_configured_account(
     error_cls: type[Exception],
 ) -> str:
     if not frappe.db.exists("AI Provider Account", account_name):
-        raise error_cls(f"Provider account is not configured: {account_name}.")
+        raise error_cls("Provider account is not configured.")
     account = frappe.get_doc("AI Provider Account", account_name)
     if account.provider != provider:
         raise error_cls(
-            f"Provider account {account.name} belongs to provider {account.provider}, not {provider}."
+            "Configured provider account belongs to provider other than the selected provider."
         )
     if account.status != "ACTIVE":
-        raise error_cls(f"Provider account {account.name} is not active.")
+        raise error_cls("Configured provider account is not active.")
     if not account_matches_scope(account, project_name=project_name, user=user):
-        raise error_cls(f"Provider account {account.name} is not allowed for this project or user.")
+        raise error_cls("Configured provider account is not allowed for this project or user.")
     return account.name
 
 

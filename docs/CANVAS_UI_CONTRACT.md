@@ -161,6 +161,17 @@ code. Dragging nodes and connecting/deleting edges must mutate editable draft
 JSON only; persistence happens only when the user saves through
 `slow_ai.api.workflows.save_workflow`.
 
+Provider/model compatibility warnings in the Canvas are display-only. The
+Canvas may show safe model/provider metadata returned by `slow_ai.api.models.*`
+and `object_info`, but it must not duplicate the backend pricing parser,
+provider-account resolver, quota policy, or model/node compatibility policy.
+The final decision for provider mismatch, disabled/unpriced model,
+provider-account mismatch/inactive/out-of-scope, missing default account,
+balance, and quota rejection remains in server-side `start_run` preflight.
+Rejected errors shown in the UI must be safe and must not include provider
+account document names, provider secrets, raw provider URLs, raw provider
+payload JSON, API keys, Authorization headers, stack traces, or draft internals.
+
 Workflow draft save/load access is enforced by backend project policy. The
 Canvas may save drafts only for users with project edit access and may load
 drafts only for users with project view access. `get_workflow` returns a

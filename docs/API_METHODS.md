@@ -156,6 +156,16 @@ or queue side effects for the attempted run. It must not call providers. Safe
 quota rejection messages may be returned to Canvas or Public Tool callers, but
 clients must not implement authoritative quota checks.
 
+Provider/model compatibility is part of this preflight contract. A provider
+node must reference an enabled `AI Model` whose provider, category, and
+`node_type` match the node config. Known-pricing policy, project balance,
+quota/rate limits, provider-account provider match, provider-account active
+status, default-account availability, and project/user provider-account scope
+must all pass before any run side effects are created. Rejected preflight
+errors must be safe and must not expose provider account document names,
+provider secrets, raw provider URLs, raw provider request/response/error JSON,
+API keys, Authorization headers, stack traces, or workflow draft internals.
+
 ### slow_ai.api.runs.get_run_status
 
 ```txt

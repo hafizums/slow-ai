@@ -226,6 +226,15 @@ Copy URL, Select for Share, Select All, Clear Selection, and lightweight
 client-side filtering by asset type. These actions must not mutate run state,
 call providers, create provider jobs, create assets, or create ledger rows.
 
+Provider/model/account compatibility for public Tool runs is enforced only by
+the backend `slow_ai.api.runs.start_run` path. The page may show safe
+provider/model/cost warning metadata, but it must not implement authoritative
+checks for model provider, node type, pricing, provider-account status/scope,
+balance, or quota. Backend rejection messages rendered to users must remain
+safe and must not expose provider account document names, provider secrets, raw
+provider URLs, raw provider request/response/error JSON, API keys,
+Authorization headers, stack traces, or workflow draft internals.
+
 ## Tool Run Library Rules
 
 The My Runs panel uses:

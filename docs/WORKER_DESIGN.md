@@ -208,6 +208,23 @@ The poll worker does not execute downstream nodes inline. It enqueues workflow
 resume after terminal provider status, and the workflow worker continues the
 DAG from persisted node outputs.
 
+## Provider adapter contract tests
+
+Shared provider adapter contract coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_provider_adapter_contracts.py
+```
+
+The normal suite uses deterministic provider adapters and direct normalizer
+coverage for real adapters. It must not call external providers. Contract tests
+prove provider jobs exist before submit, waiting provider jobs are polled by
+the worker path, success materializes assets and debits once, failed/cancelled/
+expired/waiting results do not create output assets or final debits, and safe
+run status/history/timeline payloads do not expose provider account names,
+secrets, raw provider URLs, raw request/response/error JSON, API keys,
+Authorization headers, or stack traces.
+
 ## Scheduled provider polling
 
 `slow_ai.hooks.scheduler_events` registers:

@@ -927,3 +927,29 @@ Manager recovery entrypoints using real DocTypes and application/API/worker
 calls. The tests assert exact record-count deltas, current rerun-draft policy,
 duplicate share reuse, duplicate reservation/release/debit prevention, safe
 rejection for a denied role, and safe payload redaction under repeated calls.
+
+System Manager audit log matrix coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_system_manager_audit_log_matrix.py
+```
+
+It uses real projects, users, membership rows, provider accounts, models,
+templates, credit ledger entries, run recovery records, and tool-run shares. It
+verifies allowed governance actions leave existing Frappe audit evidence via
+`Version` rows where applicable, owner/creation/modified fields, and append-only
+business records; rejected governance actions create no misleading audit,
+execution, billing, or share records; recovery payloads remain safe and do not
+call providers.
+
+Admin safe observability coverage lives in:
+
+```txt
+slow_ai/tests/integration/test_admin_safe_observability.py
+```
+
+It creates real run, node run, provider job, provider account, reservation, and
+raw unsafe provider payload records. It verifies System Manager-only overview,
+run health, provider job health, and billing health APIs are read-only, expose
+only safe summaries, deny non-manager and Guest users without side effects, and
+are not referenced by Canvas, Public Tool, or guest shared client assets.

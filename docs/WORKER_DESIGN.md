@@ -131,6 +131,11 @@ logic inline, create provider jobs, create assets, create debit rows, or expose
 raw provider payloads/secrets. Canvas, Public Tool, and guest shared pages must
 not call recovery APIs.
 
+System Manager observability APIs are separate from recovery. They may inspect
+persisted run, provider job, asset, share, and ledger health, but they must be
+read-only: no worker enqueue, no provider calls, no status mutation, and no new
+workflow/run/node/provider/asset/ledger/share records.
+
 ## Task 08 implementation
 
 Worker entrypoints:

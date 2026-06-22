@@ -111,6 +111,11 @@ DISABLED members are rejected before ledger or execution side effects. A
 successful top-up creates exactly one `CREDIT` row and returns a safe ledger
 payload plus current balance.
 
+Top-ups are audited through the append-only `AI Credit Ledger` business record
+and normal Frappe `owner`, `creation`, `modified`, and `modified_by` fields.
+Rejected top-up attempts must not create ledger rows, workflow/run/node/
+provider/asset/share records, enqueue workers, or call providers.
+
 Read APIs:
 
 ```txt

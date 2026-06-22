@@ -47,7 +47,10 @@ slow_ai.api.projects.disable_member
 ```
 
 No other `slow_ai` API method may be called from this page without updating this
-contract and the architecture boundary tests.
+contract and the architecture boundary tests. The public Tool page and guest
+shared page must not call `slow_ai.api.admin.*`; admin observability remains a
+System Manager-only backend API surface with no public/client UI in the current
+contract.
 
 The public Tool page must not call
 `slow_ai.api.public_tools.cleanup_stale_tool_drafts`. Stale draft cleanup is a

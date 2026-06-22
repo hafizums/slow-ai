@@ -63,6 +63,11 @@ Rollback must not create `AI Workflow`, `AI Workflow Version`, `AI Workflow Run`
 `AI Node Run`, `AI Provider Job`, `AI Asset`, or `AI Credit Ledger` records. It
 must not enqueue workers or call providers.
 
+Rollback is audited through the tracked parent `AI Workflow Template` row and
+the newly created immutable `AI Workflow Template Version` business record. A
+rejected rollback must not mutate the parent template or create template/run/
+provider/asset/ledger/share side effects.
+
 ## Public Tool Behavior
 
 Public Tool Mode APIs must not read mutable template JSON for runnable payloads.

@@ -148,6 +148,12 @@ must not expose provider job observability or source identifiers such as
 `source_provider_job`; selected output assets are shown only through the safe
 shared asset view path.
 
+System Manager admin observability may expose aggregate provider-job health and
+safe local job identifiers, but it must not expose provider account names,
+provider account fields, external provider job ids, raw request/response/error
+JSON, raw provider URLs, API keys, Authorization headers, stack traces, or
+provider secrets. These admin reads are System Manager-only and read-only.
+
 ## Timeout and retry policy
 
 Provider polling is bounded by persisted `AI Provider Job` policy fields.
@@ -221,6 +227,12 @@ management access: project owner, OWNER member, BILLING member, or System
 Manager. EDITOR, VIEWER, non-member, Guest, and DISABLED members are rejected.
 For project-scoped accounts, record ownership or user scope does not bypass the
 current project membership policy.
+
+Provider account create/default/disable actions use existing Frappe audit
+surfaces (`owner`, `creation`, `modified`, `modified_by`, and change tracking
+where the persistence path supports it). Rejected account actions must not
+create provider jobs, workflow/run records, assets, ledger rows, shares, or call
+providers.
 
 Run preflight and provider job persistence both enforce:
 

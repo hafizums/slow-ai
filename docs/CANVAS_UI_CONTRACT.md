@@ -29,6 +29,7 @@ Execute workflow graphs in the browser
 Execute editable workflow drafts directly
 Create AI Provider Job records directly
 Create AI Asset or AI Credit Ledger rows directly
+Call slow_ai.api.admin.* observability APIs
 Copy ComfyUI source code, UI code, assets, or branding
 Implement local model loading or inference
 ```

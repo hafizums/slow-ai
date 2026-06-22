@@ -20,6 +20,11 @@ Only ACTIVE memberships grant access. DISABLED memberships are ignored.
 leave normal Frappe `Version` audit history for the membership row; no custom
 audit DocType is required in the current design.
 
+System Manager and project-owner membership changes are also covered by
+`SYSTEM_MANAGER_AUDIT_LOG_CONTRACT.md`. Rejected membership actions must not
+create workflow/run/node/provider/asset/ledger/share side effects or misleading
+membership audit records.
+
 ## Central Policy
 
 Project access decisions live in:

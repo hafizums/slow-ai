@@ -1147,3 +1147,42 @@ BILLING member: view/manage billing and provider accounts only
 Membership API calls must not create workflow versions, workflow runs, node
 runs, provider jobs, assets, credit ledger rows, enqueue workers, or call
 providers.
+
+## System Manager observability APIs
+
+These APIs are System Manager-only thin delegates to
+`slow_ai.application.admin_observability`:
+
+```txt
+slow_ai.api.admin.get_system_overview
+slow_ai.api.admin.list_run_health
+slow_ai.api.admin.list_provider_job_health
+slow_ai.api.admin.list_billing_health
+```
+
+They return safe operational summaries only. Payloads may include aggregate
+status counts, run health rows, provider job health rows without account names,
+and billing totals. They must not return provider account names,
+`provider_account`, `external_job_id`, `request_json`, `response_json`,
+`raw_error_json`, raw provider URLs, API keys, Authorization headers, stack
+traces, provider secrets, or workflow draft internals.
+
+The admin observability APIs are read-only. Allowed and rejected calls must not
+create, update, delete, enqueue, or mutate workflow versions, workflow runs,
+node runs, provider jobs, assets, credit ledger rows, or tool run shares.
+Canvas, Public Tool, and guest shared client assets must not call
+`slow_ai.api.admin.*`.
+
+## System Manager audit expectations
+
+Slow AI uses Frappe-native audit and business records for administrative
+governance. The current design does not add a custom audit DocType. Allowed
+actions should leave audit evidence through Frappe `Version` rows where
+`track_changes` and `doc.save` apply, `owner`/`creation`/`modified`/
+`modified_by` fields, and append-only business records such as `AI Credit
+Ledger`, `AI Workflow Template Version`, and `AI Tool Run Share`.
+
+Rejected governance actions must fail before misleading audit/business records
+or execution records are created. They must not call providers or expose
+provider secrets, provider account names, raw provider payloads, raw provider
+URLs, API keys, Authorization headers, stack traces, or workflow draft internals.

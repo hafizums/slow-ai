@@ -132,6 +132,11 @@ AI Credit Ledger
 
 They must not enqueue workers or call providers.
 
+Review lifecycle actions are audited through the tracked `AI Workflow Template`
+row and, for approval, immutable `AI Workflow Template Version` business
+records. Rejected lifecycle attempts must not create misleading template
+versions or execution/billing/share records.
+
 ## Frontend Boundary
 
 The canvas Template Library may call the review APIs for admin review actions.
